@@ -13,6 +13,7 @@ from typing import Callable, Optional
 import torch
 import torch.nn as nn
 from torch import Tensor
+from torch_geometric.nn import MessagePassing
 
 from .constants import (
     CONDITION_THRESHOLD,
@@ -136,6 +137,56 @@ class RepLayer(nn.Module):
 # nbr – message passing (MPNN aggregate step)
 # ---------------------------------------------------------------------------
 
+
+class _PyGNbrMessagePassing(MessagePassing):
+    """PyG MessagePassing wrapper that preserves AC aggregation semantics."""
+
+    def __init__(self, owner: "NbrLayer") -> None:
+        super().__init__(aggr=None, flow="source_to_target", node_dim=0)
+        self.owner = owner
+
+    def forward(
+        self,
+        x: Tensor,
+        edge_index: Tensor,
+        edge_weight: Tensor | None,
+        num_nodes: int,
+    ) -> Tensor:
+        return self.propagate(
+            edge_index,
+            x=x,
+            edge_weight=edge_weight,
+            size=(num_nodes, num_nodes),
+        )
+
+    def message(self, x_j: Tensor, edge_weight: Tensor | None = None) -> Tensor:
+        msg = x_j
+        if self.owner.transform_fn is not None:
+            msg = self.owner.transform_fn(msg)
+        if edge_weight is not None:
+            w = edge_weight.unsqueeze(-1) if msg.dim() > 1 else edge_weight
+            msg = msg * w
+        return msg
+
+    def aggregate(
+        self,
+        inputs: Tensor,
+        index: Tensor,
+        ptr: Tensor | None = None,
+        dim_size: int | None = None,
+    ) -> Tensor:
+        if dim_size is None:
+            raise ValueError("PyG propagate did not provide dim_size for aggregation")
+        return scatter_aggr(
+            inputs,
+            index,
+            dim_size,
+            aggr=self.owner.aggr,
+            mode=self.owner.mode,
+            tau=self.owner.tau,
+            fill_value=self.owner.fill_value,
+        )
+
 class NbrLayer(nn.Module):
     r"""Neighborhood aggregation:  m_i = ⊕_{j∈N(i)} φ(x_j).
 
@@ -196,6 +247,7 @@ class NbrLayer(nn.Module):
             _register_callable(self, "transform_fn", transform_fn, "_transform_fn")
         else:
             self.transform_fn = None
+        self._mp = _PyGNbrMessagePassing(self)
 
     def forward(
         self,
@@ -225,22 +277,7 @@ class NbrLayer(nn.Module):
         edge_idx = edge_index if edge_index is not None else ctx.edge_index
         edge_wt = edge_weight if edge_weight is not None else ctx.edge_weight
 
-        src_nodes, tgt_nodes = edge_idx[0], edge_idx[1]
-
-        msg = src[src_nodes]  # [E, *F]
-        if self.transform_fn is not None:
-            msg = self.transform_fn(msg)
-
-        if edge_wt is not None:
-            w = edge_wt
-            if msg.dim() > 1:
-                w = w.unsqueeze(-1)
-            msg = msg * w
-
-        return scatter_aggr(
-            msg, tgt_nodes, ctx.num_nodes,
-            aggr=self.aggr, mode=self.mode, tau=self.tau, fill_value=self.fill_value,
-        )
+        return self._mp(src, edge_idx, edge_wt, ctx.num_nodes)
 
 
 # ---------------------------------------------------------------------------

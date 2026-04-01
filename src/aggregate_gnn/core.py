@@ -11,6 +11,8 @@ from contextlib import contextmanager
 import torch
 from torch import Tensor
 
+from .pyg_backend import maybe_make_data
+
 
 class RoundContext:
     """Holds the graph topology and per-round execution state.
@@ -34,6 +36,8 @@ class RoundContext:
         self.edge_weight = edge_weight if edge_weight is not None else \
                            torch.ones(edge_index.shape[1], device=edge_index.device)
         self.num_nodes = num_nodes
+        # Optional PyG projection used by the new backend when available.
+        self.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
         self.round_num = 0
         self.state = StateManager(num_nodes, device=edge_index.device)
         self.exports: dict[str, Tensor] = {}

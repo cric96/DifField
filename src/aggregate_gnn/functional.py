@@ -17,42 +17,12 @@ from .constants import (
     FILL_VALUE_MIN,
     LOG_EPSILON,
 )
+from .pyg_backend import scatter_hard, subgraph_for_nodes
 
 
 # ---------------------------------------------------------------------------
 # Scatter-based aggregation
 # ---------------------------------------------------------------------------
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _expand_index(index: Tensor, src: Tensor) -> Tensor:
-    """Broadcast *index* [E] to match the shape of *src* [E, *F].
-
-    When *src* is 1-D the index is returned unchanged; for higher-rank
-    tensors the index is unsqueezed and expanded along trailing dims.
-    """
-    return index.unsqueeze(-1).expand_as(src) if src.dim() > 1 else index
-
-
-def _scatter_hard(
-    src: Tensor, index: Tensor, num_nodes: int,
-    reduce: str, fill_value: float,
-) -> Tensor:
-    """Hard (exact) scatter min or max via ``scatter_reduce_``.
-
-    Parameters
-    ----------
-    reduce : ``"amin"`` or ``"amax"``.
-    fill_value : identity element (``+∞`` for min, ``-∞`` for max).
-    """
-    shape = (num_nodes,) + src.shape[1:]
-    out = src.new_full(shape, fill_value)
-    out.scatter_reduce_(0, _expand_index(index, src), src,
-                        reduce=reduce, include_self=True)
-    return out
-
 
 # ---------------------------------------------------------------------------
 # Scatter-based aggregation
@@ -107,17 +77,7 @@ def scatter_aggr(
 def _scatter_sum_mean(
     src: Tensor, index: Tensor, num_nodes: int, aggr: str,
 ) -> Tensor:
-    shape = (num_nodes,) + src.shape[1:]
-    out = src.new_zeros(shape)
-    out.scatter_add_(0, _expand_index(index, src), src)
-    if aggr == "mean":
-        count = src.new_zeros(num_nodes)
-        count.scatter_add_(0, index, src.new_ones(index.shape[0]))
-        count = count.clamp(min=1)
-        if out.dim() > 1:
-            count = count.unsqueeze(-1)
-        out = out / count
-    return out
+    return scatter_hard(src, index, num_nodes, aggr=aggr, fill_value=FILL_VALUE_DEFAULT)
 
 
 def _scatter_min(
@@ -125,7 +85,7 @@ def _scatter_min(
     mode: str, tau: float, fill_value: float,
 ) -> Tensor:
     if mode == "hard":
-        return _scatter_hard(src, index, num_nodes, "amin", fill_value)
+        return scatter_hard(src, index, num_nodes, aggr="min", fill_value=fill_value)
     return _scatter_softmin(src, index, num_nodes, tau, fill_value)
 
 
@@ -134,7 +94,7 @@ def _scatter_max(
     mode: str, tau: float, fill_value: float,
 ) -> Tensor:
     if mode == "hard":
-        return _scatter_hard(src, index, num_nodes, "amax", fill_value)
+        return scatter_hard(src, index, num_nodes, aggr="max", fill_value=fill_value)
     return _scatter_softmax(src, index, num_nodes, tau, fill_value)
 
 
@@ -171,20 +131,28 @@ def _scatter_softmin(
     neg_src_scaled = -src / tau  # [E, *F]
 
     shape = (num_nodes,) + src.shape[1:]
-    expanded_idx = _expand_index(index, src)
 
     # Step 2: per-bucket max for numerical stability
-    bucket_max = src.new_full(shape, float("-inf"))
-    bucket_max.scatter_reduce_(0, expanded_idx, neg_src_scaled,
-                               reduce="amax", include_self=True)
+    bucket_max = scatter_hard(
+        neg_src_scaled,
+        index,
+        num_nodes,
+        aggr="max",
+        fill_value=float("-inf"),
+    )
 
     # Steps 3-4: shift by bucket max, then exponentiate
     shifted = neg_src_scaled - bucket_max[index]
     exp_shifted = shifted.exp()
 
     # Step 5: scatter-sum of exponentials per bucket
-    sum_exp = src.new_zeros(shape)
-    sum_exp.scatter_add_(0, expanded_idx, exp_shifted)
+    sum_exp = scatter_hard(
+        exp_shifted,
+        index,
+        num_nodes,
+        aggr="sum",
+        fill_value=0.0,
+    )
 
     # Step 6: log-sum-exp = max + log(sum_exp)
     has_messages = sum_exp > 0
@@ -294,12 +262,11 @@ def mask_edges_for_partition(
     src, tgt = edge_index[0], edge_index[1]
 
     if mode == "hard":
-        both_in_partition = (cond[src] == partition) & (cond[tgt] == partition)
-        kept = both_in_partition.nonzero(as_tuple=True)[0]
-        ei_out = edge_index[:, kept]
-        if edge_weight is not None:
-            return ei_out, edge_weight[kept]
-        return ei_out, edge_index.new_ones(kept.shape[0], dtype=torch.float32)
+        node_mask = cond.bool() if partition else ~cond.bool()
+        ei_out, ew_out = subgraph_for_nodes(node_mask, edge_index, edge_weight=edge_weight)
+        if ew_out is not None:
+            return ei_out, ew_out
+        return ei_out, edge_index.new_ones(ei_out.shape[1], dtype=torch.float32)
 
     # Soft mode: P(both in partition) = P(src ∈ k) · P(tgt ∈ k)
     p_src = cond[src].float() if partition else (1.0 - cond[src].float())

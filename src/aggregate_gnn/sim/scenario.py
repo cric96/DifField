@@ -7,6 +7,7 @@ from typing import Callable, Iterable
 
 import torch
 
+from ..pyg_backend import build_spatial_edge_index, maybe_make_data
 from ..utils import make_grid_graph
 
 
@@ -165,6 +166,7 @@ class SpatialScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
 
 
 def build_spatial_graph(
@@ -186,41 +188,25 @@ def build_spatial_graph(
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
         return empty_edges, empty_weights
 
-    distances = torch.cdist(positions, positions)
-
-    if k_neighbors is not None:
-        if k_neighbors <= 0:
-            raise ValueError("k_neighbors must be > 0")
-        k = min(k_neighbors + (1 if self_loops else 0), num_nodes)
-        sorted_idx = torch.argsort(distances, dim=1)
-        nbr_idx = sorted_idx[:, :k]
-        src = torch.arange(num_nodes, device=positions.device).unsqueeze(1).expand(-1, k)
-        mask = torch.ones_like(nbr_idx, dtype=torch.bool)
-        if not self_loops:
-            mask = nbr_idx != src
-        src_nodes = src[mask]
-        tgt_nodes = nbr_idx[mask]
-    else:
-        if edge_radius is None or edge_radius <= 0:
-            raise ValueError("edge_radius must be > 0 when k_neighbors is not used")
-        mask = distances <= edge_radius
-        if not self_loops:
-            mask.fill_diagonal_(False)
-        src_nodes, tgt_nodes = torch.where(mask)
-
-    if src_nodes.numel() == 0:
+    edge_index = build_spatial_edge_index(
+        positions,
+        edge_radius=edge_radius,
+        k_neighbors=k_neighbors,
+        self_loops=self_loops,
+    )
+    if edge_index.shape[1] == 0:
         empty_edges = torch.zeros((2, 0), dtype=torch.long, device=positions.device)
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
         return empty_edges, empty_weights
 
-    edge_dist = distances[src_nodes, tgt_nodes]
+    src_nodes, tgt_nodes = edge_index[0], edge_index[1]
+    edge_dist = (positions[src_nodes] - positions[tgt_nodes]).norm(dim=-1)
     if edge_weight_mode == "unit":
         edge_weight = torch.ones_like(edge_dist)
     elif edge_weight_mode == "inverse_distance":
         edge_weight = 1.0 / (edge_dist + eps)
     else:
         raise ValueError("edge_weight_mode must be one of: unit, inverse_distance")
-    edge_index = torch.stack([src_nodes, tgt_nodes], dim=0)
     return edge_index.long(), edge_weight.float()
 
 

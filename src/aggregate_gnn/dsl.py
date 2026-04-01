@@ -34,6 +34,7 @@ from .constants import (
     DEFAULT_TAU_SOFT_AGGR,
 )
 from .functional import soft_where
+from .pyg_backend import Data
 
 # ---------------------------------------------------------------------------
 # Thread-local context stack (allows nesting)
@@ -95,7 +96,25 @@ class AggregateContext:
     edge_weight : Tensor [E], optional
     """
 
-    def __init__(self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None) -> None:
+    def __init__(
+        self,
+        edge_index: Tensor | Data,
+        num_nodes: int | None = None,
+        edge_weight: Tensor | None = None,
+    ) -> None:
+        if isinstance(edge_index, Data):
+            data = edge_index
+            if data.num_nodes is None:
+                raise ValueError("PyG Data must define num_nodes for AggregateContext")
+            data_edge_weight = edge_weight
+            if data_edge_weight is None and hasattr(data, "edge_attr"):
+                data_edge_weight = data.edge_attr
+            self._ctx = RoundContext(data.edge_index, int(data.num_nodes), edge_weight=data_edge_weight)
+            self._ctx.data = data
+            return
+
+        if num_nodes is None:
+            raise ValueError("num_nodes is required when constructing AggregateContext from edge_index")
         self._ctx = RoundContext(edge_index, num_nodes, edge_weight=edge_weight)
 
     @contextmanager

@@ -4,6 +4,7 @@ from .core import RoundContext, StateManager
 from .dsl import AggregateContext, DeviceContext, branch, broadcast, const, field, mid, mux, nbr, rep
 from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
 from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
+from .pyg_backend import HAS_PYG
 from .sim import (
     EventSchedule,
     GridScenario,
@@ -45,6 +46,7 @@ __all__ = [
     "mask_edges",
     "mask_edges_for_partition",
     "soft_where",
+    "HAS_PYG",
     # Simulation
     "GridScenario",
     "SimulationEngine",
