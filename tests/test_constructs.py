@@ -6,7 +6,19 @@ sys.path.insert(0, "src")
 import pytest
 import torch
 
-from aggregate_gnn import AggregateContext, rep, nbr, branch, mux, const
+from aggregate_gnn import (
+    AggregateContext,
+    EventSchedule,
+    GridScenario,
+    ScheduledEvent,
+    SimulationEngine,
+    SnapshotRecorder,
+    rep,
+    nbr,
+    branch,
+    mux,
+    const,
+)
 from aggregate_gnn.layers import RepLayer, NbrLayer
 from aggregate_gnn.functional import scatter_aggr, mask_edges, soft_where
 from aggregate_gnn.dsl import field, DeviceContext
@@ -799,6 +811,61 @@ class TestComposition:
         assert torch.allclose(results_x[2], torch.tensor([3.0, 3.0, 3.0, 3.0]))
         assert torch.allclose(results_y[2], torch.tensor([6.0, 6.0, 12.0, 12.0]))
         assert torch.allclose(results_z[2], torch.tensor([19.0, 38.0, 40.0, 26.0]))
+
+
+# ===== Simulation framework tests =====
+
+class TestSimulationFramework:
+    def test_event_schedule_moves_source(self):
+        scenario = GridScenario(3, 3, connectivity=4)
+        engine = SimulationEngine.from_scenario(scenario)
+
+        source = scenario.marker(0, 0)
+
+        def move_to_center(runtime):
+            runtime.signals["source"] = scenario.marker(1, 1)
+            runtime.metadata["source_pos"] = (1, 1)
+
+        schedule = EventSchedule([
+            ScheduledEvent(round_idx=2, callback=move_to_center, name="move_center")
+        ])
+        recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds={1, 2, 5})
+
+        def program(runtime):
+            src = runtime.signals["source"]
+            return rep("dist", float("inf"), lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")))
+
+        output, runtime = engine.run(
+            rounds=6,
+            program=program,
+            signals={"source": source},
+            metadata={"source_pos": (0, 0)},
+            schedule=schedule,
+            recorder=recorder,
+        )
+
+        center_idx = scenario.pos_to_idx(1, 1)
+        assert runtime.metadata["source_pos"] == (1, 1)
+        assert recorder.records[2]["output"][center_idx].item() == 0.0
+        assert output[center_idx].item() == 0.0
+
+    def test_step_api_and_recording(self):
+        scenario = GridScenario(2, 2, connectivity=4)
+        engine = SimulationEngine.from_scenario(scenario)
+        runtime = engine.init_runtime(signals={"source": scenario.marker(0, 0)})
+        recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds={0, 1})
+
+        def program(rt):
+            src = rt.signals["source"]
+            return rep("dist", float("inf"), lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")))
+
+        out0 = engine.step(runtime=runtime, program=program, recorder=recorder)
+        out1 = engine.step(runtime=runtime, program=program, recorder=recorder)
+
+        assert runtime.round_idx == 2
+        assert 0 in recorder.records and 1 in recorder.records
+        assert torch.allclose(out0, recorder.records[0]["output"])
+        assert torch.allclose(out1, recorder.records[1]["output"])
 
 
 if __name__ == "__main__":

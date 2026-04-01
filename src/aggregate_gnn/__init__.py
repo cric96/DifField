@@ -4,6 +4,7 @@ from .core import RoundContext, StateManager
 from .dsl import AggregateContext, DeviceContext, branch, broadcast, const, field, mid, mux, nbr, rep
 from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
 from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
+from .sim import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SimulationRuntime, SnapshotRecorder
 from .utils import make_grid_graph
 
 __all__ = [
@@ -31,6 +32,13 @@ __all__ = [
     "mask_edges",
     "mask_edges_for_partition",
     "soft_where",
+    # Simulation
+    "GridScenario",
+    "SimulationEngine",
+    "SimulationRuntime",
+    "EventSchedule",
+    "ScheduledEvent",
+    "SnapshotRecorder",
     # Utilities
     "make_grid_graph",
 ]

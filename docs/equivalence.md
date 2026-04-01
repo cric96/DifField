@@ -16,6 +16,17 @@ the framework against a reference implementation.
 
 ## 1. Introduction
 
+### 1.2 Simulation Framework Mapping
+
+The repository includes a reusable simulation framework (`src/aggregate_gnn/sim`) used by all examples:
+
+- `GridScenario` builds graph topology and field initialisations.
+- `SimulationEngine` executes synchronous rounds over the AC program.
+- `EventSchedule`/`ScheduledEvent` model time-indexed environmental changes (e.g., moving source/obstacles).
+- `SnapshotRecorder` captures selected states and exports per round.
+
+This layer does not change the formal semantics in this document; it factors repeated experimental scaffolding into reusable components while preserving the AC combinator behaviour.
+
 Aggregate Computing (AC) [Viroli et al., 2019; Beal et al., 2015] is a
 paradigm for programming collective adaptive systems. Programs are written
 against a set of *combinators* — `rep`, `nbr`, `branch`, `mux` — that

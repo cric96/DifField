@@ -16,9 +16,8 @@ except ImportError:
 
 sys.path.insert(0, "src")
 
-from aggregate_gnn import AggregateContext, rep, nbr, mux
+from aggregate_gnn import GridScenario, SimulationEngine, SnapshotRecorder, rep, nbr, mux
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph, get_grid_distances
 
 
 def parse_args():
@@ -32,40 +31,49 @@ def parse_args():
 
 def setup_data(args, device):
     """Build large grid and source at center."""
-    edge_index, num_nodes = make_grid_graph(args.rows, args.cols)
-    edge_index = edge_index.to(device)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
 
     # Source: center of the grid
-    source = torch.zeros(num_nodes, dtype=torch.float32, device=device)
+    source = torch.zeros(scenario.num_nodes, dtype=torch.float32, device=device)
     center_r = args.rows // 2
     center_c = args.cols // 2
     center_idx = center_r * args.cols + center_c
     source[center_idx] = 1.0
 
-    return edge_index, num_nodes, source, center_r, center_c
+    return scenario, source, center_r, center_c
 
 
-def run_gradient(args, edge_index, num_nodes, source, device):
-    ctx = AggregateContext(edge_index, num_nodes)
+def run_gradient(args, scenario, source, device):
+    engine = SimulationEngine.from_scenario(scenario)
     T = args.rounds if args.rounds > 0 else (args.rows + args.cols)
     w = torch.tensor(1.0, device=device, requires_grad=True)
 
     print(f"Running {T} rounds of aggregate computation...")
     start_time = time.time()
     
-    snapshots = {}
     record_at = [max(1, T//10), max(1, T//2), T]
+    recorder = SnapshotRecorder(
+        state_fields=[],
+        capture_output=True,
+        record_rounds={t - 1 for t in record_at},
+    )
 
-    for t in range(1, T + 1):
-        with ctx.round():
-            d = rep("dist", float("inf"), lambda d_old: 
-                mux(source,
-                    field.of(0.0),
-                    nbr(d_old + w, aggr="min"),
-                )
-            )
-        if t in record_at:
-            snapshots[t] = d.detach().cpu().view(args.rows, args.cols).clone()
+    def program(_runtime):
+        return rep("dist", float("inf"), lambda d_old:
+            mux(source, field.of(0.0), nbr(d_old + w, aggr="min"))
+        )
+
+    d, _ = engine.run(
+        rounds=T,
+        program=program,
+        signals={"source": source},
+        recorder=recorder,
+    )
+
+    snapshots = {
+        round_idx + 1: payload["output"].detach().cpu().view(args.rows, args.cols).clone()
+        for round_idx, payload in recorder.records.items()
+    }
             
     if device.type == "cuda":
         torch.cuda.synchronize()
@@ -111,11 +119,11 @@ def main():
 
     print("Building graph...")
     start_time = time.time()
-    edge_index, num_nodes, source, center_r, center_c = setup_data(args, device)
+    scenario, source, center_r, center_c = setup_data(args, device)
     graph_time = time.time() - start_time
-    print(f"Graph built in {graph_time:.4f}s (Edges: {edge_index.shape[1]})")
+    print(f"Graph built in {graph_time:.4f}s (Edges: {scenario.edge_index.shape[1]})")
 
-    d, w, snapshots, _ = run_gradient(args, edge_index, num_nodes, source, device)
+    d, w, snapshots, _ = run_gradient(args, scenario, source, device)
 
     # Validate a few points
     dist = d.detach().cpu().view(args.rows, args.cols)

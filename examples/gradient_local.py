@@ -11,9 +11,8 @@ import argparse
 sys.path.insert(0, "src")
 
 import torch
-from aggregate_gnn import AggregateContext, rep, nbr, mux
+from aggregate_gnn import GridScenario, SimulationEngine, rep, nbr, mux
 from aggregate_gnn.dsl import field, DeviceContext
-from aggregate_gnn.utils import make_grid_graph
 
 
 def parse_args():
@@ -43,20 +42,23 @@ def neighbors_of(node, edge_index):
 
 def setup_data(args):
     """Build graph and global source."""
-    edge_index, N = make_grid_graph(args.rows, args.cols, connectivity=4)
-    source_global = torch.zeros(N)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4)
+    source_global = torch.zeros(scenario.num_nodes)
     source_global[0] = 1.0  # Node 0 is always the source
-    return edge_index, N, source_global
+    return scenario, source_global
 
 
-def run_global(edge_index, N, source_global, w, T):
+def run_global(scenario, source_global, w, T):
     """Run globally across all nodes."""
-    ctx = AggregateContext(edge_index, N)
+    engine = SimulationEngine.from_scenario(scenario)
     global_states: list[torch.Tensor] = []
-    
+
+    def program(_runtime):
+        return gradient(source_global, w)
+
+    runtime = engine.init_runtime(signals={"source": source_global})
     for _ in range(T):
-        with ctx.round():
-            d = gradient(source_global, w)
+        d = engine.step(runtime=runtime, program=program)
         global_states.append(d.detach().clone())
         
     return d, global_states
@@ -99,19 +101,19 @@ def run_local(args, edge_index, source_global, global_states, w, T):
 def main():
     args = parse_args()
     
-    edge_index, N, source_global = setup_data(args)
+    scenario, source_global = setup_data(args)
     T = args.rows + args.cols
     w = torch.tensor(1.0)
 
     # 1. Global execution
     print(f"=== Global execution ({args.rows}x{args.cols} grid) ===")
-    d, global_states = run_global(edge_index, N, source_global, w, T)
+    d, global_states = run_global(scenario, source_global, w, T)
 
     print("Distance field:")
     print(d.detach().view(args.rows, args.cols).numpy())
 
     # 2. Local execution
-    device_id, final = run_local(args, edge_index, source_global, global_states, w, T)
+    device_id, final = run_local(args, scenario.edge_index, source_global, global_states, w, T)
 
     expected = args.device_row + args.device_col
     print(f"\nFinal: device {device_id} distance = {final:.1f}"

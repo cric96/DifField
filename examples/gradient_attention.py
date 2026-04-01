@@ -14,9 +14,9 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-from aggregate_gnn import AggregateContext, rep, mux, nbr
+from aggregate_gnn import GridScenario, SimulationEngine, rep, mux, nbr
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph, get_grid_distances
+from aggregate_gnn.utils import get_grid_distances
 
 
 # ── Constants ───────────────────────────────────────────────────────────
@@ -72,25 +72,24 @@ class AttentionMinAggr(nn.Module):
 # ── Model ───────────────────────────────────────────────────────────────
 
 class AttentionGradientModel(nn.Module):
-    def __init__(self, edge_index, num_nodes, T):
+    def __init__(self, scenario, T):
         super().__init__()
-        self.edge_index = edge_index
-        self.num_nodes = num_nodes
+        self.scenario = scenario
         self.T = T
         self.w = nn.Parameter(torch.tensor(1.5))
         self.attn_aggr = AttentionMinAggr(tau_init=1.0)
 
     def forward(self, source):
-        ctx = AggregateContext(self.edge_index, self.num_nodes)
+        engine = SimulationEngine.from_scenario(self.scenario)
         w = self.w
         attn = self.attn_aggr
 
-        for t in range(self.T):
-            with ctx.round():
-                d = rep("dist", float("inf"), lambda d:
-                    mux(source,
-                        field.of(0.0),
-                        nbr(d + w, aggr=attn)))
+        def program(_runtime):
+            return rep("dist", float("inf"), lambda d:
+                mux(source, field.of(0.0), nbr(d + w, aggr=attn))
+            )
+
+        d, _ = engine.run(rounds=self.T, program=program, signals={"source": source})
         return d
 
 
@@ -104,11 +103,11 @@ def parse_args():
 
 
 def setup_data(args):
-    edge_index, num_nodes = make_grid_graph(args.rows, args.cols, connectivity=4)
-    source = torch.zeros(num_nodes)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4)
+    source = torch.zeros(scenario.num_nodes)
     source[0] = 1.0
     target = get_grid_distances(args.rows, args.cols, src_r=0, src_c=0, connectivity=4)
-    return edge_index, num_nodes, source, target
+    return scenario, source, target
 
 
 def train_model(args, model, source, target):
@@ -150,10 +149,10 @@ def train_model(args, model, source, target):
 
 def main():
     args = parse_args()
-    edge_index, num_nodes, source, target = setup_data(args)
+    scenario, source, target = setup_data(args)
     T = args.rows + args.cols
     
-    model = AttentionGradientModel(edge_index, num_nodes, T)
+    model = AttentionGradientModel(scenario, T)
     train_model(args, model, source, target)
 
     with torch.no_grad():

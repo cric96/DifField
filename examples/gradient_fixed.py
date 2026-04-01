@@ -21,9 +21,9 @@ except ImportError:
 
 sys.path.insert(0, "src")
 
-from aggregate_gnn import AggregateContext, rep, nbr, mux
+from aggregate_gnn import GridScenario, SimulationEngine, rep, nbr, mux
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph, get_grid_distances
+from aggregate_gnn.utils import get_grid_distances
 
 
 def parse_args():
@@ -37,30 +37,28 @@ def parse_args():
 
 def setup_data(args):
     """Build grid and expected Manhattan distances."""
-    edge_index, num_nodes = make_grid_graph(args.rows, args.cols, connectivity=4)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4)
 
     # Source = top-left corner (node 0)
-    source = torch.zeros(num_nodes, dtype=torch.float32)
+    source = torch.zeros(scenario.num_nodes, dtype=torch.float32)
     source[0] = 1.0
 
     expected = get_grid_distances(args.rows, args.cols, src_r=0, src_c=0, connectivity=4)
 
-    return edge_index, num_nodes, source, expected
+    return scenario, source, expected
 
 
-def run_gradient(edge_index, num_nodes, source, w_val, rounds):
+def run_gradient(scenario, source, w_val, rounds):
     """Run the gradient program with a fixed weight."""
     w = torch.tensor(w_val, requires_grad=True)
-    ctx = AggregateContext(edge_index, num_nodes)
+    engine = SimulationEngine.from_scenario(scenario)
 
-    for _ in range(rounds):
-        with ctx.round():
-            d = rep("dist", float("inf"), lambda d: 
-                mux(source,
-                    field.of(0.0),
-                    nbr(d + w, aggr="min"),
-                )
-            )
+    def program(_runtime):
+        return rep("dist", float("inf"), lambda d:
+            mux(source, field.of(0.0), nbr(d + w, aggr="min"))
+        )
+
+    d, _ = engine.run(rounds=rounds, program=program, signals={"source": source})
             
     return d, w
 
@@ -90,8 +88,8 @@ def main():
     # Auto-calculate rounds if not provided
     T = args.rounds if args.rounds > 0 else (args.rows + args.cols)
     
-    edge_index, num_nodes, source, expected = setup_data(args)
-    d, w = run_gradient(edge_index, num_nodes, source, args.weight, T)
+    scenario, source, expected = setup_data(args)
+    d, w = run_gradient(scenario, source, args.weight, T)
 
     print(f"=== Gradient (fixed w={args.weight}) on {args.rows}×{args.cols} grid ===")
     print(f"Rounds: {T}")

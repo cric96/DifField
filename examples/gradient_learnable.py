@@ -13,9 +13,9 @@ sys.path.insert(0, "src")
 import torch
 import torch.nn as nn
 
-from aggregate_gnn import AggregateContext, rep, nbr, mux
+from aggregate_gnn import GridScenario, SimulationEngine, rep, nbr, mux
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph, get_grid_distances
+from aggregate_gnn.utils import get_grid_distances
 
 
 def parse_args():
@@ -31,39 +31,36 @@ def parse_args():
 class GradientModel(nn.Module):
     """Wraps the AC gradient program so that w is a learnable parameter."""
 
-    def __init__(self, edge_index: torch.Tensor, num_nodes: int, T: int, init_w: float = 3.0):
+    def __init__(self, scenario: GridScenario, T: int, init_w: float = 3.0):
         super().__init__()
-        self.edge_index = edge_index
-        self.num_nodes = num_nodes
+        self.scenario = scenario
         self.T = T
         # Learnable edge weight
         self.w = nn.Parameter(torch.tensor(init_w))
 
     def forward(self, source: torch.Tensor) -> torch.Tensor:
-        ctx = AggregateContext(self.edge_index, self.num_nodes)
+        engine = SimulationEngine.from_scenario(self.scenario)
         w = self.w
 
-        for t in range(self.T):
-            with ctx.round():
-                d = rep("dist", float("inf"), lambda d:
-                    mux(source,
-                        field.of(0.0),
-                        nbr(d + w, aggr="min"),
-                    )
-                )
+        def program(_runtime):
+            return rep("dist", float("inf"), lambda d:
+                mux(source, field.of(0.0), nbr(d + w, aggr="min"))
+            )
+
+        d, _ = engine.run(rounds=self.T, program=program, signals={"source": source})
         return d
 
 
 def setup_data(args):
     """Build grid and expected Manhattan distances."""
-    edge_index, num_nodes = make_grid_graph(args.rows, args.cols, connectivity=4)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4)
 
-    source = torch.zeros(num_nodes, dtype=torch.float32)
+    source = torch.zeros(scenario.num_nodes, dtype=torch.float32)
     source[0] = 1.0
 
     target = get_grid_distances(args.rows, args.cols, src_r=0, src_c=0, connectivity=4)
 
-    return edge_index, num_nodes, source, target
+    return scenario, source, target
 
 
 def train_model(args, model, source, target):
@@ -93,10 +90,10 @@ def train_model(args, model, source, target):
 def main():
     args = parse_args()
     
-    edge_index, num_nodes, source, target = setup_data(args)
+    scenario, source, target = setup_data(args)
     T = args.rows + args.cols
     
-    model = GradientModel(edge_index, num_nodes, T, init_w=args.initial_weight)
+    model = GradientModel(scenario, T, init_w=args.initial_weight)
     
     train_model(args, model, source, target)
 

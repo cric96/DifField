@@ -18,13 +18,10 @@ import sys, time, argparse
 sys.path.insert(0, "src")
 
 import torch
-import matplotlib.pyplot as plt
-import matplotlib.patches as mpatches
-import numpy as np
 
-from aggregate_gnn import AggregateContext, rep, nbr, mux, branch, broadcast
+from aggregate_gnn import GridScenario, SimulationEngine, SnapshotRecorder, rep, nbr, mux, branch, broadcast
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph
+from channel_viz import plot_channel_large_evolution, plot_channel_large_final, plot_channel_large_setup
 # ── Constants ──────────────────────────────────────────────────────────────
 
 CHANNEL_THRESHOLD = 0.5    # classify node as "on channel" when value > threshold
@@ -77,31 +74,6 @@ def channel_body(source, dest, tolerance):
     return (on_path & finite).float()
 
 
-# ── Visualisation helpers ───────────────────────────────────────────────
-
-def to_grid(tensor, rows, cols, obstacle_mask):
-    arr = tensor.detach().float().clone()
-    arr[obstacle_mask] = float("nan")
-    arr[arr == float("inf")] = float("nan")
-    return arr.view(rows, cols).numpy()
-
-
-# ── Snapshot helper ─────────────────────────────────────────────────────
-
-def _take_snapshot(ctx, snapshots, t, N, ch, obstacle):
-    ds = ctx._ctx.state._states.get(
-        "dist_src", torch.full((N,), float("inf"))).detach().clone()
-    dd = ctx._ctx.state._states.get(
-        "dist_dst", torch.full((N,), float("inf"))).detach().clone()
-    dsd = ctx._ctx.state._states.get(
-        "_bc_dist_channel", torch.full((N,), float("inf"))).detach().clone()
-    snapshots[t] = {
-        "dist_src": ds, "dist_dst": dd,
-        "sum": ds + dd, "dist_sd": dsd,
-        "channel": ch.detach().clone(),
-    }
-
-
 # ── Main ────────────────────────────────────────────────────────────────
 
 def main():
@@ -110,33 +82,42 @@ def main():
     T = args.rounds
     N = rows * cols
     print(f"Building {rows}×{cols} grid ({N} devices) …")
-    edge_index, N = make_grid_graph(args.rows, args.cols, connectivity=8)
+    scenario = GridScenario(args.rows, args.cols, connectivity=8)
+    N = scenario.num_nodes
     
     # Source: middle-left;  Destination: middle-right
     src_pos = (rows // 2, 5)
     dst_pos = (rows // 2, cols - 6)
-    source = torch.zeros(N); source[src_pos[0] * cols + src_pos[1]] = 1.0
-    dest   = torch.zeros(N); dest[dst_pos[0] * cols + dst_pos[1]]   = 1.0
+    source = scenario.marker(src_pos[0], src_pos[1])
+    dest = scenario.marker(dst_pos[0], dst_pos[1])
 
     obstacle = build_obstacles(rows, cols)
     print(f"Obstacle cells: {obstacle.sum().item()}")
 
     # ── Run ─────────────────────────────────────────────────────────────
-    ctx = AggregateContext(edge_index, N)
+    engine = SimulationEngine.from_scenario(scenario)
+    runtime = engine.init_runtime(signals={"source": source, "dest": dest, "obstacle": obstacle})
+    recorder = SnapshotRecorder(
+        state_fields=["dist_src", "dist_dst", "_bc_dist_channel"],
+        capture_output=True,
+        record_rounds=None,
+    )
     snapshot_at_seconds = [0.1, 0.3, 0.7, 1.5]
     snapshot_steps: list[int] = []
     snapshots: dict[int, dict[str, torch.Tensor]] = {}
     next_snap_idx = 0
 
     t0 = time.time()
+    def program(_runtime):
+        return branch(
+            ~obstacle,
+            lambda: channel_body(source, dest, args.tolerance),
+            lambda: field.of(0.0),
+            branch_name="obstacle",
+        )
+
     for t in range(T):
-        with ctx.round():
-            ch = branch(
-                ~obstacle,
-                lambda: channel_body(source, dest, args.tolerance),
-                lambda: field.of(0.0),
-                branch_name="obstacle",
-            )
+        ch = engine.step(runtime=runtime, program=program, recorder=recorder)
 
         elapsed_now = time.time() - t0
 
@@ -144,7 +125,6 @@ def main():
         if next_snap_idx < len(snapshot_at_seconds) and elapsed_now >= snapshot_at_seconds[next_snap_idx]:
             snapshot_steps.append(t)
             next_snap_idx += 1
-            _take_snapshot(ctx, snapshots, t, N, ch, obstacle)
 
         if (t + 1) % 100 == 0:
             print(f"  round {t + 1}/{T}  ({elapsed_now:.1f}s)")
@@ -152,7 +132,25 @@ def main():
     # Always include last round
     if T - 1 not in snapshot_steps:
         snapshot_steps.append(T - 1)
-        _take_snapshot(ctx, snapshots, T - 1, N, ch, obstacle)
+
+    # Keep a stable evolution layout even when execution is very fast.
+    if len(snapshot_steps) < 3:
+        fallback_steps = [max(0, T // 4), max(0, T // 2), T - 1]
+        snapshot_steps.extend(fallback_steps)
+
+    snapshot_steps = sorted(set(snapshot_steps))
+
+    for t, payload in recorder.records.items():
+        ds = payload.get("dist_src", torch.full((N,), float("inf")))
+        dd = payload.get("dist_dst", torch.full((N,), float("inf")))
+        dsd = payload.get("_bc_dist_channel", torch.full((N,), float("inf")))
+        snapshots[t] = {
+            "dist_src": ds,
+            "dist_dst": dd,
+            "sum": ds + dd,
+            "dist_sd": dsd,
+            "channel": payload["output"],
+        }
 
     elapsed = time.time() - t0
     final = snapshots[T - 1]
@@ -166,95 +164,9 @@ def main():
         t_sec = (s + 1) * sec_per_round
         snap_labels.append(f"t={s+1}  ({t_sec:.1f}s)")
 
-    obs_np = obstacle.numpy().reshape(rows, cols)
-
-    # ── Figure 1: Setup ─────────────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(18, 14))
-    grid_rgb = np.full((rows, cols, 3), 0.92)
-    grid_rgb[obs_np] = [0.12, 0.12, 0.12]
-    grid_rgb[src_pos] = [0.0, 0.8, 0.0]
-    grid_rgb[dst_pos] = [0.85, 0.0, 0.0]
-    ax.imshow(grid_rgb, interpolation="nearest", aspect="equal")
-    ax.plot(src_pos[1], src_pos[0], "g^", ms=14, mec="white", mew=1.5)
-    ax.plot(dst_pos[1], dst_pos[0], "rv", ms=14, mec="white", mew=1.5)
-    ax.set_title(f"Large-scale channel — {rows}×{cols} grid ({N} devices)", fontsize=14)
-    ax.set_xlabel("Column"); ax.set_ylabel("Row")
-    patches = [
-        mpatches.Patch(color="green", label=f"Source {src_pos}"),
-        mpatches.Patch(color="red",   label=f"Dest {dst_pos}"),
-        mpatches.Patch(color="black", label="Obstacles"),
-    ]
-    ax.legend(handles=patches, loc="upper right", fontsize=10, framealpha=0.9)
-    plt.tight_layout()
-    plt.savefig("examples/channel_large_setup.png", dpi=150)
-    print("Saved examples/channel_large_setup.png")
-
-    # ── Figure 2: Evolution (selected fields) ───────────────────────────
-    evo_keys   = ["dist_src", "dist_dst", "sum", "dist_sd", "channel"]
-    evo_labels = ["dist_src", "dist_dst", "sum (src+dst)", "broadcast", "channel"]
-    n_rows_fig = len(evo_keys)
-    n_cols_fig = len(snapshot_steps)
-
-    fig, axes = plt.subplots(n_rows_fig, n_cols_fig,
-                             figsize=(3.5 * n_cols_fig, 2.5 * n_rows_fig))
-
-    for ri, (fk, fl) in enumerate(zip(evo_keys, evo_labels)):
-        for ci, step in enumerate(snapshot_steps):
-            ax = axes[ri, ci]
-            gd = to_grid(snapshots[step][fk], rows, cols, obstacle)
-            if fk == "channel":
-                im = ax.imshow(gd, cmap="Oranges", vmin=0, vmax=1,
-                               interpolation="nearest", aspect="equal")
-            else:
-                im = ax.imshow(gd, cmap="viridis",
-                               interpolation="nearest", aspect="equal")
-            ax.set_title(snap_labels[ci], fontsize=8)
-            if ci == 0:
-                ax.set_ylabel(fl, fontsize=8)
-            ax.set_xticks([]); ax.set_yticks([])
-            if ci == n_cols_fig - 1:
-                plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
-
-    fig.suptitle(f"Large-scale channel — Evolution ({N} devices, {T} rounds, {elapsed:.1f}s)",
-                 fontsize=13, y=0.99)
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
-    plt.savefig("examples/channel_large_evolution.png", dpi=150)
-    print("Saved examples/channel_large_evolution.png")
-
-    # ── Figure 3: Final overlay ─────────────────────────────────────────
-    fig, ax = plt.subplots(figsize=(18, 14))
-    overlay = np.full((rows, cols, 4), [0.92, 0.92, 0.92, 1.0])
-    overlay[obs_np] = [0.12, 0.12, 0.12, 1.0]
-
-    channel_field = final["channel"]
-    for r in range(rows):
-        for c_idx in range(cols):
-            nid = r * cols + c_idx
-            if not obstacle[nid] and channel_field[nid] > CHANNEL_THRESHOLD:
-                overlay[r, c_idx] = [1.0, 0.50, 0.0, 0.95]
-
-    overlay[src_pos] = [0.0, 0.80, 0.0, 1.0]
-    overlay[dst_pos] = [0.85, 0.0, 0.0, 1.0]
-
-    ax.imshow(overlay, interpolation="nearest", aspect="equal")
-    ax.plot(src_pos[1], src_pos[0], "g^", ms=14, mec="white", mew=1.5)
-    ax.plot(dst_pos[1], dst_pos[0], "rv", ms=14, mec="white", mew=1.5)
-    ax.set_title(
-        f"Channel path — {N} devices, {T} rounds in {elapsed:.1f}s, "
-        f"distance = {sd_dist:.0f} hops, {n_ch} channel nodes",
-        fontsize=13,
-    )
-    ax.set_xlabel("Column"); ax.set_ylabel("Row")
-    patches = [
-        mpatches.Patch(color="green",  label=f"Source {src_pos}"),
-        mpatches.Patch(color="red",    label=f"Dest {dst_pos}"),
-        mpatches.Patch(color="black",  label="Obstacles"),
-        mpatches.Patch(color="orange", label="Channel"),
-    ]
-    ax.legend(handles=patches, loc="upper right", fontsize=10, framealpha=0.9)
-    plt.tight_layout()
-    plt.savefig("examples/channel_large_final.png", dpi=150)
-    print("Saved examples/channel_large_final.png")
+    plot_channel_large_setup(rows, cols, N, src_pos, dst_pos, obstacle)
+    plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snap_labels, N, T, elapsed, obstacle)
+    plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, CHANNEL_THRESHOLD, N, T, elapsed, sd_dist, n_ch)
 
     print("\nDone.")
 
