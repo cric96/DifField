@@ -1,0 +1,97 @@
+{
+  "run": {
+    "run_name": "boids_joint_seed11_20260401_182540",
+    "mode": "joint",
+    "seed": 11,
+    "epochs": 2,
+    "rounds": 8,
+    "num_nodes": 20
+  },
+  "configuration": {
+    "train_max_speed": true,
+    "init_damping_target": 0.94,
+    "init_max_speed_target": 0.03,
+    "init_connectivity": "hybrid",
+    "init_k_neighbors": 8,
+    "init_min_degree": 2
+  },
+  "training": {
+    "final_total": 0.017055906355381012,
+    "final_traj_loss": 0.0017138778930529952,
+    "final_reg_loss": 0.015342027880251408,
+    "final_center_error": 0.013890925794839859,
+    "best_traj_loss": 0.0017138778930529952,
+    "best_total": 0.017055906355381012,
+    "has_nan": false
+  },
+  "validation": {
+    "final_val_traj_loss": NaN,
+    "final_val_center_error": NaN
+  },
+  "parameters": {
+    "teacher": {
+      "w_sep": 1.4,
+      "w_align": 0.8,
+      "w_cohesion": 0.6,
+      "damping": 0.96,
+      "max_speed": 0.014
+    },
+    "learned": {
+      "w_sep": 1.4692820310592651,
+      "w_align": 1.0899609327316284,
+      "w_cohesion": 1.0501493215560913,
+      "damping": 0.9411170482635498,
+      "max_speed": 0.02972310222685337,
+      "tau_align": 0.9807272553443909,
+      "tau_cohesion": 0.980817437171936
+    },
+    "recovery": {
+      "w_sep": {
+        "teacher": 1.4,
+        "learned": 1.4692820310592651,
+        "abs_error": 0.06928203105926523,
+        "rel_error": 0.049487165042332304
+      },
+      "w_align": {
+        "teacher": 0.8,
+        "learned": 1.0899609327316284,
+        "abs_error": 0.2899609327316284,
+        "rel_error": 0.36245116591453547
+      },
+      "w_cohesion": {
+        "teacher": 0.6,
+        "learned": 1.0501493215560913,
+        "abs_error": 0.45014932155609133,
+        "rel_error": 0.7502488692601522
+      },
+      "damping": {
+        "teacher": 0.96,
+        "learned": 0.9411170482635498,
+        "abs_error": 0.01888295173645016,
+        "rel_error": 0.019669741392135585
+      },
+      "max_speed": {
+        "teacher": 0.014,
+        "learned": 0.02972310222685337,
+        "abs_error": 0.015723102226853372,
+        "rel_error": 1.1230787304895267
+      }
+    }
+  },
+  "diagnostics": {
+    "initial_graph": {
+      "num_edges": 140.0,
+      "min_degree": 7.0,
+      "num_components": 1.0
+    },
+    "rollout_graph": {
+      "mean_num_edges": 84.5,
+      "mean_min_degree": 0.0,
+      "max_num_components": 5.0
+    },
+    "rollout_speed": {
+      "mean_pre_clip_speed": 0.6325223855674267,
+      "mean_cap_fraction": 0.9874999970197678
+    }
+  }
+}

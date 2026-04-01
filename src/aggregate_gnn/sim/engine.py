@@ -76,6 +76,12 @@ class SimulationEngine:
         if schedule is not None:
             schedule.apply(round_idx, runtime)
 
+        # Allow scenarios to update topology/weights before this round executes.
+        if runtime.scenario is not None:
+            sync_fn = getattr(runtime.scenario, "sync_context", None)
+            if callable(sync_fn):
+                sync_fn(self.ctx._ctx)
+
         started_at = time.time()
         with self.ctx.round():
             output = program(runtime)

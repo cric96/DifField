@@ -8,6 +8,8 @@ dependencies = [
     "torch>=2.0",
     "numpy>=1.24",
     "matplotlib>=3.7",
+    "optuna>=3.6",
+    "scikit-learn>=1.8.0",
 ]
 
 [tool.pytest.ini_options]

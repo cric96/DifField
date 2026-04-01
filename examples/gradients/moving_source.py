@@ -1,22 +1,18 @@
 #!/usr/bin/env python3
-"""Gradient simulation with a moving source using scheduled events."""
+"""Gradient simulation with a moving source."""
 
-import sys
+from __future__ import annotations
+
 import argparse
+import sys
+from pathlib import Path
+
 import torch
 
-sys.path.insert(0, "src")
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
 
-from aggregate_gnn import (
-    EventSchedule,
-    GridScenario,
-    ScheduledEvent,
-    SimulationEngine,
-    SnapshotRecorder,
-    mux,
-    nbr,
-    rep,
-)
+from aggregate_gnn import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder, mux, nbr, rep
 from aggregate_gnn.dsl import field
 
 
@@ -35,7 +31,7 @@ def make_source(scenario: GridScenario, row: int, col: int) -> torch.Tensor:
 
 def move_source_event(row: int, col: int):
     def _event(runtime):
-        scenario: GridScenario = runtime.scenario
+        scenario = runtime.scenario
         runtime.signals["source"] = make_source(scenario, row, col)
         runtime.metadata["source_pos"] = (row, col)
 
@@ -48,21 +44,24 @@ def main():
     engine = SimulationEngine.from_scenario(scenario)
 
     source = make_source(scenario, 0, 0)
-    schedule = EventSchedule([
-        ScheduledEvent(round_idx=args.rounds // 3, callback=move_source_event(args.rows // 2, args.cols // 2), name="move_to_center"),
-        ScheduledEvent(round_idx=(2 * args.rounds) // 3, callback=move_source_event(args.rows - 1, args.cols - 1), name="move_to_bottom_right"),
-    ])
+    schedule = EventSchedule(
+        [
+            ScheduledEvent(round_idx=args.rounds // 3, callback=move_source_event(args.rows // 2, args.cols // 2), name="move_to_center"),
+            ScheduledEvent(
+                round_idx=(2 * args.rounds) // 3,
+                callback=move_source_event(args.rows - 1, args.cols - 1),
+                name="move_to_bottom_right",
+            ),
+        ]
+    )
 
     record_steps = {0, args.rounds // 3, (2 * args.rounds) // 3, args.rounds - 1}
     recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds=record_steps)
-
-    w = torch.tensor(args.hop)
+    weight = torch.tensor(args.hop)
 
     def program(runtime):
         source_field = runtime.signals["source"]
-        return rep("dist", float("inf"), lambda d:
-            mux(source_field, field.of(0.0), nbr(d + w, aggr="min"))
-        )
+        return rep("dist", float("inf"), lambda dist_old: mux(source_field, field.of(0.0), nbr(dist_old + weight, aggr="min")))
 
     output, runtime = engine.run(
         rounds=args.rounds,
@@ -77,10 +76,10 @@ def main():
     print(f"Grid: {args.rows}x{args.cols}  rounds: {args.rounds}")
     print(f"Final source position: {runtime.metadata['source_pos']}")
     print("Recorded snapshots:")
-    for t in sorted(recorder.records.keys()):
+    for round_idx in sorted(recorder.records.keys()):
         center_idx = scenario.pos_to_idx(args.rows // 2, args.cols // 2)
-        center_dist = recorder.records[t]["output"][center_idx].item()
-        print(f"  round {t + 1:3d}: center distance={center_dist:.2f}")
+        center_dist = recorder.records[round_idx]["output"][center_idx].item()
+        print(f"  round {round_idx + 1:3d}: center distance={center_dist:.2f}")
 
     print("Final distance field:")
     print(output.view(args.rows, args.cols).detach().cpu().numpy())

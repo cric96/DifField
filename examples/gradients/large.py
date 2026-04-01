@@ -1,99 +1,99 @@
 #!/usr/bin/env python3
-"""Large-scale gradient example — 500x500 grid (250,000 nodes).
+"""Large-scale gradient example."""
 
-Demonstrates the performance and scalability of the Aggregate GNN DSL
-on a larger network than typical small examples.
-"""
+from __future__ import annotations
 
+import argparse
 import sys
 import time
-import argparse
+from pathlib import Path
+
 import torch
+
 try:
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
 
-sys.path.insert(0, "src")
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
 
-from aggregate_gnn import GridScenario, SimulationEngine, SnapshotRecorder, rep, nbr, mux
+from aggregate_gnn import SnapshotRecorder
+
+try:
+    from .common import auto_rounds, run_gradient_program
+except ImportError:
+    from common import auto_rounds, run_gradient_program
+
+from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep
 from aggregate_gnn.dsl import field
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Large-scale Gradient")
     parser.add_argument("--rows", type=int, default=500, help="Grid rows")
-    parser.add_argument("--cols", type=int, default=500, help="Grid columns")
+    parser.add_argument("--cols", type=int, default=500, help="Grid cols")
     parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
-def setup_data(args, device):
-    """Build large grid and source at center."""
+def build_large_data(args, device: torch.device):
     scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
-
-    # Source: center of the grid
     source = torch.zeros(scenario.num_nodes, dtype=torch.float32, device=device)
     center_r = args.rows // 2
     center_c = args.cols // 2
     center_idx = center_r * args.cols + center_c
     source[center_idx] = 1.0
-
     return scenario, source, center_r, center_c
 
 
-def run_gradient(args, scenario, source, device):
+def run_large_gradient(args, scenario, source, device: torch.device):
     engine = SimulationEngine.from_scenario(scenario)
-    T = args.rounds if args.rounds > 0 else (args.rows + args.cols)
-    w = torch.tensor(1.0, device=device, requires_grad=True)
+    rounds = auto_rounds(args.rows, args.cols, args.rounds)
+    weight = torch.tensor(1.0, device=device, requires_grad=True)
 
-    print(f"Running {T} rounds of aggregate computation...")
+    print(f"Running {rounds} rounds of aggregate computation...")
     start_time = time.time()
-    
-    record_at = [max(1, T//10), max(1, T//2), T]
+
+    record_at = [max(1, rounds // 10), max(1, rounds // 2), rounds]
     recorder = SnapshotRecorder(
         state_fields=[],
         capture_output=True,
-        record_rounds={t - 1 for t in record_at},
+        record_rounds={step - 1 for step in record_at},
     )
 
     def program(_runtime):
-        return rep("dist", float("inf"), lambda d_old:
-            mux(source, field.of(0.0), nbr(d_old + w, aggr="min"))
-        )
+        return rep("dist", float("inf"), lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr="min")))
 
-    d, _ = engine.run(
-        rounds=T,
-        program=program,
-        signals={"source": source},
-        recorder=recorder,
-    )
+    output, _ = engine.run(rounds=rounds, program=program, signals={"source": source}, recorder=recorder)
 
     snapshots = {
         round_idx + 1: payload["output"].detach().cpu().view(args.rows, args.cols).clone()
         for round_idx, payload in recorder.records.items()
     }
-            
+
     if device.type == "cuda":
         torch.cuda.synchronize()
-        
+
     compute_time = time.time() - start_time
-    print(f"Computation finished in {compute_time:.4f}s ({compute_time/T:.6f}s per round)")
+    print(f"Computation finished in {compute_time:.4f}s ({compute_time / rounds:.6f}s per round)")
+    return output, weight, snapshots, compute_time, rounds
 
-    return d, w, snapshots, compute_time
 
-
-def plot_results(args, dist, snapshots):
+def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -> None:
     if plt is None:
         return
-        
+
     fig, axes = plt.subplots(1, len(snapshots), figsize=(20, 4))
-    for i, (round_t, snapshot) in enumerate(sorted(snapshots.items())):
-        im = axes[i].imshow(snapshot.numpy(), cmap="magma")
-        axes[i].set_title(f"Round {round_t}")
-        axes[i].axis("off")
-    
+    if len(snapshots) == 1:
+        axes = [axes]
+    for index, (round_idx, snapshot) in enumerate(sorted(snapshots.items())):
+        im = axes[index].imshow(snapshot.numpy(), cmap="magma")
+        axes[index].set_title(f"Round {round_idx}")
+        axes[index].axis("off")
+        fig.colorbar(im, ax=axes[index], fraction=0.046, pad=0.04)
+
     plt.tight_layout()
     plt.savefig("examples/gradient_large_evolution.png")
     print("Evolution visualization saved to examples/gradient_large_evolution.png")
@@ -108,41 +108,36 @@ def plot_results(args, dist, snapshots):
 
 def main():
     args = parse_args()
-    
-    if args.device:
-        device = torch.device(args.device)
-    else:
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        
-    print(f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows*args.cols} nodes) ===")
+    device = torch.device(args.device) if args.device else torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    print(f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows * args.cols} nodes) ===")
     print(f"Device: {device}")
 
     print("Building graph...")
     start_time = time.time()
-    scenario, source, center_r, center_c = setup_data(args, device)
+    scenario, source, center_r, center_c = build_large_data(args, device)
     graph_time = time.time() - start_time
     print(f"Graph built in {graph_time:.4f}s (Edges: {scenario.edge_index.shape[1]})")
 
-    d, w, snapshots, _ = run_gradient(args, scenario, source, device)
+    output, weight, snapshots, _, rounds = run_large_gradient(args, scenario, source, device)
 
-    # Validate a few points
-    dist = d.detach().cpu().view(args.rows, args.cols)
+    dist = output.detach().cpu().view(args.rows, args.cols)
     center_val = dist[center_r, center_c].item()
     print(f"Distance at center: {center_val:.1f} (expected 0.0)")
-    
+
     corner_val = dist[0, 0].item()
     expected_corner = center_r + center_c
     print(f"Distance at corner (0,0): {corner_val:.1f} (expected {expected_corner}.0)")
 
     print("Computing gradient w.r.t. weight w...")
     start_time = time.time()
-    loss = d.sum()
+    loss = output.sum()
     loss.backward()
     backward_time = time.time() - start_time
     print(f"Backward pass in {backward_time:.4f}s")
-    print(f"d(loss)/dw = {w.grad.item():.1f}")
+    print(f"d(loss)/dw = {weight.grad.item():.1f}")
 
-    plot_results(args, dist, snapshots)
+    plot_results(dist, snapshots, args)
 
 
 if __name__ == "__main__":
