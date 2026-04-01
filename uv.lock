@@ -13,6 +13,7 @@ dependencies = [
     { name = "scikit-learn" },
     { name = "torch" },
     { name = "torch-geometric" },
+    { name = "torch-scatter", marker = "python_full_version < '3.13' and platform_machine == 'x86_64' and sys_platform == 'linux'" },
 ]
 
 [package.dev-dependencies]
@@ -28,6 +29,7 @@ requires-dist = [
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "torch", specifier = ">=2.0" },
     { name = "torch-geometric", specifier = ">=2.6" },
+    { name = "torch-scatter", marker = "python_full_version == '3.12.*' and platform_machine == 'x86_64' and sys_platform == 'linux'", url = "https://data.pyg.org/whl/torch-2.10.0+cu128/torch_scatter-2.1.2+pt210cu128-cp312-cp312-linux_x86_64.whl" },
 ]
 
 [package.metadata.requires-dev]
@@ -1714,6 +1716,21 @@ sdist = { url = "https://files.pythonhosted.org/packages/75/63/b210152635902da7f
 wheels = [
     { url = "https://files.pythonhosted.org/packages/1e/d3/4dffd7300500465e0b4a2ae917dcb2ce771de0b9a772670365799a27c024/torch_geometric-2.7.0-py3-none-any.whl", hash = "sha256:6e0cd3ad824d484651ef5d308fc66c687bfcf5ba040d56d1e0fe0f81f365e292", size = 1275346 },
 ]
+
+[[package]]
+name = "torch-scatter"
+version = "2.1.2+pt210cu128"
+source = { url = "https://data.pyg.org/whl/torch-2.10.0+cu128/torch_scatter-2.1.2+pt210cu128-cp312-cp312-linux_x86_64.whl" }
+wheels = [
+    { url = "https://data.pyg.org/whl/torch-2.10.0+cu128/torch_scatter-2.1.2+pt210cu128-cp312-cp312-linux_x86_64.whl", hash = "sha256:5863dc0ee3a76ffb88278ff901eae4fd2c208a12b52044095096623a8d1fe40b" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pytest", marker = "extra == 'test'" },
+    { name = "pytest-cov", marker = "extra == 'test'" },
+]
+provides-extras = ["test"]
 
 [[package]]
 name = "tqdm"

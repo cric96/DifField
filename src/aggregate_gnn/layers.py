@@ -142,8 +142,18 @@ class _PyGNbrMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper that preserves AC aggregation semantics."""
 
     def __init__(self, owner: "NbrLayer") -> None:
-        super().__init__(aggr=None, flow="source_to_target", node_dim=0)
+        use_builtin_aggr = (
+            isinstance(owner.aggr, str)
+            and owner.mode == "hard"
+            and owner.aggr in {"sum", "mean"}
+        )
+        super().__init__(
+            aggr=owner.aggr if use_builtin_aggr else None,
+            flow="source_to_target",
+            node_dim=0,
+        )
         self.owner = owner
+        self._use_builtin_aggr = use_builtin_aggr
 
     def forward(
         self,
@@ -175,6 +185,8 @@ class _PyGNbrMessagePassing(MessagePassing):
         ptr: Tensor | None = None,
         dim_size: int | None = None,
     ) -> Tensor:
+        if self._use_builtin_aggr:
+            return super().aggregate(inputs, index, ptr=ptr, dim_size=dim_size)
         if dim_size is None:
             raise ValueError("PyG propagate did not provide dim_size for aggregation")
         return scatter_aggr(

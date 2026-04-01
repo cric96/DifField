@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+from torch_geometric.utils import scatter as pyg_scatter
+from torch_geometric.utils import softmax as pyg_softmax
 
 from aggregate_gnn import SpatialScenario, mux, nbr, rep
 from aggregate_gnn.dsl import AggregateContext, field
@@ -16,7 +18,6 @@ except ImportError:
 MAX_DIST = 100.0
 LEAKY_RELU_SLOPE = 0.2
 MASKED_LOGIT = -1e9
-ATTENTION_DENOM_EPS = 1e-8
 
 
 class GradientModel(nn.Module):
@@ -51,18 +52,10 @@ class AttentionMinAggr(nn.Module):
         neg_score = -score / tau
         neg_score = torch.where(finite, neg_score, torch.full_like(neg_score, MASKED_LOGIT))
 
-        max_s = neg_score.new_full((num_nodes,), MASKED_LOGIT)
-        max_s.scatter_reduce_(0, index, neg_score, reduce="amax", include_self=True)
-        exp_s = (neg_score - max_s[index]).exp()
-        sum_exp = neg_score.new_zeros(num_nodes)
-        sum_exp.scatter_add_(0, index, exp_s)
-        alpha = exp_s / sum_exp[index].clamp(min=ATTENTION_DENOM_EPS)
+        alpha = pyg_softmax(neg_score, index=index, num_nodes=num_nodes)
+        out = pyg_scatter(alpha * safe_msg, index=index, dim=0, dim_size=num_nodes, reduce="sum")
 
-        out = safe_msg.new_zeros(num_nodes)
-        out.scatter_add_(0, index, alpha * safe_msg)
-
-        has_finite = safe_msg.new_zeros(num_nodes)
-        has_finite.scatter_add_(0, index, finite.float())
+        has_finite = pyg_scatter(finite.float(), index=index, dim=0, dim_size=num_nodes, reduce="sum")
         return torch.where(has_finite > 0, out, torch.tensor(float("inf")))
 
 

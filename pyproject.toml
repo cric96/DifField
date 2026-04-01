@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "torch>=2.0",
     "torch-geometric>=2.6",
+    "torch-scatter @ https://data.pyg.org/whl/torch-2.10.0+cu128/torch_scatter-2.1.2+pt210cu128-cp312-cp312-linux_x86_64.whl ; platform_system == 'Linux' and platform_machine == 'x86_64' and python_version == '3.12'",
     "numpy>=1.24",
     "matplotlib>=3.7",
     "optuna>=3.6",

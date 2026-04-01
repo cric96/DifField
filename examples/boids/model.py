@@ -6,6 +6,9 @@ from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
+from torch_geometric.utils import degree as pyg_degree
+from torch_geometric.utils import scatter as pyg_scatter
+from torch_geometric.utils import softmax as pyg_softmax
 
 from aggregate_gnn import (
     SpatialScenario,
@@ -49,14 +52,16 @@ def _edge_connectivity_stats(edge_index: torch.Tensor, num_nodes: int) -> tuple[
     if edge_index.numel() == 0:
         return 0.0, 0.0, float(num_nodes)
 
-    src = edge_index[0].tolist()
-    tgt = edge_index[1].tolist()
+    src = edge_index[0]
+    tgt = edge_index[1]
+    min_degree = float(pyg_degree(src, num_nodes=num_nodes).min().item())
+
+    src_list = src.tolist()
+    tgt_list = tgt.tolist()
     neighbors = [set() for _ in range(num_nodes)]
-    for src_node, tgt_node in zip(src, tgt):
+    for src_node, tgt_node in zip(src_list, tgt_list):
         neighbors[src_node].add(tgt_node)
         neighbors[tgt_node].add(src_node)
-
-    min_degree = float(min(len(items) for items in neighbors)) if neighbors else 0.0
     visited = [False] * num_nodes
     components = 0
     for node in range(num_nodes):
@@ -85,23 +90,14 @@ class EdgeAttentionAggr(nn.Module):
     def tau(self) -> torch.Tensor:
         return self.log_tau.exp()
 
-    def _edge_softmax(self, logits: torch.Tensor, index: torch.Tensor, num_nodes: int) -> torch.Tensor:
-        max_per_node = logits.new_full((num_nodes,), -1e9)
-        max_per_node.scatter_reduce_(0, index, logits, reduce="amax", include_self=True)
-        exp_shifted = (logits - max_per_node[index]).exp()
-        denom = logits.new_zeros(num_nodes)
-        denom.scatter_add_(0, index, exp_shifted)
-        return exp_shifted / denom[index].clamp(min=1e-8)
-
     def forward(self, msg: torch.Tensor, index: torch.Tensor, num_nodes: int) -> torch.Tensor:
         if msg.dim() == 1:
             msg = msg.unsqueeze(-1)
         mag = msg.norm(dim=1, keepdim=True)
         edge_feat = torch.cat([msg, mag], dim=1)
         logits = self.net(edge_feat).squeeze(-1) / self.tau.clamp(min=1e-3)
-        alpha = self._edge_softmax(logits, index, num_nodes).unsqueeze(-1)
-        out = msg.new_zeros((num_nodes, msg.shape[1]))
-        out.scatter_add_(0, index.unsqueeze(-1).expand_as(msg), alpha * msg)
+        alpha = pyg_softmax(logits, index=index, num_nodes=num_nodes).unsqueeze(-1)
+        out = pyg_scatter(alpha * msg, index=index, dim=0, dim_size=num_nodes, reduce="sum")
         if self.feature_dim == 1:
             return out.squeeze(-1)
         return out

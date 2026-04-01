@@ -68,9 +68,15 @@ class StateManager:
 
     def __init__(self, num_nodes: int, device: torch.device | str = "cpu") -> None:
         self.num_nodes = num_nodes
-        self.device = device
+        self.device = torch.device(device)
         self._states: dict[str, Tensor] = {}
         self._branch_prev: dict[str, Tensor] = {}
+
+    def _infer_device(self) -> torch.device:
+        if self._states:
+            first_state = next(iter(self._states.values()))
+            return first_state.device
+        return self.device
 
     # ---- rep state ----
 
@@ -79,10 +85,12 @@ class StateManager:
         if name not in self._states:
             if isinstance(init_val, Tensor):
                 assert init_val.shape[0] == self.num_nodes
-                self._states[name] = init_val.to(self.device).clone()
+                target_device = self._infer_device()
+                self._states[name] = init_val.clone().to(target_device)
             else:
+                target_device = self._infer_device()
                 self._states[name] = torch.full(
-                    (self.num_nodes,), init_val, dtype=torch.float32, device=self.device
+                    (self.num_nodes,), init_val, dtype=torch.float32, device=target_device
                 )
         return self._states[name]
 
@@ -110,7 +118,7 @@ class StateManager:
         if branch_name not in self._branch_prev:
             # First round: no switch
             self._branch_prev[branch_name] = cond_bool.clone()
-            return torch.zeros(self.num_nodes, dtype=torch.bool, device=self.device)
+            return torch.zeros(self.num_nodes, dtype=torch.bool, device=cond_bool.device)
 
         prev = self._branch_prev[branch_name]
         switched = prev != cond_bool

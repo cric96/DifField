@@ -31,14 +31,25 @@ def maybe_make_data(
     edge_index: Tensor,
     num_nodes: int,
     edge_weight: Tensor | None = None,
+    x: Tensor | None = None,
+    pos: Tensor | None = None,
+    batch: Tensor | None = None,
+    **attrs,
 ):
-    """Create a PyG ``Data`` object."""
+    """Create a PyG ``Data`` object with optional node-level metadata."""
     kwargs = {
         "edge_index": edge_index,
         "num_nodes": num_nodes,
     }
+    if x is not None:
+        kwargs["x"] = x
+    if pos is not None:
+        kwargs["pos"] = pos
+    if batch is not None:
+        kwargs["batch"] = batch
     if edge_weight is not None:
         kwargs["edge_attr"] = edge_weight
+    kwargs.update(attrs)
     return Data(**kwargs)
 
 
