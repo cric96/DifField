@@ -5,14 +5,56 @@ description = "Isomorphism between Aggregate Computing constructs and Graph Neur
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
-    "torch>=2.0",
     "torch-geometric>=2.6",
-    "torch-scatter @ https://data.pyg.org/whl/torch-2.10.0+cu128/torch_scatter-2.1.2+pt210cu128-cp312-cp312-linux_x86_64.whl ; platform_system == 'Linux' and platform_machine == 'x86_64' and python_version == '3.12'",
     "numpy>=1.24",
     "matplotlib>=3.7",
     "optuna>=3.6",
     "scikit-learn>=1.8.0",
 ]
+
+[project.optional-dependencies]
+cpu = [
+    "torch>=2.0",
+    "torchvision",
+    "torchaudio",
+]
+cuda = [
+    "torch>=2.0",
+    "torchvision",
+    "torchaudio",
+]
+
+[tool.uv]
+conflicts = [
+    [
+        { extra = "cpu" },
+        { extra = "cuda" },
+    ],
+]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchaudio = [
+    { index = "pytorch-cpu", extra = "cpu" },
+    { index = "pytorch-cu126", extra = "cuda", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -21,4 +63,3 @@ testpaths = ["tests"]
 dev = [
     "pytest>=9.0.2",
 ]
-

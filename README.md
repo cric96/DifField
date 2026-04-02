@@ -3,9 +3,13 @@
 Aggregate Computing (AC) and Message Passing Neural Networks (MPNN) equivalence experiments and reference implementations.
 
 ### Install
-
+If you have an nvdia gpu, then write
 ```bash
-uv sync
+uv sync --extras "cuda"
+```
+If you have a rocm (amd) gpu, then write
+```bash
+uv sync --extras "rocm"
 ```
 
 ### Run Tests
