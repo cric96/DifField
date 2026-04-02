@@ -15,6 +15,7 @@ import torch
 
 from aggregate_gnn import SpatialScenario, bounce_in_box, limit_speed, nbr, normalize_vectors, rep
 from aggregate_gnn.dsl import AggregateContext
+from aggregate_gnn.utils import get_device
 from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
 
 
@@ -43,6 +44,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links in visual outputs")
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
@@ -73,9 +75,10 @@ def aggregate_boids_velocity(
 
 def main() -> None:
     args = parse_args()
+    device = get_device(args.device)
     torch.manual_seed(args.seed)
-    positions = torch.rand(args.num_nodes, 2)
-    velocities0 = normalize_vectors(torch.rand(args.num_nodes, 2) * 2.0 - 1.0) * args.speed
+    positions = torch.rand(args.num_nodes, 2, device=device)
+    velocities0 = normalize_vectors(torch.rand(args.num_nodes, 2, device=device) * 2.0 - 1.0) * args.speed
 
     scenario = SpatialScenario(
         positions=positions,
@@ -84,6 +87,7 @@ def main() -> None:
         ensure_init_connected=args.init_connectivity == "hybrid",
         init_min_degree=args.init_min_degree,
         init_k_neighbors=args.init_k_neighbors,
+        device=device,
     )
     ctx = AggregateContext(scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight)
     positions_by_round: dict[int, torch.Tensor] = {}
@@ -115,9 +119,9 @@ def main() -> None:
         scenario.update_positions(new_pos, refresh_topology=True)
         ctx._ctx.state.update("vel", vel)
         if step in record_rounds:
-            positions_by_round[step] = scenario.positions.detach().clone()
-            edge_index_by_round[step] = scenario.edge_index.detach().clone()
-            values_by_round[step] = vel.norm(dim=1).detach().clone()
+            positions_by_round[step] = scenario.positions.detach().cpu().clone()
+            edge_index_by_round[step] = scenario.edge_index.detach().cpu().clone()
+            values_by_round[step] = vel.norm(dim=1).detach().cpu().clone()
 
     center = scenario.positions.mean(dim=0)
     spread = (scenario.positions - center).norm(dim=1).mean().item()

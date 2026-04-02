@@ -6,10 +6,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
+
+import torch
+from aggregate_gnn.utils import get_device
 
 try:
     from .core import channel_body
@@ -29,6 +31,11 @@ def parse_args():
     parser.add_argument("--noise-scale", type=float, default=0.01, help="Hop cost noise")
     parser.add_argument("--tolerance", type=float, default=0.5, help="Path tolerance")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument("--viz-prefix", type=str, default="examples/channel_small")
+    parser.add_argument("--gif-fps", type=int, default=10)
+    parser.add_argument("--no-viz", action="store_true", help="Disable visualization")
+    parser.add_argument("--no-gif", action="store_true", help="Disable GIF generation")
     return parser.parse_args()
 
 
@@ -42,7 +49,7 @@ def enforce_small_scale(args) -> None:
         args.rows = 15
         args.cols = 15
 
-def build_scenario(args):
+def build_spec(args):
     """Backward-compatibility shim; scenario creation now lives in SmallChannelWorkflow."""
     spec = SmallChannelSpec(
         grid=GridSpec(rows=args.rows, cols=args.cols),
@@ -50,19 +57,22 @@ def build_scenario(args):
         noise_scale=args.noise_scale,
         seed=args.seed,
     )
-    return SmallChannelWorkflow(spec)._build_scenario()
+    return spec
 
 
 def main():
     args = parse_args()
     enforce_small_scale(args)
-    spec = SmallChannelSpec(
-        grid=GridSpec(rows=args.rows, cols=args.cols),
-        program=ChannelProgramSpec(rounds=args.rounds, tolerance=args.tolerance),
-        noise_scale=args.noise_scale,
-        seed=args.seed,
+    spec = build_spec(args)
+    device = get_device(args.device)
+    workflow = SmallChannelWorkflow(spec)
+    workflow.run(
+        device=device,
+        gif=not args.no_gif,
+        viz=not args.no_viz,
+        viz_prefix=args.viz_prefix,
+        gif_fps=args.gif_fps,
     )
-    SmallChannelWorkflow(spec).run()
 
 
 if __name__ == "__main__":

@@ -7,13 +7,16 @@ import argparse
 import sys
 from pathlib import Path
 
-import torch
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "examples"))
+
+import torch
+from aggregate_gnn.utils import get_device
 
 from aggregate_gnn import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder, mux, nbr, rep
 from aggregate_gnn.dsl import field
+from shared.plotting import save_grid_simulation_gif
 
 
 def parse_args():
@@ -21,7 +24,13 @@ def parse_args():
     parser.add_argument("--rows", type=int, default=10, help="Grid rows")
     parser.add_argument("--cols", type=int, default=10, help="Grid cols")
     parser.add_argument("--rounds", type=int, default=40, help="Simulation rounds")
+    parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--hop", type=float, default=1.0, help="Hop cost")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_moving_source")
+    parser.add_argument("--gif-fps", type=int, default=10)
+    parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
+    parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
     return parser.parse_args()
 
 
@@ -40,7 +49,9 @@ def move_source_event(row: int, col: int):
 
 def main():
     args = parse_args()
-    scenario = GridScenario(args.rows, args.cols, connectivity=4)
+    torch.manual_seed(args.seed)
+    device = get_device(args.device)
+    scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
     engine = SimulationEngine.from_scenario(scenario)
 
     source = make_source(scenario, 0, 0)
@@ -56,8 +67,9 @@ def main():
     )
 
     record_steps = {0, args.rounds // 3, (2 * args.rounds) // 3, args.rounds - 1}
-    recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds=record_steps)
-    weight = torch.tensor(args.hop)
+    record_rounds = None if not args.no_gif else record_steps
+    recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds=record_rounds)
+    weight = torch.tensor(args.hop, device=device)
 
     def program(runtime):
         source_field = runtime.signals["source"]
@@ -71,6 +83,17 @@ def main():
         recorder=recorder,
         schedule=schedule,
     )
+
+    if not args.no_gif and not args.no_viz:
+        save_grid_simulation_gif(
+            recorder.records,
+            "dist",
+            args.rows,
+            args.cols,
+            f"{args.viz_prefix}_evolution.gif",
+            title="Moving Source Gradient Evolution",
+            fps=args.gif_fps,
+        )
 
     print("=== Moving Source Gradient ===")
     print(f"Grid: {args.rows}x{args.cols}  rounds: {args.rounds}")

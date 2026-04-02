@@ -20,7 +20,7 @@ def evaluate_seed(
     old_pos0 = model.positions0
     try:
         torch.manual_seed(seed)
-        eval_positions0 = torch.rand(simulation.num_nodes, 2)
+        eval_positions0 = torch.rand(simulation.num_nodes, 2, device=model.w_sep_raw.device)
         teacher_pos_seq, _ = teacher_rollout_from_specs(
             positions0=eval_positions0,
             simulation=simulation,

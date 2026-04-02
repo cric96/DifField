@@ -6,9 +6,12 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "examples"))
+
+import torch
+from aggregate_gnn.utils import get_device
 
 try:
     from .specs import MovingGradientSpec
@@ -29,6 +32,11 @@ def parse_args():
     parser.add_argument("--source", type=int, default=0)
     parser.add_argument("--target", type=int, default=10)
     parser.add_argument("--learn", choices=["motion", "ac", "both"], default="both")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_moving_learnable")
+    parser.add_argument("--gif-fps", type=int, default=10)
+    parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
+    parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
     return parser.parse_args()
 
 
@@ -48,9 +56,16 @@ def build_spec(args) -> MovingGradientSpec:
 
 def main():
     args = parse_args()
+    device = get_device(args.device)
     spec = build_spec(args)
     workflow = MovingGradientWorkflow(spec)
-    workflow.run()
+    workflow.run(
+        device=device,
+        gif=not args.no_gif,
+        viz=not args.no_viz,
+        viz_prefix=args.viz_prefix,
+        gif_fps=args.gif_fps,
+    )
 
 
 if __name__ == "__main__":

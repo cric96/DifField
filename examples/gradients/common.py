@@ -10,9 +10,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep
+from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep, SnapshotRecorder
 from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import get_grid_distances
+from aggregate_gnn.utils import get_grid_distances, get_device
 
 
 def auto_rounds(rows: int, cols: int, rounds: int) -> int:
@@ -50,6 +50,7 @@ def run_gradient_program(
     rounds: int,
     weight: torch.Tensor,
     aggr: str | torch.nn.Module = "min",
+    recorder: SnapshotRecorder | None = None,
 ) -> tuple[torch.Tensor, SimulationEngine]:
     engine = SimulationEngine.from_scenario(scenario)
 
@@ -60,5 +61,5 @@ def run_gradient_program(
             lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr=aggr)),
         )
 
-    output, _ = engine.run(rounds=rounds, program=program, signals={"source": source})
+    output, _ = engine.run(rounds=rounds, program=program, signals={"source": source}, recorder=recorder)
     return output, engine

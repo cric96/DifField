@@ -219,6 +219,7 @@ class LearnableAggregateBoids(nn.Module):
             ensure_init_connected=self.init_connectivity == "hybrid",
             init_min_degree=self.init_min_degree,
             init_k_neighbors=self.init_k_neighbors,
+            device=positions.device,
         )
         self.last_init_graph_stats = dict(scenario.init_graph_stats)
         ctx = AggregateContext(scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight)

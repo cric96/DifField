@@ -38,6 +38,67 @@ def to_grid(
     return arr.view(rows, cols).numpy()
 
 
+def save_gif(
+    render_frame_fn: Callable[[Axes, int], None],
+    frames: list[int],
+    output_path: str,
+    fps: int = 10,
+    figsize: tuple[float, float] = (5, 5),
+) -> None:
+    """Reusable utility for creating a GIF from a sequence of frames."""
+    if plt is None or FuncAnimation is None or PillowWriter is None:
+        print("matplotlib animation tools not available; skipping GIF generation")
+        return
+
+    fig, ax = plt.subplots(figsize=figsize)
+
+    def update(frame_idx):
+        ax.clear()
+        render_frame_fn(ax, frame_idx)
+
+    anim = FuncAnimation(fig, update, frames=frames)
+    writer = PillowWriter(fps=fps)
+    anim.save(output_path, writer=writer)
+    plt.close(fig)
+    print(f"Saved GIF to {output_path}")
+
+
+def save_grid_simulation_gif(
+    records: dict[int, dict[str, torch.Tensor]],
+    field_key: str,
+    rows: int,
+    cols: int,
+    output_path: str,
+    obstacle: Optional[torch.Tensor] = None,
+    src_pos: Optional[tuple[int, int]] = None,
+    dst_pos: Optional[tuple[int, int]] = None,
+    cmap: str = "viridis",
+    vmin: float = 0.0,
+    vmax: float = 45.0,
+    fps: int = 10,
+    figsize: tuple[float, float] = (5, 5),
+    title: Optional[str] = None,
+) -> None:
+    """Save a GIF of a specific field from a grid simulation's records."""
+    frames = sorted(records.keys())
+
+    def render_frame(ax, frame_idx):
+        grid = to_grid(records[frame_idx][field_key], rows, cols, obstacle)
+        im = ax.imshow(grid, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+        if obstacle is not None:
+            draw_obstacles(ax, obstacle, rows, cols)
+        if src_pos is not None:
+            draw_markers(ax, src_pos, dst_pos)
+        if title:
+            ax.set_title(f"{title} - Round {frame_idx + 1}")
+        else:
+            ax.set_title(f"Field: {field_key} - Round {frame_idx + 1}")
+        ax.set_xticks([])
+        ax.set_yticks([])
+
+    save_gif(render_frame, frames, output_path, fps=fps, figsize=figsize)
+
+
 def draw_obstacles(ax: Axes | None, obstacle_mask: torch.Tensor, rows: int, cols: int, color: str = "black") -> None:
     """Draw solid rectangles over obstacle cells in a grid plot."""
     if plt is None or ax is None:

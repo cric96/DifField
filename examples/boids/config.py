@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from shared.training import parse_int_csv
+import torch
+from aggregate_gnn.utils import get_device
 
 
 @dataclass(frozen=True)
@@ -16,6 +18,7 @@ class SimulationSpec:
     radius: float
     sep: float
     dt: float
+    device: torch.device
 
 
 @dataclass(frozen=True)
@@ -86,20 +89,27 @@ class LearnableBoidsSpec:
     visualization: VisualizationSpec
 
 
-def build_learnable_spec(args: Any, *, run_name: str, run_dir: Path, viz_prefix: str) -> LearnableBoidsSpec:
+def build_learnable_spec(
+    args: Any,
+    run_name: str,
+    run_dir: Path,
+    viz_prefix: str,
+) -> LearnableBoidsSpec:
     train_max_speed = not (args.mode == "weights" and not args.train_max_speed_in_weights)
     init_max_speed_target = args.teacher_max_speed if not train_max_speed else args.init_max_speed_target
+    sim_spec = SimulationSpec(
+        num_nodes=args.num_nodes,
+        rounds=args.rounds,
+        radius=args.radius,
+        sep=args.sep,
+        dt=args.dt,
+        device=get_device(args.device),
+    )
     return LearnableBoidsSpec(
         seed=args.seed,
         run_name=run_name,
         run_dir=run_dir,
-        simulation=SimulationSpec(
-            num_nodes=args.num_nodes,
-            rounds=args.rounds,
-            radius=args.radius,
-            sep=args.sep,
-            dt=args.dt,
-        ),
+        simulation=sim_spec,
         teacher=TeacherDynamics(
             w_sep=args.teacher_w_sep,
             w_align=args.teacher_w_align,

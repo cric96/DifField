@@ -56,7 +56,7 @@ class AttentionMinAggr(nn.Module):
         out = pyg_scatter(alpha * safe_msg, index=index, dim=0, dim_size=num_nodes, reduce="sum")
 
         has_finite = pyg_scatter(finite.float(), index=index, dim=0, dim_size=num_nodes, reduce="sum")
-        return torch.where(has_finite > 0, out, torch.tensor(float("inf")))
+        return torch.where(has_finite > 0, out, torch.tensor(float("inf"), device=msg.device))
 
 
 class AttentionGradientModel(nn.Module):
@@ -140,7 +140,7 @@ class LearnableMovingGradient(nn.Module):
     def forward(self, rounds: int) -> tuple[torch.Tensor, torch.Tensor]:
         positions = self.positions0.clone()
         velocities = torch.zeros_like(positions)
-        scenario = SpatialScenario(positions=positions, edge_radius=self.radius)
+        scenario = SpatialScenario(positions=positions, edge_radius=self.radius, device=positions.device)
         ctx = AggregateContext(scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight)
 
         source = torch.zeros(positions.shape[0], dtype=torch.float32, device=positions.device)

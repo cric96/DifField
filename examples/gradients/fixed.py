@@ -7,20 +7,26 @@ import argparse
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "examples"))
+
 import torch
+from aggregate_gnn.dsl import field
+from aggregate_gnn.utils import get_device
 
 try:
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
 
-ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT / "src"))
-
 try:
     from .common import auto_rounds, build_corner_source_grid, run_gradient_program
 except ImportError:
     from common import auto_rounds, build_corner_source_grid, run_gradient_program
+
+from aggregate_gnn import SnapshotRecorder
+from shared.plotting import save_grid_simulation_gif
 
 
 def parse_args():
@@ -28,60 +34,68 @@ def parse_args():
     parser.add_argument("--rows", type=int, default=5, help="Grid rows")
     parser.add_argument("--cols", type=int, default=5, help="Grid cols")
     parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
+    parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--weight", type=float, default=1.0, help="Fixed edge weight")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_fixed")
+    parser.add_argument("--gif-fps", type=int, default=10)
+    parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
+    parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
     return parser.parse_args()
 
 
-def plot_results(dist: torch.Tensor, expected: torch.Tensor) -> None:
+def plot_results(dist: torch.Tensor, expected: torch.Tensor, viz_prefix: str = "examples/gradient_fixed") -> None:
     if plt is None:
         return
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    im0 = axes[0].imshow(dist.numpy(), cmap="viridis")
+    im0 = axes[0].imshow(dist.detach().cpu().numpy(), cmap="viridis")
     axes[0].set_title("Computed (rep + mux + nbr)")
     plt.colorbar(im0, ax=axes[0])
 
-    im1 = axes[1].imshow(expected.numpy(), cmap="viridis")
+    im1 = axes[1].imshow(expected.detach().cpu().numpy(), cmap="viridis")
     axes[1].set_title("Expected (Manhattan)")
     plt.colorbar(im1, ax=axes[1])
 
     plt.tight_layout()
-    plt.savefig("examples/gradient_fixed.png", dpi=150)
-    print("Saved figure to examples/gradient_fixed.png")
+    output_path = f"{viz_prefix}.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved figure to {output_path}")
 
 
 def main():
     args = parse_args()
+    torch.manual_seed(args.seed)
+    device = get_device(args.device)
+    scenario, source, expected = build_corner_source_grid(args.rows, args.cols, device=device)
     rounds = auto_rounds(args.rows, args.cols, args.rounds)
-    scenario, source, expected = build_corner_source_grid(args.rows, args.cols, connectivity=4)
 
-    weight = torch.tensor(args.weight, requires_grad=True)
-    output, _ = run_gradient_program(scenario, source, rounds=rounds, weight=weight)
+    recorder = None
+    if not args.no_gif:
+        recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True)
 
-    print(f"=== Gradient (fixed w={args.weight}) on {args.rows}x{args.cols} grid ===")
-    print(f"Rounds: {rounds}")
-    print()
+    dist, _ = run_gradient_program(
+        scenario,
+        source,
+        rounds=rounds,
+        weight=torch.tensor(args.weight, device=device),
+        recorder=recorder,
+    )
 
-    dist = output.detach().view(args.rows, args.cols)
-    expected_2d = expected.view(args.rows, args.cols)
+    if not args.no_gif and not args.no_viz and recorder:
+        save_grid_simulation_gif(
+            recorder.records,
+            "dist",
+            args.rows,
+            args.cols,
+            f"{args.viz_prefix}_evolution.gif",
+            title="Fixed Gradient Evolution",
+            fps=args.gif_fps,
+        )
 
-    print("Distance field:")
-    print(dist.numpy())
-    print()
-    print("Expected (Manhattan):")
-    print(expected_2d.numpy())
-    print()
-
-    max_err = (dist - expected_2d).abs().max().item()
-    print(f"Max error: {max_err}")
-
-    loss = output.sum()
-    loss.backward()
-    print(f"d(loss)/dw = {weight.grad}")
-    print(f"(expected: sum of all distances = {expected.sum().item()})")
-    print()
-
-    plot_results(dist, expected_2d)
+    print(f"Final distance (0,0)->({args.rows-1},{args.cols-1}): {dist[scenario.num_nodes-1].item():.2f}")
+    if not args.no_viz:
+        plot_results(dist.view(args.rows, args.cols), expected.view(args.rows, args.cols), viz_prefix=args.viz_prefix)
 
 
 if __name__ == "__main__":

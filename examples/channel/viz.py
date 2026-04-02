@@ -11,18 +11,19 @@ except ImportError:
     mpatches = None
     plt = None
 
-from shared.plotting import draw_markers, draw_obstacles, to_grid
+from shared.plotting import draw_markers, draw_obstacles, to_grid, save_grid_simulation_gif
 
 
-def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle):
+def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="examples/channel"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel setup plot")
         return
     fig, ax = plt.subplots(figsize=(7, 7))
     grid_rgb = np.full((rows, cols, 3), 0.92)
+    obstacle_cpu = obstacle.detach().cpu().numpy()
     for row in range(rows):
         for col in range(cols):
-            if obstacle[row * cols + col]:
+            if obstacle_cpu[row * cols + col]:
                 grid_rgb[row, col] = [0.15, 0.15, 0.15]
     grid_rgb[src_pos] = [0.0, 0.75, 0.0]
     grid_rgb[dst_pos] = [0.85, 0.0, 0.0]
@@ -44,11 +45,33 @@ def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle):
         fontsize=9,
     )
     plt.tight_layout()
-    plt.savefig("examples/channel_setup.png", dpi=150)
-    print("Saved examples/channel_setup.png")
+    output_path = f"{viz_prefix}_setup.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle):
+def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_path="examples/channel_evolution.gif", fps=10):
+    if plt is None:
+        print("matplotlib not available; skipping channel GIF")
+        return
+    save_grid_simulation_gif(
+        snapshots,
+        "channel",
+        rows,
+        cols,
+        output_path,
+        obstacle=obstacle,
+        src_pos=src_pos,
+        dst_pos=dst_pos,
+        cmap="Oranges",
+        vmin=0.0,
+        vmax=1.0,
+        title="Channel Evolution",
+        fps=fps,
+    )
+
+
+def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, viz_prefix="examples/channel"):
     if plt is None:
         print("matplotlib not available; skipping channel evolution plot")
         return
@@ -82,11 +105,12 @@ def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle):
                 plt.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
     fig.suptitle("Channel with Obstacles - Field Evolution", fontsize=13, y=0.99)
     plt.tight_layout(rect=[0, 0, 1, 0.97])
-    plt.savefig("examples/channel_evolution.png", dpi=150)
-    print("Saved examples/channel_evolution.png")
+    output_path = f"{viz_prefix}_evolution.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rounds):
+def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rounds, viz_prefix="examples/channel"):
     if plt is None:
         print("matplotlib not available; skipping channel final fields plot")
         return
@@ -123,21 +147,23 @@ def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rou
     axes_flat[-1].set_visible(False)
     fig.suptitle(f"Channel with Obstacles - Converged (t = {rounds})", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
-    plt.savefig("examples/channel_final.png", dpi=150)
-    print("Saved examples/channel_final.png")
+    output_path = f"{viz_prefix}_final.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist):
+def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist, viz_prefix="examples/channel"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel overlay plot")
         return
     fig, ax = plt.subplots(figsize=(8, 8))
     overlay = np.full((rows, cols, 4), [0.92, 0.92, 0.92, 1.0])
-    channel = final["channel"]
+    channel = final["channel"].detach().cpu().numpy()
+    obstacle_cpu = obstacle.detach().cpu().numpy()
     for row in range(rows):
         for col in range(cols):
             node_id = row * cols + col
-            if obstacle[node_id]:
+            if obstacle_cpu[node_id]:
                 overlay[row, col] = [0.15, 0.15, 0.15, 1.0]
             elif channel[node_id] > 0.5:
                 overlay[row, col] = [1.0, 0.55, 0.0, 0.9]
@@ -164,15 +190,16 @@ def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist)
         framealpha=0.9,
     )
     plt.tight_layout()
-    plt.savefig("examples/channel_path.png", dpi=150)
-    print("Saved examples/channel_path.png")
+    output_path = f"{viz_prefix}_path.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle):
+def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, viz_prefix="examples/channel_large"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel setup plot")
         return
-    obstacle_np = obstacle.numpy().reshape(rows, cols)
+    obstacle_np = obstacle.detach().cpu().numpy().reshape(rows, cols)
     fig, ax = plt.subplots(figsize=(18, 14))
     grid_rgb = np.full((rows, cols, 3), 0.92)
     grid_rgb[obstacle_np] = [0.12, 0.12, 0.12]
@@ -195,11 +222,12 @@ def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle):
         framealpha=0.9,
     )
     plt.tight_layout()
-    plt.savefig("examples/channel_large_setup.png", dpi=150)
-    print("Saved examples/channel_large_setup.png")
+    output_path = f"{viz_prefix}_setup.png"
+    plt.savefig(output_path, dpi=150)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot_labels, num_nodes, rounds, elapsed, obstacle):
+def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot_labels, num_nodes, rounds, elapsed, obstacle, viz_prefix="examples/channel_large"):
     if plt is None:
         print("matplotlib not available; skipping large channel evolution plot")
         return
@@ -236,20 +264,22 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
         y=0.995,
     )
     plt.tight_layout(rect=[0, 0, 1, 0.98])
-    plt.savefig("examples/channel_large_evolution.png", dpi=160)
-    print("Saved examples/channel_large_evolution.png")
+    output_path = f"{viz_prefix}_evolution.png"
+    plt.savefig(output_path, dpi=160)
+    print(f"Saved {output_path}")
 
 
-def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, channel_threshold, num_nodes, rounds, elapsed, sd_dist, channel_nodes):
+def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, channel_threshold, num_nodes, rounds, elapsed, sd_dist, channel_nodes, viz_prefix="examples/channel_large"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel final plot")
         return
-    channel = final["channel"]
+    channel = final["channel"].detach().cpu().numpy()
+    obstacle_cpu = obstacle.detach().cpu().numpy()
     overlay = np.full((rows, cols, 4), [0.94, 0.94, 0.94, 1.0])
     for row in range(rows):
         for col in range(cols):
             node_id = row * cols + col
-            if obstacle[node_id]:
+            if obstacle_cpu[node_id]:
                 overlay[row, col] = [0.10, 0.10, 0.10, 1.0]
             elif channel[node_id] > channel_threshold:
                 overlay[row, col] = [1.0, 0.55, 0.0, 0.95]
@@ -277,5 +307,6 @@ def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, chan
         framealpha=0.92,
     )
     plt.tight_layout()
-    plt.savefig("examples/channel_large_final.png", dpi=160)
-    print("Saved examples/channel_large_final.png")
+    output_path = f"{viz_prefix}_final.png"
+    plt.savefig(output_path, dpi=160)
+    print(f"Saved {output_path}")

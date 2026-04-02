@@ -26,6 +26,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=str, default="examples/results/evaluation")
     parser.add_argument("--python", type=str, default=sys.executable)
     parser.add_argument("--skip-viz", action="store_true", help="Pass --no-viz --no-gif to each run")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
@@ -48,6 +49,7 @@ def main() -> None:
         eval_seeds=args.eval_seeds,
         eval_every=args.eval_every,
         skip_viz=args.skip_viz,
+        device=args.device,
     )
 
     print(f"=== Boids Evaluation: {len(modes)} modes × {len(seeds)} seeds = {len(modes) * len(seeds)} runs ===")

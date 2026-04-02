@@ -74,4 +74,5 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
     parser.add_argument("--no-compare-panel", action="store_true", help="Disable predicted-vs-teacher side-by-side panel")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()

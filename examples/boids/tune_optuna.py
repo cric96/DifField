@@ -35,6 +35,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timeout", type=int, default=0, help="Global timeout (seconds), 0 disables")
     parser.add_argument("--sampler", choices=["tpe", "random"], default="tpe")
     parser.add_argument("--skip-viz", action="store_true")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
@@ -116,6 +117,7 @@ def main() -> None:
         eval_seeds=args.eval_seeds,
         eval_every=args.eval_every,
         skip_viz=args.skip_viz,
+        device=args.device,
     )
 
     storage = args.storage.strip()

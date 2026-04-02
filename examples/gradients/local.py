@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aggregate_gnn import DeviceContext, GridScenario, SimulationEngine, mux, nbr, rep
 from aggregate_gnn.dsl import field
+from aggregate_gnn.utils import get_device
 
 
 def parse_args():
@@ -22,6 +23,8 @@ def parse_args():
     parser.add_argument("--cols", type=int, default=5, help="Grid cols")
     parser.add_argument("--device-row", type=int, default=2, help="Row of local device to simulate")
     parser.add_argument("--device-col", type=int, default=2, help="Column of local device to simulate")
+    parser.add_argument("--seed", type=int, default=7, help="Random seed")
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
@@ -34,9 +37,9 @@ def neighbors_of(node, edge_index):
     return sorted(edge_index[0, mask].tolist())
 
 
-def setup_data(args):
-    scenario = GridScenario(args.rows, args.cols, connectivity=4)
-    source_global = torch.zeros(scenario.num_nodes)
+def setup_data(args, device: torch.device):
+    scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
+    source_global = torch.zeros(scenario.num_nodes, device=device)
     source_global[0] = 1.0
     return scenario, source_global
 
@@ -85,14 +88,17 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
 
 def main():
     args = parse_args()
-    scenario, source_global = setup_data(args)
+    torch.manual_seed(args.seed)
+    device = get_device(args.device)
+    scenario, source_global = setup_data(args, device)
     rounds = args.rows + args.cols
-    weight = torch.tensor(1.0)
+    weight = torch.tensor(1.0, device=device)
 
     print(f"=== Global execution ({args.rows}x{args.cols} grid) ===")
+    print(f"Device: {device}")
     output, global_states = run_global(scenario, source_global, weight, rounds)
     print("Distance field:")
-    print(output.detach().view(args.rows, args.cols).numpy())
+    print(output.detach().cpu().view(args.rows, args.cols).numpy())
 
     device_id, final = run_local(args, scenario.edge_index, source_global, global_states, weight, rounds)
     expected = args.device_row + args.device_col

@@ -18,6 +18,7 @@ class LearnableRunOptions:
     eval_seeds: str
     eval_every: int
     skip_viz: bool
+    device: str = ""
 
 
 @dataclass(frozen=True)
@@ -55,20 +56,19 @@ def build_learnable_command(
         "--num-nodes",
         str(options.num_nodes),
         "--lr",
-        str(lr),
+        f"{lr:.4f}",
+        "--out-dir",
+        str(options.root),
+        "--run-name",
+        run_name,
         "--eval-seeds",
         options.eval_seeds,
         "--eval-every",
         str(options.eval_every),
-        "--print-every",
-        "99999",
-        "--checkpoint-every-epochs",
-        str(max(10, options.epochs)),
-        "--run-name",
-        run_name,
-        "--out-dir",
-        str(options.root),
     ]
+
+    if options.device:
+        cmd.extend(["--device", options.device])
 
     if seed is not None:
         cmd.extend(["--seed", str(seed)])

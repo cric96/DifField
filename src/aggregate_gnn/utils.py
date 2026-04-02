@@ -74,3 +74,21 @@ def get_grid_distances(
                 dist = max(dr, dc)  # Chebyshev
             target[r * cols + c] = float(dist)
     return target
+
+
+def get_device(device_str: str = "") -> torch.device:
+    """Get the appropriate torch device based on a string or availability.
+
+    Parameters
+    ----------
+    device_str : str
+        The device string (e.g., "cuda", "cpu"). If empty, chooses "cuda" if
+        available, else "cpu".
+
+    Returns
+    -------
+    device : torch.device
+    """
+    if device_str:
+        return torch.device(device_str)
+    return torch.device("cuda" if torch.cuda.is_available() else "cpu")

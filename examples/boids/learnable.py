@@ -61,7 +61,8 @@ class LearnableBoidsWorkflow:
         ctx: RunContext,
     ) -> tuple[LearnableAggregateBoids, dict[str, list[float]], torch.Tensor, CheckpointPolicy, CheckpointManager]:
         spec = ctx.spec
-        positions0 = torch.rand(spec.simulation.num_nodes, 2)
+        device = spec.simulation.device
+        positions0 = torch.rand(spec.simulation.num_nodes, 2, device=device)
         teacher_pos_seq, _ = teacher_rollout_from_specs(
             positions0=positions0,
             simulation=spec.simulation,
@@ -71,7 +72,7 @@ class LearnableBoidsWorkflow:
             positions0=positions0,
             simulation=spec.simulation,
             model=spec.model,
-        )
+        ).to(device)
         params = model.trainable_parameters()
         optimizer = torch.optim.Adam(params, lr=spec.training.lr)
         history = MetricHistory.from_keys(HISTORY_KEYS)

@@ -7,10 +7,11 @@ import argparse
 import sys
 from pathlib import Path
 
-import torch
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
+
+import torch
+from aggregate_gnn.utils import get_device
 sys.path.insert(0, str(ROOT / "examples"))
 
 from aggregate_gnn import (
@@ -55,6 +56,7 @@ def parse_args():
     parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links in visual outputs")
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
@@ -65,8 +67,9 @@ def simple_step(runtime, dt: float) -> None:
     positions, velocities = bounce_in_box(positions, velocities)
     runtime.metadata["velocities"] = velocities * runtime.metadata["damping"]
     scenario.update_positions(positions, refresh_topology=True)
-    runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().clone()
-    runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().clone()
+    if runtime.round_idx in runtime.metadata["record_rounds"]:
+        runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().cpu().clone()
+        runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().cpu().clone()
 
 
 def boids_step(runtime, dt: float) -> None:
@@ -92,8 +95,9 @@ def boids_step(runtime, dt: float) -> None:
 
     runtime.metadata["velocities"] = new_vel
     scenario.update_positions(new_pos, refresh_topology=True)
-    runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().clone()
-    runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().clone()
+    if runtime.round_idx in runtime.metadata["record_rounds"]:
+        runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().cpu().clone()
+        runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().cpu().clone()
 
 
 def movement_event(motion: str, dt: float):
@@ -108,17 +112,18 @@ def movement_event(motion: str, dt: float):
 
 def main():
     args = parse_args()
+    device = get_device(args.device)
     torch.manual_seed(args.seed)
 
-    positions = torch.rand(args.num_nodes, 2)
-    velocities = (torch.rand(args.num_nodes, 2) * 2.0 - 1.0)
+    positions = torch.rand(args.num_nodes, 2, device=device)
+    velocities = (torch.rand(args.num_nodes, 2, device=device) * 2.0 - 1.0)
     velocities = normalize_vectors(velocities) * args.speed
 
-    scenario = SpatialScenario(positions=positions, edge_radius=args.radius)
+    scenario = SpatialScenario(positions=positions, edge_radius=args.radius, device=device)
     engine = SimulationEngine.from_scenario(scenario)
 
     source = scenario.marker(args.source)
-    weight = torch.tensor(args.hop)
+    weight = torch.tensor(args.hop, device=device)
 
     schedule = EventSchedule(
         [
@@ -142,6 +147,7 @@ def main():
             "velocities": velocities,
             "positions_by_round": {},
             "edge_index_by_round": {},
+            "record_rounds": record_rounds,
             "radius": args.radius,
             "sep": args.sep,
             "w_sep": args.w_sep,
