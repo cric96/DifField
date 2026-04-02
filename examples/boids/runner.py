@@ -42,7 +42,7 @@ def build_learnable_command(
     mode: str,
     lr: float,
     seed: int | None = None,
-    reg_scale: float | None = None,
+    velocity_loss_weight: float | None = None,
 ) -> list[str]:
     cmd = [
         options.python,
@@ -73,19 +73,8 @@ def build_learnable_command(
     if seed is not None:
         cmd.extend(["--seed", str(seed)])
 
-    if reg_scale is not None:
-        cmd.extend(
-            [
-                "--cohesion-reg",
-                str(0.04 * reg_scale),
-                "--alignment-reg",
-                str(0.03 * reg_scale),
-                "--speed-reg",
-                str(0.01 * reg_scale),
-                "--accel-reg",
-                str(0.01 * reg_scale),
-            ]
-        )
+    if velocity_loss_weight is not None:
+        cmd.extend(["--velocity-loss-weight", str(velocity_loss_weight)])
 
     if options.skip_viz:
         cmd.extend(["--no-viz", "--no-gif", "--no-compare-panel"])
@@ -99,7 +88,7 @@ def run_learnable_subprocess(
     mode: str,
     lr: float,
     seed: int | None = None,
-    reg_scale: float | None = None,
+    velocity_loss_weight: float | None = None,
 ) -> RunOutcome:
     run_dir = options.root / run_name
     cmd = build_learnable_command(
@@ -108,7 +97,7 @@ def run_learnable_subprocess(
         mode=mode,
         lr=lr,
         seed=seed,
-        reg_scale=reg_scale,
+        velocity_loss_weight=velocity_loss_weight,
     )
     proc = subprocess.run(cmd, capture_output=True, text=True)
     summary_path = run_dir / "summary.json"

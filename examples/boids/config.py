@@ -18,6 +18,7 @@ class SimulationSpec:
     radius: float
     sep: float
     dt: float
+    init_velocity_scale: float
     device: torch.device
 
 
@@ -47,11 +48,11 @@ class ModelSpec:
 class TrainingSpec:
     epochs: int
     lr: float
-    traj_w: float
-    cohesion_reg: float
-    alignment_reg: float
-    speed_reg: float
-    accel_reg: float
+    min_horizon: int
+    max_horizon: int
+    trunc_window: int
+    num_initial_conditions: int
+    velocity_loss_weight: float
     print_every: int
     checkpoint_every_epochs: int
 
@@ -103,8 +104,10 @@ def build_learnable_spec(
         radius=args.radius,
         sep=args.sep,
         dt=args.dt,
+        init_velocity_scale=args.init_velocity_scale,
         device=get_device(args.device),
     )
+    max_horizon = max(args.curriculum_min_horizon, min(args.curriculum_max_horizon, args.rounds))
     return LearnableBoidsSpec(
         seed=args.seed,
         run_name=run_name,
@@ -131,11 +134,11 @@ def build_learnable_spec(
         training=TrainingSpec(
             epochs=args.epochs,
             lr=args.lr,
-            traj_w=args.traj_w,
-            cohesion_reg=args.cohesion_reg,
-            alignment_reg=args.alignment_reg,
-            speed_reg=args.speed_reg,
-            accel_reg=args.accel_reg,
+            min_horizon=max(1, args.curriculum_min_horizon),
+            max_horizon=max_horizon,
+            trunc_window=max(1, args.trunc_window),
+            num_initial_conditions=max(1, args.num_initial_conditions),
+            velocity_loss_weight=max(0.0, args.velocity_loss_weight),
             print_every=args.print_every,
             checkpoint_every_epochs=args.checkpoint_every_epochs,
         ),

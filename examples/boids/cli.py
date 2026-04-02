@@ -6,9 +6,10 @@ import argparse
 
 HISTORY_KEYS = [
     "epoch",
+    "horizon",
     "total",
-    "traj_loss",
-    "reg_loss",
+    "pos_loss",
+    "vel_loss",
     "center_error",
     "w_sep",
     "w_align",
@@ -20,15 +21,17 @@ HISTORY_KEYS = [
     "grad_norm",
     "cap_fraction",
     "pre_clip_speed",
-    "val_traj_loss",
+    "val_total_loss",
+    "val_pos_loss",
+    "val_vel_loss",
     "val_center_error",
 ]
 
 
 def parse_learnable_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Aggregate boids with learnable attention")
+    parser = argparse.ArgumentParser(description="Aggregate boids with learnable dynamics")
     parser.add_argument("--num-nodes", type=int, default=40)
-    parser.add_argument("--rounds", type=int, default=40)
+    parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--epochs", type=int, default=120)
     parser.add_argument("--radius", type=float, default=0.22)
     parser.add_argument("--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid")
@@ -36,6 +39,7 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--init-min-degree", type=int, default=2)
     parser.add_argument("--sep", type=float, default=0.06)
     parser.add_argument("--dt", type=float, default=1.0)
+    parser.add_argument("--init-velocity-scale", type=float, default=0.01, help="Uniform initial velocity scale for sampled initial conditions")
     parser.add_argument("--teacher-w-sep", type=float, default=1.4, help="Teacher separation weight")
     parser.add_argument("--teacher-w-align", type=float, default=0.8, help="Teacher alignment weight")
     parser.add_argument("--teacher-w-cohesion", type=float, default=0.6, help="Teacher cohesion weight")
@@ -55,11 +59,11 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--mode", choices=["weights", "attention", "joint"], default="joint")
     parser.add_argument("--out-dir", type=str, default="generated/results")
     parser.add_argument("--run-name", type=str, default="")
-    parser.add_argument("--traj-w", type=float, default=1.0, help="Teacher trajectory weight")
-    parser.add_argument("--cohesion-reg", type=float, default=0.04)
-    parser.add_argument("--alignment-reg", type=float, default=0.03)
-    parser.add_argument("--speed-reg", type=float, default=0.01)
-    parser.add_argument("--accel-reg", type=float, default=0.01)
+    parser.add_argument("--curriculum-min-horizon", type=int, default=3)
+    parser.add_argument("--curriculum-max-horizon", type=int, default=30)
+    parser.add_argument("--trunc-window", type=int, default=8)
+    parser.add_argument("--num-initial-conditions", type=int, default=6)
+    parser.add_argument("--velocity-loss-weight", type=float, default=10.0)
     parser.add_argument("--print-every", type=int, default=20)
     parser.add_argument("--record-every", type=int, default=5)
     parser.add_argument("--checkpoint-every-epochs", type=int, default=20)

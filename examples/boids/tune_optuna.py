@@ -9,6 +9,9 @@ import json
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "examples"))
+
 from boids.runner import LearnableRunOptions, run_learnable_subprocess
 from shared.metrics import is_finite_number, nested_get
 
@@ -28,7 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--python", type=str, default=sys.executable)
     parser.add_argument("--epochs", type=int, default=120)
-    parser.add_argument("--rounds", type=int, default=40)
+    parser.add_argument("--rounds", type=int, default=30)
     parser.add_argument("--num-nodes", type=int, default=40)
     parser.add_argument("--eval-seeds", type=str, default="101,103,107")
     parser.add_argument("--eval-every", type=int, default=10)
@@ -43,14 +46,14 @@ def _objective(run_options: LearnableRunOptions):
     def objective(trial: optuna.Trial) -> float:
         mode = trial.suggest_categorical("mode", ["weights", "attention", "joint"])
         lr = trial.suggest_float("lr", 1e-3, 4e-2, log=True)
-        reg_scale = trial.suggest_float("reg_scale", 0.35, 2.5)
+        velocity_loss_weight = trial.suggest_float("velocity_loss_weight", 2.0, 20.0)
         run_name = f"trial_{trial.number:04d}_{mode}"
         outcome = run_learnable_subprocess(
             options=run_options,
             run_name=run_name,
             mode=mode,
             lr=lr,
-            reg_scale=reg_scale,
+            velocity_loss_weight=velocity_loss_weight,
         )
         if not outcome.ok:
             outcome.run_dir.mkdir(parents=True, exist_ok=True)
@@ -74,6 +77,8 @@ def _objective(run_options: LearnableRunOptions):
         trial.set_user_attr("run_dir", str(outcome.run_dir))
         trial.set_user_attr("final_val_traj_loss", nested_get(summary, "validation.final_val_traj_loss"))
         trial.set_user_attr("final_traj_loss", nested_get(summary, "training.final_traj_loss"))
+        trial.set_user_attr("final_val_total_loss", nested_get(summary, "validation.final_val_total_loss"))
+        trial.set_user_attr("final_total_loss", nested_get(summary, "training.final_total_loss"))
         trial.set_user_attr("final_center_error", nested_get(summary, "training.final_center_error"))
         trial.set_user_attr("has_nan", nested_get(summary, "training.has_nan", False))
         return value

@@ -96,13 +96,23 @@ class MovingGraphVisualizationPipeline:
         self.rounds = rounds
         self.record_every = max(1, record_every)
 
+    def _available_rounds(self, *seqs: torch.Tensor) -> int:
+        lengths = [int(seq.shape[0]) for seq in seqs if isinstance(seq, torch.Tensor)]
+        if not lengths:
+            return 0
+        return min([self.rounds, *lengths])
+
     def collect_round_data(
         self,
         *,
         pos_seq: torch.Tensor,
         vel_seq: torch.Tensor,
     ) -> tuple[dict[int, torch.Tensor], dict[int, torch.Tensor], dict[int, torch.Tensor]]:
-        round_indices = set(range(0, self.rounds, self.record_every)) | {self.rounds - 1}
+        available_rounds = self._available_rounds(pos_seq, vel_seq)
+        if available_rounds <= 0:
+            return {}, {}, {}
+
+        round_indices = set(range(0, available_rounds, self.record_every)) | {available_rounds - 1}
         positions_by_round: dict[int, torch.Tensor] = {}
         values_by_round: dict[int, torch.Tensor] = {}
         edge_index_by_round: dict[int, torch.Tensor] = {}
@@ -124,6 +134,9 @@ class MovingGraphVisualizationPipeline:
         spec: VizSpec,
     ) -> None:
         positions_by_round, values_by_round, edge_index_by_round = self.collect_round_data(pos_seq=pos_seq, vel_seq=vel_seq)
+        available_rounds = self._available_rounds(pos_seq, vel_seq, teacher_pos_seq)
+        if available_rounds <= 0:
+            return
 
         plot_moving_snapshots(
             positions_by_round=positions_by_round,
@@ -137,21 +150,21 @@ class MovingGraphVisualizationPipeline:
             links_width=spec.links_width,
         )
         plot_node_trajectories(
-            positions_over_time=[pos_seq[idx] for idx in range(self.rounds)],
+            positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
             source_idx=highlight_idx,
             output_path=f"{prefix}_pred_trajectories.png",
             title=f"{title_prefix} predicted trajectories",
         )
         plot_node_trajectories(
-            positions_over_time=[teacher_pos_seq[idx] for idx in range(self.rounds)],
+            positions_over_time=[teacher_pos_seq[idx] for idx in range(available_rounds)],
             source_idx=highlight_idx,
             output_path=f"{prefix}_teacher_trajectories.png",
             title=f"{title_prefix} teacher trajectories",
         )
         if spec.compare_panel_enabled:
             plot_trajectory_comparison(
-                predicted_positions_over_time=[pos_seq[idx] for idx in range(self.rounds)],
-                teacher_positions_over_time=[teacher_pos_seq[idx] for idx in range(self.rounds)],
+                predicted_positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
+                teacher_positions_over_time=[teacher_pos_seq[idx] for idx in range(available_rounds)],
                 source_idx=highlight_idx,
                 output_path=f"{prefix}_compare_panel.png",
                 title=f"{title_prefix} predicted vs teacher",
@@ -182,6 +195,9 @@ class MovingGraphVisualizationPipeline:
         spec: VizSpec,
     ) -> None:
         positions_by_round, values_by_round, edge_index_by_round = self.collect_round_data(pos_seq=pos_seq, vel_seq=vel_seq)
+        available_rounds = self._available_rounds(pos_seq, vel_seq, teacher_pos_seq)
+        if available_rounds <= 0:
+            return
 
         plot_moving_snapshots(
             positions_by_round=positions_by_round,
@@ -195,15 +211,15 @@ class MovingGraphVisualizationPipeline:
             links_width=spec.links_width,
         )
         plot_node_trajectories(
-            positions_over_time=[pos_seq[idx] for idx in range(self.rounds)],
+            positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
             source_idx=highlight_idx,
             output_path=f"{output_prefix}_trajectories.png",
             title=f"Mid-training epoch {epoch_number}: trajectories",
         )
         if spec.compare_panel_enabled:
             plot_trajectory_comparison(
-                predicted_positions_over_time=[pos_seq[idx] for idx in range(self.rounds)],
-                teacher_positions_over_time=[teacher_pos_seq[idx] for idx in range(self.rounds)],
+                predicted_positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
+                teacher_positions_over_time=[teacher_pos_seq[idx] for idx in range(available_rounds)],
                 source_idx=highlight_idx,
                 output_path=f"{output_prefix}_compare.png",
                 title=f"Mid-training epoch {epoch_number}: predicted vs teacher",

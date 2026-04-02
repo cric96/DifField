@@ -6,17 +6,16 @@ from typing import TYPE_CHECKING
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch_geometric.utils import degree as pyg_degree
 from torch_geometric.utils import scatter as pyg_scatter
 from torch_geometric.utils import softmax as pyg_softmax
 
 from aggregate_gnn import (
     SpatialScenario,
-    boids_acceleration_dense,
     bounce_in_box,
     limit_speed,
     nbr,
-    normalize_vectors,
     rep,
 )
 from aggregate_gnn.dsl import AggregateContext
@@ -77,6 +76,79 @@ def _edge_connectivity_stats(edge_index: torch.Tensor, num_nodes: int) -> tuple[
                     visited[nxt] = True
                     stack.append(nxt)
     return float(edge_index.shape[1]), min_degree, float(components)
+
+
+def _scatter_mean(src: torch.Tensor, index: torch.Tensor, num_nodes: int) -> torch.Tensor:
+    if src.numel() == 0:
+        shape = (num_nodes,) if src.dim() == 1 else (num_nodes, *src.shape[1:])
+        return torch.zeros(shape, dtype=src.dtype, device=src.device)
+    return pyg_scatter(src, index, dim=0, dim_size=num_nodes, reduce="mean")
+
+
+def _soft_separation_force(positions: torch.Tensor, sep: float, sharpness: float = 10.0) -> torch.Tensor:
+    num_nodes = positions.shape[0]
+    dx = positions[:, 0].unsqueeze(1) - positions[:, 0].unsqueeze(0)
+    dy = positions[:, 1].unsqueeze(1) - positions[:, 1].unsqueeze(0)
+    dist = torch.sqrt(dx.pow(2) + dy.pow(2) + 1e-9)
+    soft_mask = torch.sigmoid(sharpness * (sep - dist))
+    soft_mask = soft_mask * (1.0 - torch.eye(num_nodes, device=positions.device, dtype=positions.dtype))
+    return torch.stack([(dx * soft_mask).sum(dim=1), (dy * soft_mask).sum(dim=1)], dim=1)
+
+
+def _build_boids_scenario(
+    positions: torch.Tensor,
+    *,
+    radius: float,
+    init_connectivity: str,
+    init_k_neighbors: int,
+    init_min_degree: int,
+) -> SpatialScenario:
+    return SpatialScenario(
+        positions=positions,
+        edge_radius=radius if init_connectivity in {"radius", "hybrid"} else None,
+        k_neighbors=init_k_neighbors if init_connectivity == "knn" else None,
+        ensure_init_connected=init_connectivity == "hybrid",
+        init_min_degree=init_min_degree,
+        init_k_neighbors=init_k_neighbors,
+        device=positions.device,
+    )
+
+
+def sample_initial_boids_state(
+    num_nodes: int,
+    *,
+    seed: int,
+    velocity_scale: float,
+    device: torch.device,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    generator = torch.Generator()
+    generator.manual_seed(seed)
+    positions0 = torch.rand(num_nodes, 2, generator=generator, dtype=torch.float32).to(device)
+    if velocity_scale <= 0.0:
+        velocities0 = torch.zeros_like(positions0)
+    else:
+        velocities0 = ((torch.rand(num_nodes, 2, generator=generator, dtype=torch.float32) - 0.5) * velocity_scale).to(device)
+    return positions0, velocities0
+
+
+def trajectory_loss_components(
+    pred_pos_seq: torch.Tensor,
+    pred_vel_seq: torch.Tensor,
+    teacher_pos_seq: torch.Tensor,
+    teacher_vel_seq: torch.Tensor,
+    *,
+    velocity_weight: float,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    pos_loss = torch.stack([
+        F.mse_loss(pred_pos, teacher_pos)
+        for pred_pos, teacher_pos in zip(pred_pos_seq, teacher_pos_seq)
+    ]).mean()
+    vel_loss = torch.stack([
+        F.mse_loss(pred_vel, teacher_vel)
+        for pred_vel, teacher_vel in zip(pred_vel_seq, teacher_vel_seq)
+    ]).mean()
+    total_loss = pos_loss + velocity_weight * vel_loss
+    return total_loss, pos_loss, vel_loss
 
 
 class EdgeAttentionAggr(nn.Module):
@@ -210,29 +282,45 @@ class LearnableAggregateBoids(nn.Module):
     def _cohesion_aggr(self) -> str | nn.Module:
         return "mean" if self.mode == "weights" else self.cohesion_aggr
 
-    def rollout(self, rounds: int) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        positions = self.positions0.clone()
-        scenario = SpatialScenario(
-            positions=positions,
-            edge_radius=self.radius if self.init_connectivity in {"radius", "hybrid"} else None,
-            k_neighbors=self.init_k_neighbors if self.init_connectivity == "knn" else None,
-            ensure_init_connected=self.init_connectivity == "hybrid",
-            init_min_degree=self.init_min_degree,
+    def _build_rollout_scenario(self, positions: torch.Tensor) -> SpatialScenario:
+        return _build_boids_scenario(
+            positions,
+            radius=self.radius,
+            init_connectivity=self.init_connectivity,
             init_k_neighbors=self.init_k_neighbors,
-            device=positions.device,
+            init_min_degree=self.init_min_degree,
         )
-        self.last_init_graph_stats = dict(scenario.init_graph_stats)
+
+    def rollout(
+        self,
+        rounds: int,
+        *,
+        positions0: torch.Tensor | None = None,
+        velocities0: torch.Tensor | None = None,
+        trunc_window: int | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        positions = (self.positions0 if positions0 is None else positions0).clone()
+        init_vel = torch.zeros_like(positions) if velocities0 is None else velocities0.clone()
+        scenario = self._build_rollout_scenario(positions)
+        num_edges, min_degree, num_components = _edge_connectivity_stats(scenario.edge_index, scenario.num_nodes)
+        self.last_init_graph_stats = {
+            "num_edges": num_edges,
+            "min_degree": min_degree,
+            "num_components": num_components,
+        }
         ctx = AggregateContext(scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight)
-        init_vel = torch.zeros_like(positions)
+        scenario.sync_context(ctx._ctx)
         positions_seq = []
         velocities_seq = []
-        edge_counts = []
-        min_degrees = []
-        components = []
         self._rollout_pre_clip_speeds = []
         self._rollout_cap_fractions = []
 
-        for _ in range(rounds):
+        for round_idx in range(rounds):
+            if trunc_window is not None and trunc_window > 0 and round_idx > 0 and round_idx % trunc_window == 0:
+                scenario.update_positions(scenario.positions.detach(), refresh_topology=False)
+                detached_vel = ctx._ctx.state.get_or_init("vel", init_vel).detach()
+                ctx._ctx.state.update("vel", detached_vel)
+
             scenario.sync_context(ctx._ctx)
             pos_t = scenario.positions
             with ctx.round():
@@ -240,20 +328,16 @@ class LearnableAggregateBoids(nn.Module):
 
             new_pos = pos_t + self.dt * vel
             new_pos, vel_bounced = bounce_in_box(new_pos, vel)
-            scenario.update_positions(new_pos, refresh_topology=True)
+            scenario.update_positions(new_pos, refresh_topology=False)
             ctx._ctx.state.update("vel", vel_bounced)
 
-            num_edges, min_degree, num_components = _edge_connectivity_stats(scenario.edge_index, scenario.num_nodes)
-            edge_counts.append(num_edges)
-            min_degrees.append(min_degree)
-            components.append(num_components)
             positions_seq.append(scenario.positions)
             velocities_seq.append(vel_bounced)
 
         self.last_rollout_graph_health = {
-            "mean_num_edges": float(sum(edge_counts) / max(1, len(edge_counts))),
-            "mean_min_degree": float(sum(min_degrees) / max(1, len(min_degrees))),
-            "max_num_components": float(max(components) if components else float("nan")),
+            "mean_num_edges": num_edges,
+            "mean_min_degree": min_degree,
+            "max_num_components": num_components,
         }
         self.last_rollout_speed_health = {
             "mean_pre_clip_speed": float(sum(self._rollout_pre_clip_speeds) / max(1, len(self._rollout_pre_clip_speeds))),
@@ -267,13 +351,9 @@ class LearnableAggregateBoids(nn.Module):
         neigh_vel = nbr(vel, aggr=self._alignment_aggr())
         align_force = neigh_vel - vel
         cohesion_force = nbr(pos, aggr=self._cohesion_aggr()) - pos
-        dx = pos[:, 0].unsqueeze(1) - pos[:, 0].unsqueeze(0)
-        dy = pos[:, 1].unsqueeze(1) - pos[:, 1].unsqueeze(0)
-        dist = torch.sqrt(dx.pow(2) + dy.pow(2) + 1e-9)
-        close_mask = (dist <= self.sep) & (dist > 0)
-        sep_force = torch.stack([(dx * close_mask).sum(dim=1), (dy * close_mask).sum(dim=1)], dim=1)
+        sep_force = _soft_separation_force(pos, self.sep)
 
-        acc = self.w_sep * normalize_vectors(sep_force) + self.w_align * align_force + self.w_cohesion * cohesion_force
+        acc = self.w_sep * sep_force + self.w_align * align_force + self.w_cohesion * cohesion_force
         pre_clip_vel = self.damping * vel + self.dt * acc
         pre_clip_speed = pre_clip_vel.norm(dim=-1)
         if hasattr(self, "_rollout_pre_clip_speeds"):
@@ -285,8 +365,9 @@ class LearnableAggregateBoids(nn.Module):
 @torch.no_grad()
 def teacher_rollout(
     positions0: torch.Tensor,
+    velocities0: torch.Tensor,
+    edge_index: torch.Tensor,
     rounds: int,
-    radius: float,
     sep: float,
     dt: float,
     w_sep: float = 1.4,
@@ -296,11 +377,21 @@ def teacher_rollout(
     max_speed: float = 0.014,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     positions = positions0.clone()
-    velocities = torch.zeros_like(positions)
+    velocities = velocities0.clone()
     pos_seq = []
     vel_seq = []
+    num_nodes = positions.shape[0]
+    src_idx = edge_index[0] if edge_index.numel() > 0 else None
+    dst_idx = edge_index[1] if edge_index.numel() > 0 else None
     for _ in range(rounds):
-        acc = boids_acceleration_dense(positions, velocities, radius=radius, sep=sep, w_sep=w_sep, w_align=w_align, w_cohesion=w_cohesion)
+        if src_idx is not None and dst_idx is not None:
+            align_force = _scatter_mean(velocities[src_idx], dst_idx, num_nodes) - velocities
+            cohesion_force = _scatter_mean(positions[src_idx], dst_idx, num_nodes) - positions
+        else:
+            align_force = torch.zeros_like(velocities)
+            cohesion_force = torch.zeros_like(positions)
+        sep_force = _soft_separation_force(positions, sep)
+        acc = w_sep * sep_force + w_align * align_force + w_cohesion * cohesion_force
         velocities = limit_speed(damping * velocities + dt * acc, max_speed)
         positions = positions + dt * velocities
         positions, velocities = bounce_in_box(positions, velocities)
@@ -313,13 +404,24 @@ def teacher_rollout(
 def teacher_rollout_from_specs(
     *,
     positions0: torch.Tensor,
+    velocities0: torch.Tensor | None = None,
+    rounds: int | None = None,
     simulation: "SimulationSpec",
     teacher: "TeacherDynamics",
+    model: "ModelSpec",
 ) -> tuple[torch.Tensor, torch.Tensor]:
+    scenario = _build_boids_scenario(
+        positions0,
+        radius=simulation.radius,
+        init_connectivity=model.init_connectivity,
+        init_k_neighbors=model.init_k_neighbors,
+        init_min_degree=model.init_min_degree,
+    )
     return teacher_rollout(
         positions0=positions0,
-        rounds=simulation.rounds,
-        radius=simulation.radius,
+        velocities0=(torch.zeros_like(positions0) if velocities0 is None else velocities0),
+        edge_index=scenario.edge_index,
+        rounds=simulation.rounds if rounds is None else rounds,
         sep=simulation.sep,
         dt=simulation.dt,
         w_sep=teacher.w_sep,

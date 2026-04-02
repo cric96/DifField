@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any
 
 import torch
-import torch.nn as nn
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
@@ -21,7 +20,7 @@ from aggregate_gnn import build_spatial_graph
 from boids.cli import HISTORY_KEYS, parse_learnable_args
 from boids.config import LearnableBoidsSpec, build_learnable_spec
 from boids.evaluation_utils import evaluate_seed
-from boids.model import LearnableAggregateBoids, emergent_regularizers, teacher_rollout, teacher_rollout_from_specs
+from boids.model import LearnableAggregateBoids, sample_initial_boids_state, teacher_rollout_from_specs, trajectory_loss_components
 from boids.reporting import BoidsSummaryBuilder, compute_parameter_recovery_metrics, extract_learned_parameters, extract_teacher_parameters
 from shared.diagnostics import export_diagnostics, save_history_csv, save_summary_csv
 from shared.experiment import CheckpointManager, CheckpointPolicy, MovingGraphVisualizationPipeline, VizSpec, flatten_summary_for_csv
@@ -32,6 +31,26 @@ from shared.training import grad_norm
 @dataclass(frozen=True)
 class RunContext:
     spec: LearnableBoidsSpec
+
+
+def curriculum_horizon(epoch: int, total_epochs: int, min_horizon: int, max_horizon: int) -> int:
+    if total_epochs <= 1:
+        return max_horizon
+    ramp_epochs = max(1, int(total_epochs * 0.6))
+    progress = min(1.0, epoch / ramp_epochs)
+    return int(round(min_horizon + (max_horizon - min_horizon) * progress))
+
+
+def make_initial_conditions(spec: LearnableBoidsSpec) -> list[tuple[torch.Tensor, torch.Tensor]]:
+    return [
+        sample_initial_boids_state(
+            spec.simulation.num_nodes,
+            seed=spec.seed + idx * 1337,
+            velocity_scale=spec.simulation.init_velocity_scale,
+            device=spec.simulation.device,
+        )
+        for idx in range(spec.training.num_initial_conditions)
+    ]
 
 
 class LearnableBoidsWorkflow:
@@ -62,11 +81,15 @@ class LearnableBoidsWorkflow:
     ) -> tuple[LearnableAggregateBoids, dict[str, list[float]], torch.Tensor, CheckpointPolicy, CheckpointManager]:
         spec = ctx.spec
         device = spec.simulation.device
-        positions0 = torch.rand(spec.simulation.num_nodes, 2, device=device)
+        initial_conditions = make_initial_conditions(spec)
+        positions0, velocities0 = initial_conditions[0]
         teacher_pos_seq, _ = teacher_rollout_from_specs(
             positions0=positions0,
+            velocities0=velocities0,
+            rounds=spec.simulation.rounds,
             simulation=spec.simulation,
             teacher=spec.teacher,
+            model=spec.model,
         )
         model = LearnableAggregateBoids.from_specs(
             positions0=positions0,
@@ -83,37 +106,83 @@ class LearnableBoidsWorkflow:
         print("=== Aggregate Learnable Boids ===")
         print(f"mode={spec.model.mode} nodes={spec.simulation.num_nodes} rounds={spec.simulation.rounds}")
         print(
+            f"curriculum={spec.training.min_horizon}->{spec.training.max_horizon} "
+            f"trunc_window={spec.training.trunc_window} ics={spec.training.num_initial_conditions} "
+            f"vel_loss_weight={spec.training.velocity_loss_weight:.2f}"
+        )
+        print(
             f"teacher: w_sep={spec.teacher.w_sep:.2f} w_align={spec.teacher.w_align:.2f} "
             f"w_cohesion={spec.teacher.w_cohesion:.2f} damping={spec.teacher.damping:.3f} max_speed={spec.teacher.max_speed:.4f}"
         )
         print(f"run_dir={spec.run_dir}")
 
         for epoch in range(spec.training.epochs):
-            optimizer.zero_grad()
-            pred_pos_seq, pred_vel_seq, final_pos = model.rollout(spec.simulation.rounds)
-            traj_loss = nn.functional.mse_loss(pred_pos_seq, teacher_pos_seq)
-            reg_loss = emergent_regularizers(
-                pred_pos_seq,
-                pred_vel_seq,
-                cohesion_weight=spec.training.cohesion_reg,
-                alignment_weight=spec.training.alignment_reg,
-                speed_weight=spec.training.speed_reg,
-                accel_weight=spec.training.accel_reg,
+            horizon = curriculum_horizon(
+                epoch,
+                spec.training.epochs,
+                spec.training.min_horizon,
+                spec.training.max_horizon,
             )
-            total = spec.training.traj_w * traj_loss + reg_loss
+            optimizer.zero_grad()
+            total_loss = torch.zeros((), device=device)
+            total_pos_loss = torch.zeros((), device=device)
+            total_vel_loss = torch.zeros((), device=device)
+            total_center_error = 0.0
+            checkpoint_pos_seq = None
+            checkpoint_vel_seq = None
+
+            for ic_index, (ic_positions0, ic_velocities0) in enumerate(initial_conditions):
+                teacher_pos_rollout, teacher_vel_rollout = teacher_rollout_from_specs(
+                    positions0=ic_positions0,
+                    velocities0=ic_velocities0,
+                    rounds=horizon,
+                    simulation=spec.simulation,
+                    teacher=spec.teacher,
+                    model=spec.model,
+                )
+                pred_pos_seq, pred_vel_seq, final_pos = model.rollout(
+                    horizon,
+                    positions0=ic_positions0,
+                    velocities0=ic_velocities0,
+                    trunc_window=spec.training.trunc_window,
+                )
+                loss, pos_loss, vel_loss = trajectory_loss_components(
+                    pred_pos_seq,
+                    pred_vel_seq,
+                    teacher_pos_rollout,
+                    teacher_vel_rollout,
+                    velocity_weight=spec.training.velocity_loss_weight,
+                )
+                total_loss = total_loss + loss
+                total_pos_loss = total_pos_loss + pos_loss
+                total_vel_loss = total_vel_loss + vel_loss
+                total_center_error += (
+                    teacher_pos_rollout[-1].mean(dim=0) - final_pos.mean(dim=0)
+                ).norm().item()
+
+                if ic_index == 0:
+                    checkpoint_pos_seq = pred_pos_seq.detach()
+                    checkpoint_vel_seq = pred_vel_seq.detach()
+
+            num_initial_conditions = float(len(initial_conditions))
+            total = total_loss / num_initial_conditions
+            pos_loss = total_pos_loss / num_initial_conditions
+            vel_loss = total_vel_loss / num_initial_conditions
+            center_error = total_center_error / max(1.0, num_initial_conditions)
+
             total.backward()
             current_grad_norm = grad_norm(params)
-            torch.nn.utils.clip_grad_norm_(params, 1.0)
+            torch.nn.utils.clip_grad_norm_(params, 5.0)
             optimizer.step()
 
-            center_error = (teacher_pos_seq[-1].mean(dim=0) - final_pos.mean(dim=0)).norm().item()
-            val_traj_loss, val_center_error = self._evaluate_epoch(model, spec, epoch)
+            val_total_loss, val_pos_loss, val_vel_loss, val_center_error = self._evaluate_epoch(model, spec, epoch)
 
             history.append(
                 epoch=float(epoch + 1),
+                horizon=float(horizon),
                 total=float(total.item()),
-                traj_loss=float(traj_loss.item()),
-                reg_loss=float(reg_loss.item()),
+                pos_loss=float(pos_loss.item()),
+                vel_loss=float(vel_loss.item()),
                 center_error=float(center_error),
                 w_sep=float(model.w_sep.item()),
                 w_align=float(model.w_align.item()),
@@ -125,18 +194,21 @@ class LearnableBoidsWorkflow:
                 grad_norm=float(current_grad_norm),
                 cap_fraction=float(model.last_rollout_speed_health["mean_cap_fraction"]),
                 pre_clip_speed=float(model.last_rollout_speed_health["mean_pre_clip_speed"]),
-                val_traj_loss=float(val_traj_loss),
+                val_total_loss=float(val_total_loss),
+                val_pos_loss=float(val_pos_loss),
+                val_vel_loss=float(val_vel_loss),
                 val_center_error=float(val_center_error),
             )
 
-            if checkpoint_manager.should_save(epoch):
-                checkpoint_manager.save_rollout(epoch, pred_pos_seq=pred_pos_seq, pred_vel_seq=pred_vel_seq)
+            if checkpoint_manager.should_save(epoch) and checkpoint_pos_seq is not None and checkpoint_vel_seq is not None:
+                checkpoint_manager.save_rollout(epoch, pred_pos_seq=checkpoint_pos_seq, pred_vel_seq=checkpoint_vel_seq)
 
             if (epoch + 1) % spec.training.print_every == 0 or epoch == 0:
-                do_eval = val_traj_loss == val_traj_loss
-                val_msg = f" val_traj={val_traj_loss:.6f} val_center={val_center_error:.6f}" if do_eval else ""
+                do_eval = val_total_loss == val_total_loss
+                val_msg = f" val_total={val_total_loss:.6f} val_center={val_center_error:.6f}" if do_eval else ""
                 print(
-                    f"epoch={epoch + 1:3d} total={total.item():.6f} traj={traj_loss.item():.6f} "
+                    f"epoch={epoch + 1:3d} horizon={horizon:2d} total={total.item():.6f} "
+                    f"pos={pos_loss.item():.6f} vel={vel_loss.item():.6f} "
                     f"w_sep={model.w_sep.item():.3f} w_align={model.w_align.item():.3f} "
                     f"w_coh={model.w_cohesion.item():.3f} damp={model.damping.item():.3f} "
                     f"tau_align={model.align_aggr.tau.item():.3f} grad={current_grad_norm:.5f}{val_msg}"
@@ -160,25 +232,34 @@ class LearnableBoidsWorkflow:
 
         return model, history.to_dict(), teacher_pos_seq, checkpoint_policy, checkpoint_manager
 
-    def _evaluate_epoch(self, model: LearnableAggregateBoids, spec: LearnableBoidsSpec, epoch: int) -> tuple[float, float]:
+    def _evaluate_epoch(
+        self,
+        model: LearnableAggregateBoids,
+        spec: LearnableBoidsSpec,
+        epoch: int,
+    ) -> tuple[float, float, float, float]:
         eval_cfg = spec.evaluation
         do_eval = bool(eval_cfg.seeds) and (
             (epoch + 1) % max(1, eval_cfg.every) == 0 or epoch == 0 or epoch == spec.training.epochs - 1
         )
         if not do_eval:
-            return float("nan"), float("nan")
+            return float("nan"), float("nan"), float("nan"), float("nan")
         val_pairs = [
             evaluate_seed(
                 model,
                 seed=eval_seed,
                 simulation=spec.simulation,
                 teacher=spec.teacher,
+                model_spec=spec.model,
+                velocity_loss_weight=spec.training.velocity_loss_weight,
             )
             for eval_seed in eval_cfg.seeds
         ]
-        val_traj_loss = float(sum(item[0] for item in val_pairs) / max(1, len(val_pairs)))
-        val_center_error = float(sum(item[1] for item in val_pairs) / max(1, len(val_pairs)))
-        return val_traj_loss, val_center_error
+        val_total_loss = float(sum(item[0] for item in val_pairs) / max(1, len(val_pairs)))
+        val_pos_loss = float(sum(item[1] for item in val_pairs) / max(1, len(val_pairs)))
+        val_vel_loss = float(sum(item[2] for item in val_pairs) / max(1, len(val_pairs)))
+        val_center_error = float(sum(item[3] for item in val_pairs) / max(1, len(val_pairs)))
+        return val_total_loss, val_pos_loss, val_vel_loss, val_center_error
 
     def _save_training_outputs(
         self,

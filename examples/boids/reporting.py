@@ -89,22 +89,36 @@ class BoidsSummaryBuilder:
             "init_connectivity": self.args.init_connectivity,
             "init_k_neighbors": self.args.init_k_neighbors,
             "init_min_degree": self.args.init_min_degree,
+            "init_velocity_scale": self.args.init_velocity_scale,
+            "curriculum_min_horizon": self.args.curriculum_min_horizon,
+            "curriculum_max_horizon": self.args.curriculum_max_horizon,
+            "trunc_window": self.args.trunc_window,
+            "num_initial_conditions": self.args.num_initial_conditions,
+            "velocity_loss_weight": self.args.velocity_loss_weight,
         }
 
     def _training_payload(self) -> dict[str, float | bool]:
         return {
             "final_total": self.history["total"][-1],
-            "final_traj_loss": self.history["traj_loss"][-1],
-            "final_reg_loss": self.history["reg_loss"][-1],
+            "final_total_loss": self.history["total"][-1],
+            "final_pos_loss": self.history["pos_loss"][-1],
+            "final_vel_loss": self.history["vel_loss"][-1],
+            "final_traj_loss": self.history["pos_loss"][-1],
             "final_center_error": self.history["center_error"][-1],
-            "best_traj_loss": min(self.history["traj_loss"]),
+            "best_pos_loss": min(self.history["pos_loss"]),
+            "best_vel_loss": min(self.history["vel_loss"]),
+            "best_traj_loss": min(self.history["pos_loss"]),
             "best_total": min(self.history["total"]),
+            "best_total_loss": min(self.history["total"]),
             "has_nan": bool(any(value != value for value in self.history["total"])),
         }
 
     def _validation_payload(self) -> dict[str, float]:
         return {
-            "final_val_traj_loss": self.history["val_traj_loss"][-1],
+            "final_val_total_loss": self.history["val_total_loss"][-1],
+            "final_val_pos_loss": self.history["val_pos_loss"][-1],
+            "final_val_vel_loss": self.history["val_vel_loss"][-1],
+            "final_val_traj_loss": self.history["val_pos_loss"][-1],
             "final_val_center_error": self.history["val_center_error"][-1],
         }
 

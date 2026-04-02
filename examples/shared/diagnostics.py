@@ -55,12 +55,12 @@ def _plot_loss_curves(history: dict[str, list[float]], output_path: Path, title_
     epochs = history["epoch"]
     fig, ax = plt.subplots(figsize=(9.0, 5.0))
     ax.plot(epochs, history["total"], label="train total", linewidth=2.0)
-    ax.plot(epochs, history["traj_loss"], label="train traj", linewidth=1.8)
-    ax.plot(epochs, history["reg_loss"], label="train reg", linewidth=1.6)
+    ax.plot(epochs, history["pos_loss"], label="train pos", linewidth=1.8)
+    ax.plot(epochs, history["vel_loss"], label="train vel", linewidth=1.6)
 
-    val_x, val_y = _finite_pairs(epochs, history.get("val_traj_loss", []))
+    val_x, val_y = _finite_pairs(epochs, history.get("val_total_loss", []))
     if val_x:
-        ax.plot(val_x, val_y, label="val traj", linewidth=1.8, linestyle="--")
+        ax.plot(val_x, val_y, label="val total", linewidth=1.8, linestyle="--")
 
     ax.set_title(f"{title_prefix}Loss Curves")
     ax.set_xlabel("epoch")
@@ -180,6 +180,48 @@ def _plot_parameter_recovery(
     plt.close(fig)
 
 
+def _plot_parameter_errors(
+    history: dict[str, list[float]],
+    teacher_params: dict[str, float],
+    output_path: Path,
+    title_prefix: str,
+) -> None:
+    if plt is None:
+        print("matplotlib not available; skipping parameter errors")
+        return
+
+    epochs = history["epoch"]
+    parameter_names = [name for name in teacher_params if name in history]
+    if not parameter_names:
+        return
+
+    fig, axes = plt.subplots(2, 1, figsize=(9.0, 7.5), sharex=True)
+
+    for name in parameter_names:
+        teacher_value = float(teacher_params[name])
+        abs_errors = [abs(value - teacher_value) for value in history[name]]
+        rel_errors = [
+            abs(value - teacher_value) / max(abs(teacher_value), 1e-9) * 100.0
+            for value in history[name]
+        ]
+        axes[0].plot(epochs, abs_errors, label=name)
+        axes[1].plot(epochs, rel_errors, label=name)
+
+    axes[0].set_ylabel("abs error")
+    axes[0].set_title(f"{title_prefix}Parameter Error vs Teacher")
+    axes[0].grid(alpha=0.25)
+    axes[0].legend(loc="best")
+
+    axes[1].set_xlabel("epoch")
+    axes[1].set_ylabel("rel error (%)")
+    axes[1].grid(alpha=0.25)
+    axes[1].legend(loc="best")
+
+    fig.tight_layout()
+    fig.savefig(output_path, dpi=150)
+    plt.close(fig)
+
+
 def export_diagnostics(
     history: dict[str, list[float]],
     output_prefix: str | Path,
@@ -194,6 +236,14 @@ def export_diagnostics(
     _plot_loss_curves(history, prefix.with_name(prefix.name + "_loss.png"), title_prefix)
     _plot_parameter_trajectories(history, prefix.with_name(prefix.name + "_params.png"), title_prefix)
     _plot_training_health(history, prefix.with_name(prefix.name + "_health.png"), title_prefix)
+
+    if teacher_params is not None:
+        _plot_parameter_errors(
+            history,
+            teacher_params,
+            prefix.with_name(prefix.name + "_param_error.png"),
+            title_prefix,
+        )
 
     if teacher_params is not None and learned_params is not None:
         _plot_parameter_recovery(
