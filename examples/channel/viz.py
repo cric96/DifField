@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 
 try:
@@ -14,7 +16,7 @@ except ImportError:
 from shared.plotting import draw_markers, draw_obstacles, to_grid, save_grid_simulation_gif
 
 
-def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="examples/channel"):
+def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="generated/channel"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel setup plot")
         return
@@ -46,11 +48,12 @@ def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="examp
     )
     plt.tight_layout()
     output_path = f"{viz_prefix}_setup.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
 
-def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_path="examples/channel_evolution.gif", fps=10):
+def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_path="generated/channel_evolution.gif", fps=10):
     if plt is None:
         print("matplotlib not available; skipping channel GIF")
         return
@@ -71,7 +74,7 @@ def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_p
     )
 
 
-def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, viz_prefix="examples/channel"):
+def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, viz_prefix="generated/channel"):
     if plt is None:
         print("matplotlib not available; skipping channel evolution plot")
         return
@@ -106,11 +109,12 @@ def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, vi
     fig.suptitle("Channel with Obstacles - Field Evolution", fontsize=13, y=0.99)
     plt.tight_layout(rect=[0, 0, 1, 0.97])
     output_path = f"{viz_prefix}_evolution.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
 
-def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rounds, viz_prefix="examples/channel"):
+def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rounds, viz_prefix="generated/channel"):
     if plt is None:
         print("matplotlib not available; skipping channel final fields plot")
         return
@@ -148,11 +152,12 @@ def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rou
     fig.suptitle(f"Channel with Obstacles - Converged (t = {rounds})", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
     output_path = f"{viz_prefix}_final.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
 
-def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist, viz_prefix="examples/channel"):
+def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist, viz_prefix="generated/channel"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel overlay plot")
         return
@@ -191,11 +196,12 @@ def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist,
     )
     plt.tight_layout()
     output_path = f"{viz_prefix}_path.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, viz_prefix="examples/channel_large"):
+def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, viz_prefix="generated/channel_large"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel setup plot")
         return
@@ -223,11 +229,12 @@ def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, 
     )
     plt.tight_layout()
     output_path = f"{viz_prefix}_setup.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot_labels, num_nodes, rounds, elapsed, obstacle, viz_prefix="examples/channel_large"):
+def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot_labels, num_nodes, rounds, elapsed, obstacle, viz_prefix="generated/channel_large"):
     if plt is None:
         print("matplotlib not available; skipping large channel evolution plot")
         return
@@ -265,11 +272,12 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
     )
     plt.tight_layout(rect=[0, 0, 1, 0.98])
     output_path = f"{viz_prefix}_evolution.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=160)
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, channel_threshold, num_nodes, rounds, elapsed, sd_dist, channel_nodes, viz_prefix="examples/channel_large"):
+def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, channel_threshold, num_nodes, rounds, elapsed, sd_dist, channel_nodes, viz_prefix="generated/channel_large"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel final plot")
         return

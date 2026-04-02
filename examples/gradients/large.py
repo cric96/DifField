@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_large")
+    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_large")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable visualization")
     parser.add_argument("--no-gif", action="store_true", help="Disable GIF generation")
@@ -126,6 +126,7 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
 
     plt.tight_layout()
     evolution_path = f"{args.viz_prefix}_evolution.png"
+    Path(evolution_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(evolution_path)
     print(f"Evolution visualization saved to {evolution_path}")
 
@@ -134,6 +135,7 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     plt.colorbar(label="Distance")
     plt.title(f"Final Gradient field on {args.rows}x{args.cols} grid (Source at center)")
     final_path = f"{args.viz_prefix}.png"
+    Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(final_path)
     print(f"Final visualization saved to {final_path}")
 

@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Optuna tuning for examples/boids/learnable.py")
     parser.add_argument("--study-name", type=str, default="boids_learnable_optuna")
     parser.add_argument("--storage", type=str, default="")
-    parser.add_argument("--out-dir", type=str, default="examples/results/optuna")
+    parser.add_argument("--out-dir", type=str, default="generated/results/optuna")
     parser.add_argument("--trials", type=int, default=40)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--python", type=str, default=sys.executable)

@@ -48,7 +48,7 @@ class LearnableGradientWorkflow:
         device: torch.device | None = None,
         gif: bool = False,
         viz: bool = True,
-        viz_prefix: str = "examples/gradient_learnable",
+        viz_prefix: str = "generated/gradient_learnable",
         gif_fps: int = 10,
     ) -> tuple[GradientModel, torch.Tensor, torch.Tensor, torch.Tensor]:
         scenario, source, target = build_corner_source_grid(
@@ -116,7 +116,7 @@ class AttentionGradientWorkflow:
         device: torch.device | None = None,
         gif: bool = False,
         viz: bool = True,
-        viz_prefix: str = "examples/gradient_attention",
+        viz_prefix: str = "generated/gradient_attention",
         gif_fps: int = 10,
     ) -> tuple[AttentionGradientModel, torch.Tensor]:
         scenario, source, target = build_corner_source_grid(
@@ -199,7 +199,7 @@ class MovingGradientWorkflow:
         device: torch.device | None = None,
         gif: bool = False,
         viz: bool = True,
-        viz_prefix: str = "examples/gradient_moving_nodes",
+        viz_prefix: str = "generated/gradient_moving_nodes",
         gif_fps: int = 10,
     ) -> tuple[LearnableMovingGradient, torch.Tensor, torch.Tensor]:
         torch.manual_seed(self.spec.seed)

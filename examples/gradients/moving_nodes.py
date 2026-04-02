@@ -49,7 +49,7 @@ def parse_args():
     parser.add_argument("--w-cohesion", type=float, default=0.6)
     parser.add_argument("--damping", type=float, default=0.96)
     parser.add_argument("--record-every", type=int, default=10)
-    parser.add_argument("--viz-prefix", type=str, default="examples/moving_nodes")
+    parser.add_argument("--viz-prefix", type=str, default="generated/moving_nodes")
     parser.add_argument("--gif-fps", type=int, default=8)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")

@@ -46,7 +46,7 @@ class SmallChannelWorkflow:
         device: torch.device | None = None,
         gif: bool = False,
         viz: bool = True,
-        viz_prefix: str = "examples/channel_small",
+        viz_prefix: str = "generated/channel_small",
         gif_fps: int = 10,
     ) -> None:
         scenario, source, dest, obstacle, noise, src_pos, dst_pos, wall_col = self._build_scenario(device=device)
@@ -124,7 +124,7 @@ class SmallChannelWorkflow:
         obstacle,
         sd_dist,
         gif: bool = False,
-        viz_prefix: str = "examples/channel_small",
+        viz_prefix: str = "generated/channel_small",
         gif_fps: int = 10,
     ):
         plot_channel_setup(self.spec.grid.rows, self.spec.grid.cols, src_pos, dst_pos, obstacle, viz_prefix=viz_prefix)
@@ -173,7 +173,7 @@ class LargeChannelWorkflow:
         device: torch.device | None = None,
         gif: bool = False,
         viz: bool = True,
-        viz_prefix: str = "examples/channel_large",
+        viz_prefix: str = "generated/channel_large",
         gif_fps: int = 10,
     ) -> None:
         scenario, source, dest, obstacle, src_pos, dst_pos = self._build_scenario(device=device)
@@ -257,7 +257,7 @@ class LargeChannelWorkflow:
         obstacle,
         sd_dist,
         gif: bool = False,
-        viz_prefix: str = "examples/channel_large",
+        viz_prefix: str = "generated/channel_large",
         gif_fps: int = 10,
     ):
         plot_channel_large_setup(

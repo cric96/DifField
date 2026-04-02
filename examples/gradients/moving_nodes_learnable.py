@@ -33,7 +33,7 @@ def parse_args():
     parser.add_argument("--target", type=int, default=10)
     parser.add_argument("--learn", choices=["motion", "ac", "both"], default="both")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_moving_learnable")
+    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_moving_learnable")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")

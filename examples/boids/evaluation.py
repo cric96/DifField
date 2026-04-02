@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=0.01)
     parser.add_argument("--eval-seeds", type=str, default="101,103,107")
     parser.add_argument("--eval-every", type=int, default=20)
-    parser.add_argument("--out-dir", type=str, default="examples/results/evaluation")
+    parser.add_argument("--out-dir", type=str, default="generated/results/evaluation")
     parser.add_argument("--python", type=str, default=sys.executable)
     parser.add_argument("--skip-viz", action="store_true", help="Pass --no-viz --no-gif to each run")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")

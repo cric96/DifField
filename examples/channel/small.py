@@ -32,7 +32,7 @@ def parse_args():
     parser.add_argument("--tolerance", type=float, default=0.5, help="Path tolerance")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="examples/channel_small")
+    parser.add_argument("--viz-prefix", type=str, default="generated/channel_small")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable visualization")
     parser.add_argument("--no-gif", action="store_true", help="Disable GIF generation")

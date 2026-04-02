@@ -37,14 +37,14 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--weight", type=float, default=1.0, help="Fixed edge weight")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="examples/gradient_fixed")
+    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_fixed")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
     return parser.parse_args()
 
 
-def plot_results(dist: torch.Tensor, expected: torch.Tensor, viz_prefix: str = "examples/gradient_fixed") -> None:
+def plot_results(dist: torch.Tensor, expected: torch.Tensor, viz_prefix: str = "generated/gradient_fixed") -> None:
     if plt is None:
         return
 
@@ -59,6 +59,7 @@ def plot_results(dist: torch.Tensor, expected: torch.Tensor, viz_prefix: str = "
 
     plt.tight_layout()
     output_path = f"{viz_prefix}.png"
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved figure to {output_path}")
 

@@ -53,7 +53,7 @@ class LearnableBoidsWorkflow:
         run_name = self.args.run_name.strip() or f"boids_{self.args.mode}_seed{self.args.seed}_{timestamp}"
         run_dir = Path(self.args.out_dir) / run_name
         run_dir.mkdir(parents=True, exist_ok=True)
-        viz_prefix = str(run_dir / "learnable") if self.args.viz_prefix == "examples/boids/learnable" else self.args.viz_prefix
+        viz_prefix = str(run_dir / "learnable") if self.args.viz_prefix == "generated/boids/learnable" else self.args.viz_prefix
         return RunContext(spec=build_learnable_spec(self.args, run_name=run_name, run_dir=run_dir, viz_prefix=viz_prefix))
 
     def _train(

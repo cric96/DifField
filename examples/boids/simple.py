@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--speed", type=float, default=0.014)
     parser.add_argument("--record-every", type=int, default=10)
     parser.add_argument("--highlight-node", type=int, default=0)
-    parser.add_argument("--viz-prefix", type=str, default="examples/boids/simple")
+    parser.add_argument("--viz-prefix", type=str, default="generated/boids/simple")
     parser.add_argument("--gif-fps", type=int, default=8)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")

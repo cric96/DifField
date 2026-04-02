@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 import numpy as np
@@ -56,6 +57,7 @@ def save_gif(
         ax.clear()
         render_frame_fn(ax, frame_idx)
 
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     anim = FuncAnimation(fig, update, frames=frames)
     writer = PillowWriter(fps=fps)
     anim.save(output_path, writer=writer)
@@ -252,6 +254,7 @@ def plot_moving_snapshots(
     if mappable is not None:
         cax = fig.add_axes([0.90, 0.14, 0.018, 0.70])
         fig.colorbar(mappable, cax=cax)
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
@@ -294,6 +297,7 @@ def plot_node_trajectories(
     ax.set_ylabel("y")
     ax.legend(loc="upper right")
     plt.tight_layout()
+    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
 
