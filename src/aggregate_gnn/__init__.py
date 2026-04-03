@@ -1,7 +1,20 @@
 """aggregate_gnn — Aggregate Computing ↔ GNN isomorphism library."""
 
 from .core import RoundContext, StateManager
-from .dsl import AggregateContext, DeviceContext, branch, broadcast, const, field, mid, mux, nbr, rep
+from .dsl import (
+    AggregateContext,
+    DeviceContext,
+    branch,
+    broadcast,
+    collect_cast,
+    const,
+    field,
+    gradient_cast,
+    mid,
+    mux,
+    nbr,
+    rep,
+)
 from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
 from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
 from .pyg_backend import HAS_PYG
@@ -32,6 +45,8 @@ __all__ = [
     "nbr",
     "branch",
     "broadcast",
+    "gradient_cast",
+    "collect_cast",
     "mux",
     "const",
     "field",

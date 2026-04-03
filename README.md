@@ -7,11 +7,17 @@ If you have an nvdia gpu, then write
 ```bash
 uv sync --extras "cuda"
 ```
-If you have a rocm (amd) gpu, then write
+If you would like to use the cpu, then write
 ```bash
-uv sync --extras "rocm"
+uv sync --extras "cpu"
 ```
-
+For amd gpu, unfortunately, the only way to support is to build from source with ROCm. 
+Here there is a script for rocm 7.2.
+YOu can run the script with
+```bash
+bash scripts/install_rocm_7.2.sh
+```
+This will setup uv to 
 ### Run Tests
 
 ```bash
@@ -85,6 +91,7 @@ output, runtime = engine.run(
 - `examples/gradients/moving_nodes.py`
 - `examples/gradients/moving_nodes_learnable.py`
 - `examples/gradients/moving_source.py`
+- `examples/collects/small.py`
 - `examples/channel/small.py`
 - `examples/channel/large.py`
 - `examples/channel/viz.py`
@@ -93,6 +100,7 @@ The examples tree is organized by family:
 
 - `examples/boids/` contains reusable boids modules and focused entrypoints.
 - `examples/gradients/` contains the reusable gradient examples.
+- `examples/collects/` contains focused collect/gradient-cast building-block examples.
 - `examples/channel/` contains the reusable channel examples and visualization helpers.
 - `examples/shared/` contains plotting and diagnostics helpers reused across families.
 - The example entrypoints now live only inside these subfolders.

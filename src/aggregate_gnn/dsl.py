@@ -32,8 +32,9 @@ from .constants import (
     BROADCAST_NEAR_ZERO,
     DEFAULT_TAU_BRANCH,
     DEFAULT_TAU_SOFT_AGGR,
+    LOG_EPSILON,
 )
-from .functional import soft_where
+from .functional import scatter_aggr, scatter_binary_fold, scatter_min_by_first, soft_where
 from .pyg_backend import Data
 
 # ---------------------------------------------------------------------------
@@ -54,6 +55,104 @@ def _current_ctx() -> RoundContext:
     if not stack:
         raise RuntimeError("No active AggregateContext. Use `with ctx.round(): ...`")
     return stack[-1]
+
+
+def _ensure_field(value: float | Tensor) -> Tensor:
+    ctx = _current_ctx()
+    if isinstance(value, Tensor):
+        tensor = value.to(ctx.edge_index.device)
+        if tensor.dim() == 0:
+            return tensor.expand(ctx.num_nodes)
+        if tensor.shape[0] != ctx.num_nodes:
+            raise ValueError(
+                f"Expected first dimension {ctx.num_nodes}, got {tuple(tensor.shape)}",
+            )
+        return tensor
+    return torch.full((ctx.num_nodes,), float(value), dtype=torch.float32, device=ctx.edge_index.device)
+
+
+def _broadcast_like(value: float | Tensor, template: Tensor) -> Tensor:
+    if isinstance(value, Tensor):
+        tensor = value.to(device=template.device, dtype=template.dtype)
+        if tensor.dim() == 0:
+            return tensor.expand_as(template)
+        if tensor.shape == template.shape:
+            return tensor
+        if tensor.shape == template.shape[1:]:
+            return tensor.unsqueeze(0).expand_as(template)
+        raise ValueError(
+            f"Cannot broadcast shape {tuple(tensor.shape)} to {tuple(template.shape)}",
+        )
+    return torch.full_like(template, float(value))
+
+
+def _pack_cast_state(distance: Tensor, payload: Tensor) -> Tensor:
+    payload_flat = payload.unsqueeze(-1) if payload.dim() == 1 else payload.reshape(payload.shape[0], -1)
+    return torch.cat((distance.unsqueeze(-1), payload_flat), dim=-1)
+
+
+def _unpack_cast_state(packed: Tensor, payload_shape: tuple[int, ...]) -> tuple[Tensor, Tensor]:
+    distance = packed[:, 0]
+    payload_flat = packed[:, 1:]
+    if not payload_shape:
+        return distance, payload_flat[:, 0]
+    return distance, payload_flat.reshape((packed.shape[0],) + payload_shape)
+
+
+def _require_scalar_field(name: str, value: float | Tensor) -> Tensor:
+    field_value = _ensure_field(value)
+    if field_value.dim() != 1:
+        raise ValueError(f"{name} must be a scalar field shaped [num_nodes]")
+    return field_value
+
+
+def _validate_cast_mode(mode: str) -> None:
+    if mode not in {"hard", "soft"}:
+        raise ValueError(f"Unknown mode: {mode}")
+
+
+def _find_parent_ids(potential: Tensor) -> Tensor:
+    ctx = _current_ctx()
+    src, tgt = ctx.edge_index
+    parent_candidates = torch.stack((potential[src], src.float()), dim=-1)
+    fill_row = torch.stack((field.inf(), const(-1.0)), dim=-1)
+    best_parent = scatter_min_by_first(
+        parent_candidates,
+        tgt,
+        ctx.num_nodes,
+        mode="hard",
+        tau=DEFAULT_TAU_SOFT_AGGR,
+        fill_row=fill_row,
+    )
+    candidate_potential = best_parent[:, 0]
+    candidate_parent = best_parent[:, 1].round().long()
+    sentinel = torch.full_like(candidate_parent, -1)
+    return torch.where(candidate_potential < potential, candidate_parent, sentinel)
+
+
+def _soft_parent_weights(potential: Tensor, tau: float) -> Tensor:
+    ctx = _current_ctx()
+    src, tgt = ctx.edge_index
+    effective_tau = max(float(tau), LOG_EPSILON)
+    child_potential = potential[src]
+    parent_potential = potential[tgt]
+    lower_gate = torch.sigmoid((child_potential - parent_potential) / effective_tau)
+    logits = -parent_potential / effective_tau
+    bucket_max = scatter_aggr(logits, src, ctx.num_nodes, aggr="max", fill_value=float("-inf"))
+    stabilized = (logits - bucket_max[src]).exp() * lower_gate
+    denom = scatter_aggr(stabilized, src, ctx.num_nodes, aggr="sum")
+    return torch.where(
+        denom[src] > 0,
+        stabilized / denom[src].clamp(min=LOG_EPSILON),
+        torch.zeros_like(stabilized),
+    )
+
+
+def _scale_messages(messages: Tensor, weights: Tensor) -> Tensor:
+    scaled_weights = weights
+    while scaled_weights.dim() < messages.dim():
+        scaled_weights = scaled_weights.unsqueeze(-1)
+    return messages * scaled_weights
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +351,96 @@ def broadcast(mask: Tensor, value: Tensor, name: str = "bc") -> Tensor:
             nbr(bc, aggr="min")
         )
     )
+
+
+def gradient_cast(
+    source: float | Tensor,
+    center: float | Tensor,
+    accumulation: Callable[[Tensor], Tensor],
+    *,
+    name: str = "gradient_cast",
+    mode: str = "hard",
+    tau: float = DEFAULT_TAU_SOFT_AGGR,
+) -> Tensor:
+    r"""Propagate payloads outward along a minimum-potential gradient.
+
+    Mirrors the classic field-calculus ``gradientCast`` building block while
+    staying inside the differentiable tensor DSL. The propagated state packs
+    the path cost in the first column and the payload in the remaining ones.
+    """
+    _validate_cast_mode(mode)
+    source_field = _require_scalar_field("source", source)
+    center_field = _ensure_field(center)
+    payload_shape = center_field.shape[1:]
+    init_state = _pack_cast_state(field.inf(), center_field)
+    source_state = _pack_cast_state(field.zeros(), center_field)
+
+    def update(state: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
+        old_distance, old_payload = _unpack_cast_state(state, payload_shape)
+        src, tgt = ctx.edge_index
+        messages = _pack_cast_state(
+            old_distance[src] + ctx.edge_weight,
+            accumulation(old_payload[src]),
+        )
+        propagated = scatter_min_by_first(
+            messages,
+            tgt,
+            ctx.num_nodes,
+            mode=mode,
+            tau=tau,
+            fill_row=init_state,
+        )
+        return soft_where(source_field, source_state, propagated)
+
+    state = rep(f"_gc_{name}", init_state, update)
+    return _unpack_cast_state(state, payload_shape)[1]
+
+
+def collect_cast(
+    potential: float | Tensor,
+    local: float | Tensor,
+    null: float | Tensor,
+    accumulation: Callable[[Tensor, Tensor], Tensor],
+    *,
+    name: str = "collect_cast",
+    mode: str = "hard",
+    tau: float = DEFAULT_TAU_SOFT_AGGR,
+) -> Tensor:
+    r"""Collect payloads from children toward local minima of a potential field.
+
+    Hard mode matches the standard collect-by-parent-tree semantics. Soft mode
+    relaxes the parent choice into differentiable edge weights, which works
+    best with pointwise reducers such as sums and weighted sums.
+    """
+    _validate_cast_mode(mode)
+    potential_field = _require_scalar_field("potential", potential)
+    local_field = _ensure_field(local)
+    null_field = _broadcast_like(null, local_field)
+
+    def update(collected: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
+        src, tgt = ctx.edge_index
+        if mode == "hard":
+            parent_ids = _find_parent_ids(potential_field)
+            keep = parent_ids[src] == tgt
+            child_values = scatter_binary_fold(
+                collected[src[keep]],
+                tgt[keep],
+                ctx.num_nodes,
+                accumulation,
+                null_field,
+            )
+        else:
+            parent_weight = _soft_parent_weights(potential_field, tau)
+            child_values = scatter_binary_fold(
+                _scale_messages(collected[src], parent_weight),
+                tgt,
+                ctx.num_nodes,
+                accumulation,
+                null_field,
+            )
+        return accumulation(local_field, child_values)
+
+    return rep(f"_cc_{name}", local_field, update)
 
 
 def const(value: float) -> Tensor:
