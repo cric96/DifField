@@ -57,7 +57,7 @@ url = "https://download.pytorch.org/whl/cu126"
 explicit = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["tests", "examples"]
 
 [dependency-groups]
 dev = [

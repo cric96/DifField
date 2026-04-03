@@ -1,17 +1,11 @@
-"""Regression tests for learnable aggregate boids training modes."""
+"""Tests specific to the learnable boids example family."""
 
-import sys
-from pathlib import Path
+from __future__ import annotations
 
 import torch
 
-ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "src"))
-
 from examples.boids.config import ModelSpec, SimulationSpec, TeacherDynamics
-from examples.boids.learnable import LearnableAggregateBoids
-from examples.boids.model import teacher_rollout_from_specs
+from examples.boids.model import LearnableAggregateBoids, teacher_rollout_from_specs, trajectory_loss_components
 
 
 def _make_model(mode: str) -> LearnableAggregateBoids:
@@ -26,6 +20,24 @@ def _make_model(mode: str) -> LearnableAggregateBoids:
         init_connectivity="hybrid",
         init_k_neighbors=4,
         init_min_degree=2,
+    )
+
+
+def _make_small_boids_model() -> LearnableAggregateBoids:
+    torch.manual_seed(0)
+    positions0 = torch.rand(6, 2)
+    return LearnableAggregateBoids(
+        positions0=positions0,
+        radius=0.35,
+        sep=0.08,
+        dt=1.0,
+        mode="weights",
+        init_connectivity="hybrid",
+        init_k_neighbors=4,
+        init_min_degree=2,
+        init_damping_target=0.96,
+        init_max_speed_target=0.014,
+        train_max_speed=False,
     )
 
 
@@ -83,9 +95,33 @@ def _teacher_specs(model: LearnableAggregateBoids, rounds: int) -> tuple[Simulat
         init_max_speed_target=teacher.max_speed,
         max_speed_min=model.max_speed_min,
         max_speed_max=model.max_speed_max,
-        train_max_speed=True,
+        train_max_speed=model.train_max_speed,
     )
     return simulation, teacher, model_spec
+
+
+def _boids_teacher_targets(
+    model: LearnableAggregateBoids,
+    *,
+    rounds: int,
+    velocities0: torch.Tensor,
+) -> tuple[SimulationSpec, torch.Tensor, torch.Tensor]:
+    simulation, teacher, model_spec = _teacher_specs(model, rounds)
+    teacher_pos_seq, teacher_vel_seq = teacher_rollout_from_specs(
+        positions0=model.positions0,
+        velocities0=velocities0,
+        rounds=simulation.rounds,
+        simulation=simulation,
+        teacher=teacher,
+        model=model_spec,
+    )
+    return simulation, teacher_pos_seq, teacher_vel_seq
+
+
+def _assert_finite_gradients(params: list[torch.nn.Parameter]) -> None:
+    for param in params:
+        assert param.grad is not None
+        assert torch.isfinite(param.grad).all()
 
 
 def test_weights_mode_velocity_update_ignores_attention_parameters():
@@ -144,9 +180,7 @@ def test_truncated_rollout_backpropagates_finite_gradients():
     loss = pred_pos_seq.square().mean() + pred_vel_seq.square().mean()
     loss.backward()
 
-    for param in model.trainable_parameters():
-        assert param.grad is not None
-        assert torch.isfinite(param.grad).all()
+    _assert_finite_gradients(model.trainable_parameters())
 
 
 def test_weights_rollout_matches_teacher_when_parameters_match():
@@ -159,7 +193,9 @@ def test_weights_rollout_matches_teacher_when_parameters_match():
         model.w_align_raw.copy_(_softplus_inverse(teacher.w_align))
         model.w_cohesion_raw.copy_(_softplus_inverse(teacher.w_cohesion))
         model.damping_raw.copy_(torch.logit(torch.tensor(teacher.damping, dtype=torch.float32)))
-        model.max_speed_raw.copy_(_bounded_sigmoid_inverse(teacher.max_speed, model.max_speed_min, model.max_speed_max))
+        model.max_speed_raw.copy_(
+            _bounded_sigmoid_inverse(teacher.max_speed, model.max_speed_min, model.max_speed_max),
+        )
 
     teacher_pos_seq, teacher_vel_seq = teacher_rollout_from_specs(
         positions0=model.positions0,
@@ -173,3 +209,65 @@ def test_weights_rollout_matches_teacher_when_parameters_match():
 
     assert torch.allclose(pred_pos_seq, teacher_pos_seq, atol=1e-5)
     assert torch.allclose(pred_vel_seq, teacher_vel_seq, atol=1e-5)
+
+
+def test_rollout_truncation_matches_full_when_window_covers_horizon():
+    model = _make_small_boids_model()
+    velocities0 = torch.tensor(
+        [
+            [0.010, 0.000],
+            [0.000, 0.008],
+            [-0.006, 0.004],
+            [0.003, -0.007],
+            [0.005, 0.005],
+            [-0.004, -0.003],
+        ],
+        dtype=torch.float32,
+    )
+
+    full_pos, full_vel, full_final = model.rollout(rounds=4, velocities0=velocities0, trunc_window=None)
+    trunc_pos, trunc_vel, trunc_final = model.rollout(rounds=4, velocities0=velocities0, trunc_window=4)
+
+    assert torch.allclose(trunc_pos, full_pos, atol=1e-6)
+    assert torch.allclose(trunc_vel, full_vel, atol=1e-6)
+    assert torch.allclose(trunc_final, full_final, atol=1e-6)
+
+
+def test_truncated_training_reduces_teacher_loss():
+    torch.manual_seed(0)
+    model = _make_small_boids_model()
+    velocities0 = torch.tensor(
+        [
+            [0.010, 0.000],
+            [0.000, 0.008],
+            [-0.006, 0.004],
+            [0.003, -0.007],
+            [0.005, 0.005],
+            [-0.004, -0.003],
+        ],
+        dtype=torch.float32,
+    )
+    simulation, teacher_pos_seq, teacher_vel_seq = _boids_teacher_targets(model, rounds=4, velocities0=velocities0)
+    optimizer = torch.optim.Adam(model.trainable_parameters(), lr=0.05)
+
+    losses = []
+    for _ in range(10):
+        optimizer.zero_grad()
+        pred_pos_seq, pred_vel_seq, _ = model.rollout(
+            rounds=simulation.rounds,
+            velocities0=velocities0,
+            trunc_window=2,
+        )
+        total_loss, _, _ = trajectory_loss_components(
+            pred_pos_seq,
+            pred_vel_seq,
+            teacher_pos_seq,
+            teacher_vel_seq,
+            velocity_weight=1.0,
+        )
+        total_loss.backward()
+        _assert_finite_gradients(model.trainable_parameters())
+        optimizer.step()
+        losses.append(float(total_loss.item()))
+
+    assert losses[-1] < losses[0]

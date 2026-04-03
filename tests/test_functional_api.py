@@ -1,0 +1,159 @@
+"""Tests for exported functional primitives and edge masking helpers."""
+
+from __future__ import annotations
+
+import pytest
+import torch
+
+from aggregate_gnn import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
+from aggregate_gnn.functional import scatter_min_by_first
+from tests.support import line_graph
+
+
+class TestScatterAggr:
+    def test_sum(self):
+        src = torch.tensor([1.0, 2.0, 3.0])
+        index = torch.tensor([0, 0, 1])
+        out = scatter_aggr(src, index, 2, aggr="sum")
+        assert torch.allclose(out, torch.tensor([3.0, 3.0]))
+
+    def test_mean(self):
+        src = torch.tensor([1.0, 3.0, 5.0])
+        index = torch.tensor([0, 0, 1])
+        out = scatter_aggr(src, index, 2, aggr="mean")
+        assert torch.allclose(out, torch.tensor([2.0, 5.0]))
+
+    def test_min_hard(self):
+        src = torch.tensor([3.0, 1.0, 5.0])
+        index = torch.tensor([0, 0, 1])
+        out = scatter_aggr(src, index, 2, aggr="min", mode="hard", fill_value=float("inf"))
+        assert torch.allclose(out, torch.tensor([1.0, 5.0]))
+
+    def test_min_soft(self):
+        src = torch.tensor([3.0, 1.0, 5.0])
+        index = torch.tensor([0, 0, 1])
+        out = scatter_aggr(src, index, 2, aggr="min", mode="soft", tau=0.01, fill_value=float("inf"))
+        assert torch.allclose(out, torch.tensor([1.0, 5.0]), atol=0.05)
+
+    def test_max_hard(self):
+        src = torch.tensor([3.0, 1.0, 5.0])
+        index = torch.tensor([0, 0, 1])
+        out = scatter_aggr(src, index, 2, aggr="max", mode="hard", fill_value=float("-inf"))
+        assert torch.allclose(out, torch.tensor([3.0, 5.0]))
+
+    def test_min_by_first_hard_keeps_last_equal_minimum(self):
+        src = torch.tensor([[2.0, 20.0], [1.0, 10.0], [1.0, 30.0], [5.0, 50.0]])
+        index = torch.tensor([0, 0, 0, 1])
+        fill_row = torch.tensor([[float("inf"), -1.0], [float("inf"), -1.0]])
+
+        out = scatter_min_by_first(src, index, 2, mode="hard", fill_row=fill_row)
+
+        assert torch.allclose(out, torch.tensor([[1.0, 30.0], [5.0, 50.0]]))
+
+    def test_custom_callable(self):
+        src = torch.tensor([1.0, 2.0, 3.0])
+        index = torch.tensor([0, 0, 1])
+
+        def shifted_sum(msg, bucket_index, num_nodes):
+            return scatter_aggr(msg, bucket_index, num_nodes, aggr="sum") + 1.0
+
+        out = scatter_aggr(src, index, 2, aggr=shifted_sum, mode="soft", tau=0.1, fill_value=-123.0)
+        assert torch.allclose(out, torch.tensor([4.0, 4.0]))
+
+    def test_min_fill_value_for_isolated_nodes(self):
+        src = torch.tensor([3.0, 1.0])
+        index = torch.tensor([0, 0])
+        out = scatter_aggr(src, index, 3, aggr="min", mode="hard", fill_value=99.0)
+        assert torch.allclose(out, torch.tensor([1.0, 99.0, 99.0]))
+
+    def test_soft_min_small_tau_has_finite_gradients(self):
+        src = torch.tensor([3.0, 1.0, 5.0], requires_grad=True)
+        index = torch.tensor([0, 0, 1])
+
+        out = scatter_aggr(src, index, 2, aggr="min", mode="soft", tau=1e-2, fill_value=float("inf"))
+        out[0].backward()
+
+        assert src.grad is not None
+        assert torch.isfinite(src.grad).all()
+        assert src.grad.abs().sum().item() > 0.0
+
+    def test_invalid_aggregation_raises(self):
+        with pytest.raises(ValueError, match="Unknown aggregation"):
+            scatter_aggr(torch.tensor([1.0]), torch.tensor([0]), 1, aggr="median")
+
+
+class TestSoftWhere:
+    def test_basic(self):
+        cond = torch.tensor([1.0, 0.0, 1.0])
+        x = torch.tensor([10.0, 20.0, 30.0])
+        y = torch.tensor([100.0, 200.0, 300.0])
+        result = soft_where(cond, x, y)
+        assert torch.allclose(result, torch.tensor([10.0, 200.0, 30.0]))
+
+    def test_boolean_cond(self):
+        cond = torch.tensor([True, False])
+        x = torch.tensor([1.0, 2.0])
+        y = torch.tensor([3.0, 4.0])
+        result = soft_where(cond, x, y)
+        assert torch.allclose(result, torch.tensor([1.0, 4.0]))
+
+    def test_avoids_nan_from_inactive_infinite_branch(self):
+        cond = torch.tensor([1.0, 0.0])
+        x = torch.tensor([5.0, float("inf")])
+        y = torch.tensor([float("inf"), 7.0])
+        result = soft_where(cond, x, y)
+        assert torch.allclose(result, torch.tensor([5.0, 7.0]))
+
+
+class TestMaskEdges:
+    def test_hard_mask(self):
+        edge_index, _ = line_graph()
+        cond = torch.tensor([True, True, False, False])
+        ei_out, edge_weight = mask_edges(edge_index, cond, mode="hard")
+        assert ei_out.shape[1] == 4
+        assert torch.allclose(edge_weight, torch.ones(4))
+
+    def test_soft_mask_returns_continuous_weights(self):
+        edge_index, _ = line_graph()
+        cond = torch.tensor([1.0, 0.8, 0.2, 0.0])
+        _, edge_weight = mask_edges(edge_index, cond, mode="soft", tau=8.0)
+        assert edge_weight.shape[0] == edge_index.shape[1]
+        assert ((edge_weight >= 0.0) & (edge_weight <= 1.0)).all()
+        assert edge_weight[0] > edge_weight[2]
+
+    def test_mask_edges_for_partition_hard_filters_auxiliary_weights(self):
+        edge_index, _ = line_graph()
+        cond = torch.tensor([True, True, False, False])
+        edge_weight = torch.tensor([1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
+        message_weight = torch.tensor([10.0, 11.0, 20.0, 21.0, 30.0, 31.0])
+
+        ei_out, ew_out, mw_out = mask_edges_for_partition(
+            edge_index,
+            cond,
+            partition=True,
+            edge_weight=edge_weight,
+            message_weight=message_weight,
+            mode="hard",
+        )
+
+        assert torch.equal(ei_out, torch.tensor([[0, 1], [1, 0]], dtype=torch.long))
+        assert torch.allclose(ew_out, torch.tensor([1.0, 1.0]))
+        assert torch.allclose(mw_out, torch.tensor([10.0, 11.0]))
+
+    def test_mask_edges_for_partition_soft_composes_message_weight(self):
+        edge_index, _ = line_graph()
+        cond = torch.tensor([1.0, 0.8, 0.2, 0.0])
+        message_weight = torch.full((edge_index.shape[1],), 2.0)
+
+        _, _, mw_out = mask_edges_for_partition(
+            edge_index,
+            cond,
+            partition=True,
+            message_weight=message_weight,
+            mode="soft",
+            tau=6.0,
+        )
+
+        assert mw_out is not None
+        assert ((mw_out >= 0.0) & (mw_out <= 2.0)).all()
+        assert mw_out[0] > mw_out[2]
