@@ -6,8 +6,8 @@ import time
 
 import torch
 
-from aggregate_gnn import GridScenario, SimulationEngine, SnapshotRecorder, branch
-from aggregate_gnn.dsl import field
+from autofield import GridScenario, SimulationEngine, SnapshotRecorder, branch
+from autofield.dsl import field
 
 try:
     from .core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes, distance_src_to_dst

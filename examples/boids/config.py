@@ -8,7 +8,7 @@ from typing import Any
 
 from shared.training import parse_int_csv
 import torch
-from aggregate_gnn.utils import get_device
+from autofield.utils import get_device
 
 
 @dataclass(frozen=True)

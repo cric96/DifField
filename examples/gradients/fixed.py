@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import get_device
+from autofield.dsl import field
+from autofield.utils import get_device
 
 try:
     import matplotlib.pyplot as plt
@@ -25,7 +25,7 @@ try:
 except ImportError:
     from common import auto_rounds, build_corner_source_grid, run_gradient_program
 
-from aggregate_gnn import SnapshotRecorder
+from autofield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 

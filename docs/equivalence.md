@@ -18,7 +18,7 @@ the framework against a reference implementation.
 
 ### 1.2 Simulation Framework Mapping
 
-The repository includes a reusable simulation framework (`src/aggregate_gnn/sim`) used by all examples:
+The repository includes a reusable simulation framework (`src/autofield/sim`) used by all examples:
 
 - `GridScenario` builds graph topology and field initialisations.
 - `SimulationEngine` executes synchronous rounds over the AC program.
@@ -464,14 +464,14 @@ differentiation (back-propagation through time). $\square$
 
 ### 5.4 Runtime Edge Metrics and Relaxed Topology
 
-In the implementation, the neighbourhood range sensor `nbrRange()` is a
+In the implementation, the neighbourhood range sensor `nbr_range()` is a
 direct view of the current runtime edge metric. This yields three distinct
 autograd regimes for weighted shortest-path style programs such as
 `gradient(source)`:
 
 1. **Fixed topology, learnable edge metric.** If the graph structure is fixed
    and the runtime edge weights are tensors on the computation graph, then
-   gradients propagate through `nbrRange()` exactly as they do through any
+   gradients propagate through `nbr_range()` exactly as they do through any
    other tensor expression. This covers, for example, grid or fully connected
    scenarios with a learnable scalar or per-edge weight tensor.
 2. **Fixed topology, geometric distance metric.** If the edge set is fixed and
@@ -610,7 +610,7 @@ end-to-end differentiation.
 | **Definition 3** — `rep` | `rep(name, init, fn)` | `name: str`, `init: float\|Tensor`, `fn: Tensor → Tensor` |
 | rep state storage | `StateManager.get_or_init(name, init_val)` | Stores `Tensor [N, *d]` keyed by `name` |
 | **Definition 4** — `nbr` | `nbr(expr, aggr, mode, tau, ...)` | `aggr: str\|Callable`, `mode: "hard"\|"soft"`, `tau: float` |
-| Runtime edge metric / range | `nbrRange()` | Reads `ctx.edge_weight`; differentiable iff the runtime edge metric is differentiable |
+| Runtime edge metric / range | `nbr_range()` | Reads `ctx.edge_weight`; differentiable iff the runtime edge metric is differentiable |
 | Message transform $\varphi$ | `NbrLayer(transform_fn=...)` | `transform_fn: Tensor → Tensor` (optional) |
 | Named export (tag) | `nbr(..., tag="name")` | Stores expression in `ctx.exports[tag]` |
 | Scatter aggregation $\bigoplus$ | `scatter_aggr(src, index, N, aggr, mode, tau)` | Dispatches to sum/mean/min/max or custom callable |
@@ -628,7 +628,7 @@ end-to-end differentiation.
 | **Definition 13** — Soft-max | `_scatter_softmax(src, index, N, tau, fill)` | Via negation: $-\operatorname{softmin}(-x)$ |
 | **Definition 14** — Soft partition mask | `mask_edges_for_partition(..., mode="soft", tau)` | Per-partition sigmoid weights |
 | Same-partition mask (alternative) | `mask_edges(edge_index, cond, mode, tau)` | $\sigma(\tau(P_{\text{same}} - 0.5))$ |
-| Fixed-topology learnable range | `GridScenario(..., edge_weight=...)`, `set_edge_weight(...)` | Attaches a tensor-valued edge metric for use by `nbrRange()` |
+| Fixed-topology learnable range | `GridScenario(..., edge_weight=...)`, `set_edge_weight(...)` | Attaches a tensor-valued edge metric for use by `nbr_range()` |
 | Relaxed spatial connectivity | `RelaxedRadiusScenario(positions, edge_radius, ...)` | Fully connected candidate graph with smooth additive radius penalty |
 | Local device execution | `DeviceContext(num_neighbors)` | Star graph: node 0 = self, 1…K = neighbours |
 

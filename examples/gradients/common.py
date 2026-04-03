@@ -10,9 +10,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep, SnapshotRecorder
-from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import get_grid_distances, get_device
+from autofield import GridScenario, SimulationEngine, mux, nbr, rep, SnapshotRecorder
+from autofield.dsl import field
+from autofield.utils import get_grid_distances, get_device
 
 
 def auto_rounds(rows: int, cols: int, rounds: int) -> int:

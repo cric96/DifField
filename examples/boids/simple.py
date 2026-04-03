@@ -13,9 +13,9 @@ sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
 
-from aggregate_gnn import SpatialScenario, bounce_in_box, limit_speed, nbr, normalize_vectors, rep
-from aggregate_gnn.dsl import AggregateContext
-from aggregate_gnn.utils import get_device
+from autofield import SpatialScenario, bounce_in_box, limit_speed, nbr, normalize_vectors, rep
+from autofield.dsl import AggregateContext
+from autofield.utils import get_device
 from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
 
 

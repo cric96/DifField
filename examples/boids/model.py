@@ -11,14 +11,14 @@ from torch_geometric.utils import degree as pyg_degree
 from torch_geometric.utils import scatter as pyg_scatter
 from torch_geometric.utils import softmax as pyg_softmax
 
-from aggregate_gnn import (
+from autofield import (
     SpatialScenario,
     bounce_in_box,
     limit_speed,
     nbr,
     rep,
 )
-from aggregate_gnn.dsl import AggregateContext
+from autofield.dsl import AggregateContext
 
 if TYPE_CHECKING:
     from .config import ModelSpec, SimulationSpec, TeacherDynamics

@@ -11,10 +11,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 import torch
-from aggregate_gnn.utils import get_device
+from autofield.utils import get_device
 sys.path.insert(0, str(ROOT / "examples"))
 
-from aggregate_gnn import (
+from autofield import (
     EventSchedule,
     ScheduledEvent,
     SimulationEngine,
@@ -28,7 +28,7 @@ from aggregate_gnn import (
     nbr,
     rep,
 )
-from aggregate_gnn.dsl import field
+from autofield.dsl import field
 from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
 
 

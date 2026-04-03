@@ -1,4 +1,4 @@
-"""Simulation engine wrapping AggregateContext execution."""
+"""Simulation engine wrapping aggregate context execution."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from typing import Callable
 
 import torch
 
-from ..dsl import AggregateContext
+from ..core import AggregateContext
 from ..pyg_backend import maybe_make_data
 from .events import EventSchedule, SimulationRuntime
 from .recording import SnapshotRecorder

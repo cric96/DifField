@@ -1,4 +1,4 @@
-"""Reusable simulation building blocks for Aggregate GNN examples."""
+"""Reusable simulation building blocks for autofield examples."""
 
 from .engine import ProgramStep, SimulationEngine
 from .events import EventSchedule, ScheduledEvent, SimulationRuntime

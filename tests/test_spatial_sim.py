@@ -6,7 +6,7 @@ sys.path.insert(0, "src")
 
 import torch
 
-from aggregate_gnn import (
+from autofield import (
     EventSchedule,
     RelaxedRadiusScenario,
     ScheduledEvent,
@@ -22,7 +22,7 @@ from aggregate_gnn import (
     normalize_vectors,
     rep,
 )
-from aggregate_gnn.dsl import field
+from autofield.dsl import field
 
 
 def test_build_spatial_graph_radius_edges_and_weights():

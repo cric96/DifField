@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from aggregate_gnn import build_spatial_graph
+from autofield import build_spatial_graph
 from boids.cli import HISTORY_KEYS, parse_learnable_args
 from boids.config import LearnableBoidsSpec, build_learnable_spec
 from boids.evaluation_utils import evaluate_seed

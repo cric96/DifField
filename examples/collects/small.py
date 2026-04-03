@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from aggregate_gnn import GridScenario, SimulationEngine, collect_cast, gradient_cast
-from aggregate_gnn.utils import get_device
+from autofield import GridScenario, SimulationEngine, collect_cast, gradient_cast
+from autofield.utils import get_device
 
 
 def parse_args():

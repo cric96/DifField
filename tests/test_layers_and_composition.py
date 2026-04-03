@@ -5,8 +5,8 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
-from aggregate_gnn import AggregateContext, branch, mux, nbr, rep
-from aggregate_gnn.layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
+from autofield import AggregateContext, branch, mux, nbr, rep
+from autofield.layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
 from tests.support import line_graph, triangle_graph
 
 

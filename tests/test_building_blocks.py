@@ -6,30 +6,8 @@ sys.path.insert(0, "src")
 
 import torch
 
-from aggregate_gnn import AggregateContext, collect_cast, gradient_cast
-
-
-def line_graph():
-    edge_index = torch.tensor(
-        [
-            [0, 1, 1, 2, 2, 3],
-            [1, 0, 2, 1, 3, 2],
-        ],
-        dtype=torch.long,
-    )
-    return edge_index, 4
-
-
-def weighted_collect_graph():
-    edge_index = torch.tensor(
-        [
-            [0, 1, 0, 2, 1, 3, 2, 3],
-            [1, 0, 2, 0, 3, 1, 3, 2],
-        ],
-        dtype=torch.long,
-    )
-    edge_weight = torch.tensor([1.0, 1.0, 2.0, 2.0, 10.0, 10.0, 1.0, 1.0])
-    return edge_index, edge_weight, 4
+from autofield import AggregateContext, collect_cast, gradient_cast
+from tests.support import line_graph, weighted_collect_graph
 
 
 class TestGradientCast:

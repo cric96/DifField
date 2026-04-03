@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from aggregate_gnn import SnapshotRecorder, SpatialScenario, SimulationEngine, collect_cast, gradient
-from aggregate_gnn.utils import get_device
+from autofield import SnapshotRecorder, SpatialScenario, SimulationEngine, collect_cast, gradient
+from autofield.utils import get_device
 from shared.plotting import save_grid_simulation_gif, to_grid
 
 

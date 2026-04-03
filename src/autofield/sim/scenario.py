@@ -406,7 +406,7 @@ class RelaxedRadiusScenario:
 
     The candidate graph stays fully connected, while edges longer than the
     preferred radius incur a smooth additive penalty. This is intended for
-    differentiable connectivity learning with ``nbrRange()`` and weighted
+    differentiable connectivity learning with ``nbr_range()`` and weighted
     shortest-path style programs.
     """
 

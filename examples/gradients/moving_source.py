@@ -12,10 +12,10 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from aggregate_gnn.utils import get_device
+from autofield.utils import get_device
 
-from aggregate_gnn import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder, mux, nbr, rep
-from aggregate_gnn.dsl import field
+from autofield import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder, mux, nbr, rep
+from autofield.dsl import field
 from shared.plotting import save_grid_simulation_gif
 
 

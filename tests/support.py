@@ -1,4 +1,4 @@
-"""Shared helpers for aggregate_gnn tests."""
+"""Shared helpers for autofield tests."""
 
 from __future__ import annotations
 
@@ -29,6 +29,19 @@ def line_graph() -> tuple[Tensor, int]:
         dtype=torch.long,
     )
     return edge_index, 4
+
+
+def weighted_collect_graph() -> tuple[Tensor, Tensor, int]:
+    """Four-node graph with asymmetric edge weights for collect tests."""
+    edge_index = torch.tensor(
+        [
+            [0, 1, 0, 2, 1, 3, 2, 3],
+            [1, 0, 2, 0, 3, 1, 3, 2],
+        ],
+        dtype=torch.long,
+    )
+    edge_weight = torch.tensor([1.0, 1.0, 2.0, 2.0, 10.0, 10.0, 1.0, 1.0])
+    return edge_index, edge_weight, 4
 
 
 def assert_finite_gradients(params: list[nn.Parameter]) -> None:

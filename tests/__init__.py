@@ -1,1 +1,1 @@
-"""Test package for aggregate_gnn."""
+"""Test package for autofield."""

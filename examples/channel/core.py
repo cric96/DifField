@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from aggregate_gnn import broadcast, mux, nbr, rep
-from aggregate_gnn.dsl import field
+from autofield import broadcast, mux, nbr, rep
+from autofield.dsl import field
 
 CHANNEL_THRESHOLD = 0.5
 

@@ -1,7 +1,7 @@
 [project]
-name = "aggregate-gnn-equivalence"
+name = "autofield"
 version = "0.1.0"
-description = "Isomorphism between Aggregate Computing constructs and Graph Neural Networks"
+description = "Differentiable field calculus and aggregate computing on graphs"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

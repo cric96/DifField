@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from aggregate_gnn import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
-from aggregate_gnn.functional import scatter_min_by_first
+from autofield import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
+from autofield.functional import scatter_min_by_first
 from tests.support import line_graph
 
 

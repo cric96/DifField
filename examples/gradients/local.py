@@ -12,8 +12,8 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from aggregate_gnn import DeviceContext, GridScenario, SimulationEngine, gradient
-from aggregate_gnn.utils import get_device
+from autofield import DeviceContext, GridScenario, SimulationEngine, gradient
+from autofield.utils import get_device
 
 
 def parse_args():

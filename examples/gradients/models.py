@@ -7,8 +7,8 @@ import torch.nn as nn
 from torch_geometric.utils import scatter as pyg_scatter
 from torch_geometric.utils import softmax as pyg_softmax
 
-from aggregate_gnn import SpatialScenario, mux, nbr, rep
-from aggregate_gnn.dsl import AggregateContext, field
+from autofield import SpatialScenario, mux, nbr, rep
+from autofield.dsl import AggregateContext, field
 
 try:
     from .common import run_gradient_program

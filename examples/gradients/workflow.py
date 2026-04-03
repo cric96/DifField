@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT / "examples") not in sys.path:
     sys.path.insert(0, str(ROOT / "examples"))
 
-from aggregate_gnn import SnapshotRecorder
+from autofield import AggregateContext, SnapshotRecorder, SpatialScenario, mux, nbr, rep
+from autofield.dsl import field
 from shared.plotting import save_grid_simulation_gif, export_moving_gif
 
 try:

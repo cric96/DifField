@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from aggregate_gnn import (
+from autofield import (
     EventSchedule,
     FullyConnectedScenario,
     GridScenario,
@@ -17,8 +17,8 @@ from aggregate_gnn import (
     nbr,
     rep,
 )
-from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import get_device, get_grid_distances
+from autofield.dsl import field
+from autofield.utils import get_device, get_grid_distances
 
 
 class TestSimulationFramework:

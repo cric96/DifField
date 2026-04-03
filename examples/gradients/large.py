@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from aggregate_gnn import SnapshotRecorder
+from autofield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 try:
@@ -27,9 +27,9 @@ try:
 except ImportError:
     from common import auto_rounds, run_gradient_program
 
-from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep, nbrRange
-from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import get_device
+from autofield import GridScenario, SimulationEngine, mux, nbr, rep, nbr_range
+from autofield.dsl import field
+from autofield.utils import get_device
 
 
 def parse_args():

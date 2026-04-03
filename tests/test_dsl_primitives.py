@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from aggregate_gnn import (
+from autofield import (
     AggregateContext,
     branch,
     broadcast,
@@ -13,11 +13,11 @@ from aggregate_gnn import (
     mid,
     mux,
     nbr,
-    nbrRange,
+    nbr_range,
     rep,
 )
-from aggregate_gnn.dsl import field
-from aggregate_gnn.utils import make_grid_graph
+from autofield.dsl import field
+from autofield.utils import make_grid_graph
 from tests.support import line_graph, triangle_graph
 
 
@@ -114,7 +114,7 @@ class TestNbr:
                 dist = rep(
                     "weighted_dist",
                     float("inf"),
-                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbrRange(), aggr="min")),
+                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")),
                 )
 
         assert torch.allclose(dist, torch.tensor([0.0, 2.0, 4.0]))
@@ -294,7 +294,7 @@ class TestGradient:
                 d = rep(
                     "weighted_dist",
                     float("inf"),
-                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbrRange(), aggr="min")),
+                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")),
                 )
 
         loss = d[d.isfinite()].sum()

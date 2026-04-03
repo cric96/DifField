@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from aggregate_gnn import AggregateContext, branch, gradient, mux, nbr, nbrRange, rep
-from aggregate_gnn.dsl import DeviceContext, field
+from autofield import AggregateContext, branch, gradient, mux, nbr, nbr_range, rep
+from autofield.dsl import DeviceContext, field
 
 
 class TestDeviceContext:
@@ -61,7 +61,7 @@ class TestDeviceContext:
         device = DeviceContext(num_neighbors=2)
 
         with device.round(neighbor_ranges=[1.5, 2.5]):
-            ranges = nbr(nbrRange(), aggr="sum")
+            ranges = nbr(nbr_range(), aggr="sum")
 
         assert abs(device.result(ranges).item() - 4.0) < 1e-6
 

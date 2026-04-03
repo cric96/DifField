@@ -1,23 +1,7 @@
-"""aggregate_gnn — Aggregate Computing ↔ GNN isomorphism library."""
+"""autofield — aggregate computing and differentiable field calculus."""
 
-from .core import RoundContext, StateManager
-from .dsl import (
-    AggregateContext,
-    DeviceContext,
-    branch,
-    broadcast,
-    collect_cast,
-    const,
-    field,
-    gradient,
-    gradient_cast,
-    mid,
-    mux,
-    nbr,
-    nbrRange,
-    nbr_range,
-    rep,
-)
+from .core import AggregateContext, DeviceContext, RoundContext, StateManager
+from .dsl import branch, broadcast, collect_cast, const, field, gradient, gradient_cast, mid, mux, nbr, nbr_range, nbrRange, rep
 from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
 from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
 from .pyg_backend import HAS_PYG
@@ -31,9 +15,9 @@ from .sim import (
     SimulationRuntime,
     SnapshotRecorder,
     SpatialScenario,
-    build_relaxed_radius_graph,
     boids_acceleration_dense,
     bounce_in_box,
+    build_relaxed_radius_graph,
     build_spatial_graph,
     limit_speed,
     normalize_vectors,
