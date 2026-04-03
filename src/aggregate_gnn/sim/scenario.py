@@ -7,7 +7,11 @@ from typing import Callable, Iterable
 
 import torch
 
-from ..pyg_backend import build_spatial_edge_index, maybe_make_data
+from ..pyg_backend import (
+    build_fully_connected_edge_index,
+    build_spatial_edge_index,
+    maybe_make_data,
+)
 from ..utils import make_grid_graph
 
 
@@ -73,6 +77,48 @@ class GridScenario:
 
 
 @dataclass
+class FullyConnectedScenario:
+    """A fully connected topology where every node is connected to every other.
+
+    This scenario ignores spatial positions and builds a complete graph.
+    Useful for small-to-medium scale simulations where all-to-all communication
+    is required.
+    """
+
+    num_nodes: int
+    self_loops: bool = False
+    device: torch.device | str = "cpu"
+    edge_index: torch.Tensor = field(init=False)
+    edge_weight: torch.Tensor = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.device = torch.device(self.device)
+        self.edge_index = build_fully_connected_edge_index(
+            self.num_nodes,
+            self_loops=self.self_loops,
+            device=self.device,
+        )
+        self.edge_weight = torch.ones(self.edge_index.shape[1], device=self.device)
+
+    def zeros(self, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+        return torch.zeros(self.num_nodes, dtype=dtype, device=self.device)
+
+    def full(self, value: float, dtype: torch.dtype = torch.float32) -> torch.Tensor:
+        return torch.full((self.num_nodes,), value, dtype=dtype, device=self.device)
+
+    def marker(self, node_idx: int, value: float = 1.0) -> torch.Tensor:
+        out = self.zeros()
+        out[node_idx] = value
+        return out
+
+    def sync_context(self, round_ctx) -> None:
+        """Push current topology into a round context before a DSL round."""
+        round_ctx.edge_index = self.edge_index
+        round_ctx.edge_weight = self.edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+
+
+@dataclass
 class SpatialScenario:
     """2D spatial scenario with dynamic topology rebuilt from node positions.
 
@@ -84,6 +130,7 @@ class SpatialScenario:
     positions: torch.Tensor
     edge_radius: float | None = None
     k_neighbors: int | None = None
+    fully_connected: bool = False
     edge_weight_mode: str = "unit"
     self_loops: bool = False
     ensure_init_connected: bool = False
@@ -102,8 +149,8 @@ class SpatialScenario:
             raise ValueError("positions must have shape [num_nodes, 2]")
         self.positions = self.positions.to(self.device, dtype=torch.float32)
         self.num_nodes = int(self.positions.shape[0])
-        if self.edge_radius is None and self.k_neighbors is None:
-            raise ValueError("Either edge_radius or k_neighbors must be provided")
+        if self.edge_radius is None and self.k_neighbors is None and not self.fully_connected:
+            raise ValueError("Either edge_radius, k_neighbors, or fully_connected must be provided")
         self.init_graph_stats = {
             "num_edges": 0.0,
             "min_degree": 0.0,
@@ -156,6 +203,7 @@ class SpatialScenario:
             self.positions,
             edge_radius=self.edge_radius,
             k_neighbors=self.k_neighbors,
+            fully_connected=self.fully_connected,
             edge_weight_mode=self.edge_weight_mode,
             self_loops=self.self_loops,
         )
@@ -174,11 +222,12 @@ def build_spatial_graph(
     *,
     edge_radius: float | None = None,
     k_neighbors: int | None = None,
+    fully_connected: bool = False,
     edge_weight_mode: str = "unit",
     self_loops: bool = False,
     eps: float = 1e-6,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """Build directed edges and inverse-distance weights from node positions."""
+    """Build directed edges and edge weights from node positions."""
     if positions.dim() != 2 or positions.shape[1] != 2:
         raise ValueError("positions must have shape [num_nodes, 2]")
 
@@ -188,12 +237,20 @@ def build_spatial_graph(
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
         return empty_edges, empty_weights
 
-    edge_index = build_spatial_edge_index(
-        positions,
-        edge_radius=edge_radius,
-        k_neighbors=k_neighbors,
-        self_loops=self_loops,
-    )
+    if fully_connected:
+        edge_index = build_fully_connected_edge_index(
+            num_nodes,
+            self_loops=self_loops,
+            device=positions.device,
+        )
+    else:
+        edge_index = build_spatial_edge_index(
+            positions,
+            edge_radius=edge_radius,
+            k_neighbors=k_neighbors,
+            self_loops=self_loops,
+        )
+
     if edge_index.shape[1] == 0:
         empty_edges = torch.zeros((2, 0), dtype=torch.long, device=positions.device)
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
@@ -203,10 +260,12 @@ def build_spatial_graph(
     edge_dist = (positions[src_nodes] - positions[tgt_nodes]).norm(dim=-1)
     if edge_weight_mode == "unit":
         edge_weight = torch.ones_like(edge_dist)
+    elif edge_weight_mode == "distance":
+        edge_weight = edge_dist.clamp_min(eps)
     elif edge_weight_mode == "inverse_distance":
         edge_weight = 1.0 / (edge_dist + eps)
     else:
-        raise ValueError("edge_weight_mode must be one of: unit, inverse_distance")
+        raise ValueError("edge_weight_mode must be one of: unit, distance, inverse_distance")
     return edge_index.long(), edge_weight.float()
 
 

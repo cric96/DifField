@@ -20,6 +20,18 @@ def line_graph():
     return edge_index, 4
 
 
+def weighted_collect_graph():
+    edge_index = torch.tensor(
+        [
+            [0, 1, 0, 2, 1, 3, 2, 3],
+            [1, 0, 2, 0, 3, 1, 3, 2],
+        ],
+        dtype=torch.long,
+    )
+    edge_weight = torch.tensor([1.0, 1.0, 2.0, 2.0, 10.0, 10.0, 1.0, 1.0])
+    return edge_index, edge_weight, 4
+
+
 class TestGradientCast:
     def test_hop_count_on_line(self):
         edge_index, n = line_graph()
@@ -149,3 +161,21 @@ class TestCollectCast:
         assert potential.grad is not None
         assert torch.isfinite(potential.grad).all()
         assert potential.grad.abs().sum().item() > 0.0
+
+    def test_weighted_collect_uses_shortest_path_parents(self):
+        edge_index, edge_weight, n = weighted_collect_graph()
+        potential = torch.tensor([0.0, 1.0, 2.0, 3.0])
+        local = torch.tensor([0.0, 10.0, 20.0, 1.0])
+        ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
+
+        for _ in range(4):
+            with ctx.round():
+                output = collect_cast(
+                    potential,
+                    local,
+                    0.0,
+                    torch.add,
+                    name="weighted_sizes",
+                )
+
+        assert torch.allclose(output, torch.tensor([31.0, 10.0, 21.0, 1.0]))

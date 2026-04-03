@@ -9,10 +9,13 @@ from .dsl import (
     collect_cast,
     const,
     field,
+    gradient,
     gradient_cast,
     mid,
     mux,
     nbr,
+    nbrRange,
+    nbr_range,
     rep,
 )
 from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
@@ -20,6 +23,7 @@ from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
 from .pyg_backend import HAS_PYG
 from .sim import (
     EventSchedule,
+    FullyConnectedScenario,
     GridScenario,
     ScheduledEvent,
     SimulationEngine,
@@ -43,6 +47,8 @@ __all__ = [
     "DeviceContext",
     "rep",
     "nbr",
+    "nbr_range",
+    "nbrRange",
     "branch",
     "broadcast",
     "gradient_cast",
@@ -50,6 +56,7 @@ __all__ = [
     "mux",
     "const",
     "field",
+    "gradient",
     "mid",
     # Layers (nn.Module)
     "RepLayer",
@@ -70,6 +77,7 @@ __all__ = [
     "ScheduledEvent",
     "SnapshotRecorder",
     "SpatialScenario",
+    "FullyConnectedScenario",
     "build_spatial_graph",
     "normalize_vectors",
     "limit_speed",

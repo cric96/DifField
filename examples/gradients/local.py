@@ -12,8 +12,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from aggregate_gnn import DeviceContext, GridScenario, SimulationEngine, mux, nbr, rep
-from aggregate_gnn.dsl import field
+from aggregate_gnn import DeviceContext, GridScenario, SimulationEngine, gradient
 from aggregate_gnn.utils import get_device
 
 
@@ -26,12 +25,6 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
-
-
-def gradient(source, weight):
-    return rep("dist", float("inf"), lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr="min")))
-
-
 def neighbors_of(node, edge_index):
     mask = (edge_index[1] == node) & (edge_index[0] != node)
     return sorted(edge_index[0, mask].tolist())
@@ -49,7 +42,7 @@ def run_global(scenario, source_global, weight, rounds):
     global_states = []
 
     def program(_runtime):
-        return gradient(source_global, weight)
+        return gradient(source_global, weight, name="dist")
 
     runtime = engine.init_runtime(signals={"source": source_global})
     for _ in range(rounds):
@@ -63,6 +56,7 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
     neighbor_ids = neighbors_of(device_id, edge_index)
     device = DeviceContext(num_neighbors=len(neighbor_ids))
     source_local = device.local_field(own=source_global[device_id].item(), nbr=0.0)
+    local_weight = float(weight.item()) if isinstance(weight, torch.Tensor) else float(weight)
 
     print(f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ===")
 
@@ -70,10 +64,10 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
         if round_idx == 0:
             neighbor_exports = None
         else:
-            neighbor_exports = {"dist": [global_states[round_idx - 1][node].item() for node in neighbor_ids]}
+            neighbor_exports = {"_grad_dist": [global_states[round_idx - 1][node].item() for node in neighbor_ids]}
 
         with device.round(neighbor_exports=neighbor_exports):
-            d_local = gradient(source_local, weight)
+            d_local = gradient(source_local, local_weight, name="dist")
 
         local_value = device.result(d_local).item()
         global_value = global_states[round_idx][device_id].item()

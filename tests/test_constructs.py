@@ -13,14 +13,16 @@ from aggregate_gnn import (
     ScheduledEvent,
     SimulationEngine,
     SnapshotRecorder,
-    rep,
-    nbr,
     branch,
-    mux,
     const,
+    gradient,
+    mux,
+    nbr,
+    nbrRange,
+    rep,
 )
 from aggregate_gnn.layers import RepLayer, NbrLayer
-from aggregate_gnn.functional import scatter_aggr, mask_edges, soft_where
+from aggregate_gnn.functional import scatter_aggr, scatter_min_by_first, mask_edges, soft_where
 from aggregate_gnn.dsl import field, DeviceContext
 from aggregate_gnn.utils import make_grid_graph
 
@@ -77,6 +79,27 @@ class TestScatterAggr:
         index = torch.tensor([0, 0, 1])
         out = scatter_aggr(src, index, 2, aggr="max", mode="hard", fill_value=float("-inf"))
         assert torch.allclose(out, torch.tensor([3.0, 5.0]))
+
+    def test_min_by_first_hard_keeps_last_equal_minimum(self):
+        src = torch.tensor(
+            [
+                [2.0, 20.0],
+                [1.0, 10.0],
+                [1.0, 30.0],
+                [5.0, 50.0],
+            ]
+        )
+        index = torch.tensor([0, 0, 0, 1])
+        fill_row = torch.tensor(
+            [
+                [float("inf"), -1.0],
+                [float("inf"), -1.0],
+            ]
+        )
+
+        out = scatter_min_by_first(src, index, 2, mode="hard", fill_row=fill_row)
+
+        assert torch.allclose(out, torch.tensor([[1.0, 30.0], [5.0, 50.0]]))
 
 
 # ===== rep tests =====
@@ -171,6 +194,44 @@ class TestNbr:
         # Node 1: min(10, 5) = 5
         # Node 2: min(10, 2) = 2
         assert torch.allclose(m, torch.tensor([2.0, 5.0, 2.0]))
+
+    def test_ignores_context_edge_weight_by_default(self):
+        edge_index, n = triangle_graph()
+        edge_weight = torch.tensor([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
+        x = torch.tensor([1.0, 2.0, 3.0])
+
+        with ctx.round():
+            m = nbr(x, aggr="sum")
+
+        assert torch.allclose(m, torch.tensor([5.0, 4.0, 3.0]))
+
+    def test_explicit_edge_weight_still_scales_messages(self):
+        edge_index, n = triangle_graph()
+        ctx = AggregateContext(edge_index, n)
+        x = torch.tensor([1.0, 2.0, 3.0])
+        message_weight = torch.tensor([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+        with ctx.round():
+            m = nbr(x, aggr="sum", edge_weight=message_weight)
+
+        assert torch.allclose(m, torch.tensor([27.0, 17.0, 14.0]))
+
+    def test_nbr_range_supports_weighted_shortest_paths(self):
+        edge_index, _ = triangle_graph()
+        edge_weight = torch.tensor([2.0, 2.0, 2.0, 2.0, 10.0, 10.0])
+        source = torch.tensor([1.0, 0.0, 0.0])
+        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
+
+        for _ in range(4):
+            with ctx.round():
+                dist = rep(
+                    "weighted_dist",
+                    float("inf"),
+                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbrRange(), aggr="min")),
+                )
+
+        assert torch.allclose(dist, torch.tensor([0.0, 2.0, 4.0]))
 
 
 # ===== branch tests =====
@@ -363,6 +424,18 @@ class TestGradient:
         loss.backward()
         assert w.grad is not None
         assert w.grad.item() != 0.0
+
+    def test_convenience_gradient_uses_edge_weight_by_default(self):
+        edge_index, _ = triangle_graph()
+        edge_weight = torch.tensor([2.0, 2.0, 2.0, 2.0, 10.0, 10.0])
+        source = torch.tensor([1.0, 0.0, 0.0])
+        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
+
+        for _ in range(4):
+            with ctx.round():
+                d = gradient(source, name="weighted")
+
+        assert torch.allclose(d, torch.tensor([0.0, 2.0, 4.0]))
 
     def test_nested_rep_multiple_nbr_differentiability(self):
         """Backward pass should work through nested rep and multiple nbr."""
@@ -585,6 +658,40 @@ class TestDeviceContext:
                     mux(source_local, field.of(0.0), nbr(d + w, aggr="min")))
         # source=1 for this device, so mux selects field.of(0) → 0
         assert device.result(d).item() == 0.0
+
+    def test_neighbor_ranges_available_locally(self):
+        device = DeviceContext(num_neighbors=2)
+
+        with device.round(neighbor_ranges=[1.5, 2.5]):
+            ranges = nbr(nbrRange(), aggr="sum")
+
+        assert abs(device.result(ranges).item() - 4.0) < 1e-6
+
+    def test_local_weighted_gradient_matches_global(self):
+        edge_index = torch.tensor([
+            [0, 1, 1, 2],
+            [1, 0, 2, 1],
+        ], dtype=torch.long)
+        edge_weight = torch.tensor([2.0, 2.0, 3.0, 3.0])
+        source = torch.tensor([1.0, 0.0, 0.0])
+
+        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
+        global_states = []
+        for _ in range(4):
+            with ctx.round():
+                d = gradient(source, name="dist")
+            global_states.append(d.detach().clone())
+
+        device = DeviceContext(num_neighbors=1, self_loop=False)
+        source_local = device.local_field(own=0.0, nbr=0.0)
+        for round_idx in range(4):
+            neighbor_exports = None if round_idx == 0 else {
+                "_grad_dist": [global_states[round_idx - 1][1].item()],
+            }
+            with device.round(neighbor_exports=neighbor_exports, neighbor_ranges=[3.0]):
+                d_local = gradient(source_local, name="dist")
+
+        assert abs(device.result(d_local).item() - global_states[-1][2].item()) < 1e-6
 
     def test_decentralized_branching(self):
         """Decentralized branch on A--B--C matches centralized (with self-loops)."""

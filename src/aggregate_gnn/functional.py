@@ -6,6 +6,7 @@ to non-differentiable operations (min, max, conditional selection).
 
 from __future__ import annotations
 
+import operator
 from typing import Callable
 
 import torch
@@ -211,15 +212,28 @@ def scatter_min_by_first(
         return fill
 
     if mode == "hard":
-        best_cost = fill[:, 0].detach().clone()
-        rows = [fill[node_idx] for node_idx in range(num_nodes)]
-        for msg_idx in range(src.shape[0]):
-            bucket = int(index[msg_idx].item())
-            cost = src[msg_idx, 0].detach()
-            if bool((cost <= best_cost[bucket]).item()):
-                best_cost[bucket] = cost
-                rows[bucket] = src[msg_idx]
-        return torch.stack(rows, dim=0)
+        cost = src[:, 0]
+        best_cost = scatter_aggr(
+            cost,
+            index,
+            num_nodes,
+            aggr="min",
+            mode="hard",
+            fill_value=float(fill[0, 0].item()) if fill.shape[0] > 0 else FILL_VALUE_MIN,
+        )
+        msg_ids = torch.arange(src.shape[0], device=index.device, dtype=torch.long)
+        best_mask = cost == best_cost[index]
+        chosen_msg = scatter_hard(
+            torch.where(best_mask, msg_ids, msg_ids.new_full(msg_ids.shape, -1)),
+            index,
+            num_nodes,
+            aggr="max",
+            fill_value=-1,
+        )
+        out = fill.clone()
+        valid = chosen_msg >= 0
+        out[valid] = src[chosen_msg[valid]]
+        return out
 
     if mode != "soft":
         raise ValueError(f"Unknown mode: {mode}")
@@ -271,11 +285,50 @@ def scatter_binary_fold(
     """
     feature_shape = src.shape[1:] if src.dim() > 1 else ()
     init_tensor = _expand_bucket_init(init, num_nodes, feature_shape, src.device, src.dtype)
+    fast_out = _scatter_binary_fold_fast_path(src, index, num_nodes, accumulation, init_tensor)
+    if fast_out is not None:
+        return fast_out
     buckets = [init_tensor[node_idx] for node_idx in range(num_nodes)]
     for msg_idx in range(src.shape[0]):
         bucket = int(index[msg_idx].item())
         buckets[bucket] = accumulation(buckets[bucket], src[msg_idx])
     return torch.stack(buckets, dim=0)
+
+
+def _scatter_binary_fold_fast_path(
+    src: Tensor,
+    index: Tensor,
+    num_nodes: int,
+    accumulation: Callable[[Tensor, Tensor], Tensor],
+    init_tensor: Tensor,
+) -> Tensor | None:
+    if accumulation in (torch.add, operator.add):
+        aggregated = scatter_aggr(src, index, num_nodes, aggr="sum")
+        return init_tensor + aggregated
+
+    if accumulation is torch.logical_or:
+        aggregated = scatter_hard(
+            src.bool().to(dtype=torch.float32),
+            index,
+            num_nodes,
+            aggr="max",
+            fill_value=0.0,
+        ) > 0
+        return torch.logical_or(init_tensor.bool(), aggregated)
+
+    if accumulation in (torch.maximum, torch.max):
+        if not src.is_floating_point():
+            return None
+        aggregated = scatter_aggr(
+            src,
+            index,
+            num_nodes,
+            aggr="max",
+            fill_value=torch.finfo(src.dtype).min,
+        )
+        return torch.maximum(init_tensor, aggregated)
+
+    return None
 
 
 def _expand_bucket_init(
@@ -362,9 +415,10 @@ def mask_edges_for_partition(
     cond: Tensor,
     partition: bool,
     edge_weight: Tensor | None = None,
+    message_weight: Tensor | None = None,
     mode: str = "hard",
     tau: float = DEFAULT_TAU_BRANCH,
-) -> tuple[Tensor, Tensor]:
+) -> tuple[Tensor, Tensor | None, Tensor | None]:
     r"""Keep only edges where BOTH endpoints belong to *partition*.
 
     Soft mode computes:
@@ -382,15 +436,19 @@ def mask_edges_for_partition(
     cond : Tensor [N]
     partition : bool (True for 'if_true' branch, False for 'if_false')
     edge_weight : Tensor [E], optional
+        Edge metric / cost kept on the subgraph.
+    message_weight : Tensor [E], optional
+        Optional multiplicative transport weight to keep / compose.
     """
     src, tgt = edge_index[0], edge_index[1]
 
     if mode == "hard":
         node_mask = cond.bool() if partition else ~cond.bool()
         ei_out, ew_out = subgraph_for_nodes(node_mask, edge_index, edge_weight=edge_weight)
-        if ew_out is not None:
-            return ei_out, ew_out
-        return ei_out, edge_index.new_ones(ei_out.shape[1], dtype=torch.float32)
+        mw_out = None
+        if message_weight is not None:
+            _, mw_out = subgraph_for_nodes(node_mask, edge_index, edge_weight=message_weight)
+        return ei_out, ew_out, mw_out
 
     # Soft mode: P(both in partition) = P(src ∈ k) · P(tgt ∈ k)
     p_src = cond[src].float() if partition else (1.0 - cond[src].float())
@@ -398,9 +456,9 @@ def mask_edges_for_partition(
     p_both = p_src * p_tgt
 
     mask_weight = torch.sigmoid(tau * (p_both - CONDITION_THRESHOLD))
-    if edge_weight is not None:
-        return edge_index, edge_weight * mask_weight
-    return edge_index, mask_weight
+    if message_weight is not None:
+        mask_weight = message_weight * mask_weight
+    return edge_index, edge_weight, mask_weight
 
 
 # ---------------------------------------------------------------------------

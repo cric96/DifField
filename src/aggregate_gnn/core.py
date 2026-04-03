@@ -22,7 +22,10 @@ class RoundContext:
     edge_index : Tensor [2, E]
         Sparse edge list (source, target).
     edge_weight : Tensor [E]
-        Weights for each edge.
+        Edge metric / cost for each edge.
+    message_weight : Tensor [E] | None
+        Optional multiplicative transport weight for generic neighborhood
+        aggregation. Used internally by constructs such as soft branch.
     num_nodes : int
         Number of nodes in the graph.
     round_num : int
@@ -35,6 +38,7 @@ class RoundContext:
         self.edge_index = edge_index
         self.edge_weight = edge_weight if edge_weight is not None else \
                            torch.ones(edge_index.shape[1], device=edge_index.device)
+        self.message_weight: Tensor | None = None
         self.num_nodes = num_nodes
         # Optional PyG projection used by the new backend when available.
         self.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
@@ -57,6 +61,7 @@ class RoundContext:
         self.state.reset()
         self.exports.clear()
         self._neighbor_message_overrides.clear()
+        self.message_weight = None
 
 
 class StateManager:

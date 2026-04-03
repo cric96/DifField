@@ -4,7 +4,7 @@ from .engine import ProgramStep, SimulationEngine
 from .events import EventSchedule, ScheduledEvent, SimulationRuntime
 from .physics import boids_acceleration_dense, bounce_in_box, limit_speed, normalize_vectors
 from .recording import SnapshotRecorder
-from .scenario import GridScenario, SpatialScenario, build_spatial_graph
+from .scenario import FullyConnectedScenario, GridScenario, SpatialScenario, build_spatial_graph
 
 __all__ = [
     "ProgramStep",
@@ -17,6 +17,7 @@ __all__ = [
     "bounce_in_box",
     "boids_acceleration_dense",
     "SnapshotRecorder",
+    "FullyConnectedScenario",
     "GridScenario",
     "SpatialScenario",
     "build_spatial_graph",

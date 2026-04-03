@@ -83,6 +83,40 @@ def build_grid_edge_index(
     return edge_index[:, keep].long()
 
 
+def build_fully_connected_edge_index(
+    num_nodes: int,
+    *,
+    self_loops: bool = False,
+    device: torch.device | None = None,
+) -> Tensor:
+    """Build a fully connected (complete) graph.
+
+    Parameters
+    ----------
+    num_nodes : int
+        Number of nodes in the graph.
+    self_loops : bool
+        If ``True``, every node has an edge to itself.
+    device : torch.device, optional
+        Device to create the tensor on.
+
+    Returns
+    -------
+    edge_index : Tensor [2, E]
+    """
+    if num_nodes == 0:
+        return torch.zeros((2, 0), dtype=torch.long, device=device)
+
+    nodes = torch.arange(num_nodes, device=device, dtype=torch.long)
+    src = nodes.repeat_interleave(num_nodes)
+    tgt = nodes.repeat(num_nodes)
+    if not self_loops:
+        keep = src != tgt
+        src = src[keep]
+        tgt = tgt[keep]
+    return torch.stack((src, tgt), dim=0)
+
+
 def build_spatial_edge_index(
     positions: Tensor,
     *,

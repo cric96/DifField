@@ -60,6 +60,24 @@ def test_build_spatial_graph_inverse_distance_mode():
     assert torch.allclose(edge_weight, torch.tensor([5.0, 5.0]), atol=1e-3)
 
 
+def test_build_spatial_graph_distance_mode():
+    positions = torch.tensor(
+        [
+            [0.0, 0.0],
+            [0.2, 0.0],
+            [0.8, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    _, edge_weight = build_spatial_graph(
+        positions,
+        edge_radius=0.25,
+        self_loops=False,
+        edge_weight_mode="distance",
+    )
+    assert torch.allclose(edge_weight, torch.tensor([0.2, 0.2]), atol=1e-6)
+
+
 def test_engine_uses_refreshed_topology_each_round():
     positions = torch.tensor(
         [

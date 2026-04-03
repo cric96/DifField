@@ -35,7 +35,7 @@ from .constants import (
     LOG_EPSILON,
 )
 from .functional import scatter_aggr, scatter_binary_fold, scatter_min_by_first, soft_where
-from .pyg_backend import Data
+from .pyg_backend import Data, maybe_make_data
 
 # ---------------------------------------------------------------------------
 # Thread-local context stack (allows nesting)
@@ -59,6 +59,10 @@ def _current_ctx() -> RoundContext:
 
 def _ensure_field(value: float | Tensor) -> Tensor:
     ctx = _current_ctx()
+    return _ensure_field_in_ctx(value, ctx)
+
+
+def _ensure_field_in_ctx(value: float | Tensor, ctx: RoundContext) -> Tensor:
     if isinstance(value, Tensor):
         tensor = value.to(ctx.edge_index.device)
         if tensor.dim() == 0:
@@ -111,10 +115,32 @@ def _validate_cast_mode(mode: str) -> None:
         raise ValueError(f"Unknown mode: {mode}")
 
 
+def _admissible_parent_edges(potential: Tensor) -> tuple[Tensor, Tensor, Tensor]:
+    ctx = _current_ctx()
+    src, tgt = ctx.edge_index
+    parent_potential = potential[src]
+    child_potential = potential[tgt]
+    path_cost = parent_potential + ctx.edge_weight
+    tolerance = 1e-6 + 1e-5 * torch.maximum(path_cost.abs(), child_potential.abs())
+    admissible = (parent_potential < child_potential) & (path_cost <= child_potential + tolerance)
+    return admissible, parent_potential, path_cost
+
+
 def _find_parent_ids(potential: Tensor) -> Tensor:
     ctx = _current_ctx()
     src, tgt = ctx.edge_index
-    parent_candidates = torch.stack((potential[src], src.float()), dim=-1)
+    admissible, parent_potential, _path_cost = _admissible_parent_edges(potential)
+    parent_candidates = torch.stack(
+        (
+            torch.where(
+                admissible,
+                parent_potential,
+                torch.full_like(parent_potential, float("inf")),
+            ),
+            src.float(),
+        ),
+        dim=-1,
+    )
     fill_row = torch.stack((field.inf(), const(-1.0)), dim=-1)
     best_parent = scatter_min_by_first(
         parent_candidates,
@@ -127,19 +153,21 @@ def _find_parent_ids(potential: Tensor) -> Tensor:
     candidate_potential = best_parent[:, 0]
     candidate_parent = best_parent[:, 1].round().long()
     sentinel = torch.full_like(candidate_parent, -1)
-    return torch.where(candidate_potential < potential, candidate_parent, sentinel)
+    return torch.where(torch.isfinite(candidate_potential), candidate_parent, sentinel)
 
 
 def _soft_parent_weights(potential: Tensor, tau: float) -> Tensor:
     ctx = _current_ctx()
     src, tgt = ctx.edge_index
     effective_tau = max(float(tau), LOG_EPSILON)
-    child_potential = potential[src]
     parent_potential = potential[tgt]
+    child_potential = potential[src]
+    path_cost = parent_potential + ctx.edge_weight
     lower_gate = torch.sigmoid((child_potential - parent_potential) / effective_tau)
+    path_gate = torch.sigmoid((child_potential - path_cost) / effective_tau)
     logits = -parent_potential / effective_tau
     bucket_max = scatter_aggr(logits, src, ctx.num_nodes, aggr="max", fill_value=float("-inf"))
-    stabilized = (logits - bucket_max[src]).exp() * lower_gate
+    stabilized = (logits - bucket_max[src]).exp() * lower_gate * path_gate
     denom = scatter_aggr(stabilized, src, ctx.num_nodes, aggr="sum")
     return torch.where(
         denom[src] > 0,
@@ -153,6 +181,104 @@ def _scale_messages(messages: Tensor, weights: Tensor) -> Tensor:
     while scaled_weights.dim() < messages.dim():
         scaled_weights = scaled_weights.unsqueeze(-1)
     return messages * scaled_weights
+
+
+class NeighborExpr:
+    """Edge-wise neighborhood expression evaluated before aggregation."""
+
+    __array_priority__ = 1000
+
+    def __init__(self, evaluator: Callable[[RoundContext, Tensor, Tensor | None], Tensor]) -> None:
+        self._evaluator = evaluator
+
+    def evaluate(
+        self,
+        *,
+        ctx: RoundContext,
+        edge_index: Tensor,
+        edge_weight: Tensor | None,
+    ) -> Tensor:
+        return self._evaluator(ctx, edge_index, edge_weight)
+
+    def _binary(self, other: float | Tensor | "NeighborExpr", op: Callable[[Tensor, Tensor], Tensor]) -> "NeighborExpr":
+        other_expr = _as_neighbor_expr(other)
+        return NeighborExpr(
+            lambda ctx, edge_index, edge_weight: op(
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+                other_expr.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+            )
+        )
+
+    def _rbinary(self, other: float | Tensor | "NeighborExpr", op: Callable[[Tensor, Tensor], Tensor]) -> "NeighborExpr":
+        other_expr = _as_neighbor_expr(other)
+        return NeighborExpr(
+            lambda ctx, edge_index, edge_weight: op(
+                other_expr.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+            )
+        )
+
+    def __add__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._binary(other, torch.add)
+
+    def __radd__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._rbinary(other, torch.add)
+
+    def __sub__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._binary(other, torch.sub)
+
+    def __rsub__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._rbinary(other, torch.sub)
+
+    def __mul__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._binary(other, torch.mul)
+
+    def __rmul__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._rbinary(other, torch.mul)
+
+    def __truediv__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._binary(other, torch.div)
+
+    def __rtruediv__(self, other: float | Tensor | "NeighborExpr") -> "NeighborExpr":
+        return self._rbinary(other, torch.div)
+
+    def __neg__(self) -> "NeighborExpr":
+        return NeighborExpr(
+            lambda ctx, edge_index, edge_weight: -self.evaluate(
+                ctx=ctx,
+                edge_index=edge_index,
+                edge_weight=edge_weight,
+            )
+        )
+
+
+def _as_neighbor_expr(value: float | Tensor | NeighborExpr) -> NeighborExpr:
+    if isinstance(value, NeighborExpr):
+        return value
+
+    def evaluate(ctx: RoundContext, edge_index: Tensor, _edge_weight: Tensor | None) -> Tensor:
+        source_nodes = edge_index[0]
+        field_value = _ensure_field_in_ctx(value, ctx)
+        return field_value[source_nodes]
+
+    return NeighborExpr(evaluate)
+
+
+def nbr_range() -> NeighborExpr:
+    """Return the current edge metric / range as an edge-wise expression."""
+
+    def evaluate(ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor | None) -> Tensor:
+        if edge_weight is not None:
+            return edge_weight
+        return torch.ones(edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32)
+
+    return NeighborExpr(evaluate)
+
+
+def nbrRange() -> NeighborExpr:
+    """Field-calculus-style alias for :func:`nbr_range`."""
+
+    return nbr_range()
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +380,7 @@ def rep(
 
 
 def nbr(
-    expr: Tensor,
+    expr: Tensor | NeighborExpr,
     aggr: str | Callable = "sum",
     mode: str = "hard",
     tau: float = DEFAULT_TAU_SOFT_AGGR,
@@ -265,7 +391,7 @@ def nbr(
 ) -> Tensor:
     r"""Neighborhood message passing.
 
-    nbr(expr, aggr) ≡ m_i = ⊕_{j∈N(i)} expr_j
+    nbr(expr, aggr) ≡ m_i = ⊕_{j∈N(i)} expr_{j→i}
 
     Parameters
     ----------
@@ -350,6 +476,41 @@ def broadcast(mask: Tensor, value: Tensor, name: str = "bc") -> Tensor:
             value,
             nbr(bc, aggr="min")
         )
+    )
+
+
+def gradient(
+    source: float | Tensor,
+    weight: float | Tensor | NeighborExpr | None = None,
+    *,
+    name: str = "gradient",
+    mode: str = "hard",
+    tau: float = DEFAULT_TAU_SOFT_AGGR,
+    fill_value: float = float("inf"),
+) -> Tensor:
+    r"""Compute a minimum-cost gradient / distance field from source nodes.
+
+    When ``weight`` is omitted, the operator uses ``nbrRange()`` so the
+    current edge metric drives propagation directly:
+
+    - hop graphs with unit edge weights -> hop distance
+    - spatial graphs with geometric edge weights -> geometric shortest path
+
+    Passing ``weight`` explicitly preserves the classic convenience form
+    ``gradient(source, w)``.
+    """
+    _validate_cast_mode(mode)
+    source_field = _require_scalar_field("source", source)
+    step = nbrRange() if weight is None else weight
+
+    return rep(
+        f"_grad_{name}",
+        fill_value,
+        lambda dist: mux(
+            source_field,
+            field.of(0.0),
+            nbr(dist + step, aggr="min", mode=mode, tau=tau, fill_value=fill_value),
+        ),
     )
 
 
@@ -524,8 +685,16 @@ class DeviceContext:
             my_d = device.result(d)
     """
 
-    def __init__(self, num_neighbors: int, *, self_loop: bool = True) -> None:
+    def __init__(
+        self,
+        num_neighbors: int,
+        *,
+        self_loop: bool = True,
+        neighbor_ranges: float | list[float] | Tensor = 1.0,
+    ) -> None:
         self._num_neighbors = num_neighbors
+        self._self_loop = self_loop
+        self._default_neighbor_ranges = neighbor_ranges
         N = num_neighbors + 1
         # Star graph: neighbours 1..K → node 0, optionally with self-loop 0→0
         if self_loop:
@@ -538,7 +707,32 @@ class DeviceContext:
             edge_index = torch.zeros((2, 0), dtype=torch.long)
         else:
             edge_index = torch.tensor([src, tgt], dtype=torch.long)
-        self._agg_ctx = AggregateContext(edge_index, N)
+        self._agg_ctx = AggregateContext(edge_index, N, edge_weight=self._build_edge_weight(neighbor_ranges))
+
+    def _neighbor_range_tensor(self, neighbor_ranges: float | list[float] | Tensor) -> Tensor:
+        if self._num_neighbors == 0:
+            return torch.zeros((0,), dtype=torch.float32)
+
+        raw = torch.as_tensor(neighbor_ranges, dtype=torch.float32)
+        if raw.dim() == 0:
+            ranges = raw.expand(self._num_neighbors).clone()
+        else:
+            ranges = raw.flatten()
+            if ranges.shape[0] != self._num_neighbors:
+                raise ValueError(
+                    f"Expected {self._num_neighbors} neighbour ranges, got {ranges.shape[0]}",
+                )
+            ranges = ranges.clone()
+
+        if (ranges < 0).any():
+            raise ValueError("neighbor_ranges must be non-negative")
+        return ranges
+
+    def _build_edge_weight(self, neighbor_ranges: float | list[float] | Tensor) -> Tensor:
+        neighbor_tensor = self._neighbor_range_tensor(neighbor_ranges)
+        if self._self_loop:
+            return torch.cat((torch.zeros(1, dtype=torch.float32), neighbor_tensor), dim=0)
+        return neighbor_tensor
 
     # --- helpers ---
 
@@ -593,6 +787,7 @@ class DeviceContext:
         self,
         neighbor_exports: dict[str, list[float] | Tensor] | None = None,
         neighbor_messages: dict[str, list[float] | Tensor] | None = None,
+        neighbor_ranges: float | list[float] | Tensor | None = None,
     ):
         """Execute one local round.
 
@@ -606,8 +801,14 @@ class DeviceContext:
             E.g. ``{"my_tag": [1.0, 2.0]}`` — when ``nbr(expr, tag="my_tag")``
             is called, neighbor nodes use the injected values instead of
             evaluating *expr*.
+        neighbor_ranges : float or list[float] or Tensor, optional
+            Per-neighbour edge metrics for this round. When omitted, the
+            default ranges passed to the constructor are used.
         """
         with self._agg_ctx.round() as ctx:
+            effective_ranges = self._default_neighbor_ranges if neighbor_ranges is None else neighbor_ranges
+            ctx.edge_weight = self._build_edge_weight(effective_ranges).to(ctx.edge_index.device)
+            ctx.data = maybe_make_data(ctx.edge_index, ctx.num_nodes, ctx.edge_weight)
             # Overwrite neighbour rep-states (1..K) with externally-received values
             if neighbor_exports:
                 for name, vals in neighbor_exports.items():

@@ -159,22 +159,22 @@ class _PyGNbrMessagePassing(MessagePassing):
         self,
         x: Tensor,
         edge_index: Tensor,
-        edge_weight: Tensor | None,
+        message_weight: Tensor | None,
         num_nodes: int,
     ) -> Tensor:
         return self.propagate(
             edge_index,
             x=x,
-            edge_weight=edge_weight,
+            message_weight=message_weight,
             size=(num_nodes, num_nodes),
         )
 
-    def message(self, x_j: Tensor, edge_weight: Tensor | None = None) -> Tensor:
+    def message(self, x_j: Tensor, message_weight: Tensor | None = None) -> Tensor:
         msg = x_j
         if self.owner.transform_fn is not None:
             msg = self.owner.transform_fn(msg)
-        if edge_weight is not None:
-            w = edge_weight.unsqueeze(-1) if msg.dim() > 1 else edge_weight
+        if message_weight is not None:
+            w = message_weight.unsqueeze(-1) if msg.dim() > 1 else message_weight
             msg = msg * w
         return msg
 
@@ -276,6 +276,10 @@ class NbrLayer(nn.Module):
         """
         ctx = _get_ctx(ctx)
         effective_tag = tag if tag is not None else self.tag
+        from .dsl import NeighborExpr
+
+        if isinstance(x, NeighborExpr) and effective_tag is not None:
+            raise ValueError("Tagged nbr is not supported for edge-wise neighbor expressions")
 
         # Store export under tag (original expr values)
         if effective_tag is not None:
@@ -287,9 +291,33 @@ class NbrLayer(nn.Module):
             src = ctx._neighbor_message_overrides[effective_tag]
 
         edge_idx = edge_index if edge_index is not None else ctx.edge_index
-        edge_wt = edge_weight if edge_weight is not None else ctx.edge_weight
+        message_weight = edge_weight if edge_weight is not None else ctx.message_weight
 
-        return self._mp(src, edge_idx, edge_wt, ctx.num_nodes)
+        if isinstance(src, NeighborExpr):
+            messages = src.evaluate(
+                ctx=ctx,
+                edge_index=edge_idx,
+                edge_weight=ctx.edge_weight,
+            )
+            if message_weight is not None:
+                scale = message_weight
+                while scale.dim() < messages.dim():
+                    scale = scale.unsqueeze(-1)
+                messages = messages * scale
+            return self._aggregate_messages(messages, edge_idx[1], ctx.num_nodes)
+
+        return self._mp(src, edge_idx, message_weight, ctx.num_nodes)
+
+    def _aggregate_messages(self, messages: Tensor, target_index: Tensor, num_nodes: int) -> Tensor:
+        return scatter_aggr(
+            messages,
+            target_index,
+            num_nodes,
+            aggr=self.aggr,
+            mode=self.mode,
+            tau=self.tau,
+            fill_value=self.fill_value,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -357,12 +385,20 @@ class BranchLayer(nn.Module):
             ctx.state.reset_states_for_nodes(switched, self.reset_states)
 
         # Mask edges and weights for each partition
-        ei_true, ew_true = mask_edges_for_partition(
-            ctx.edge_index, cond.bool(), partition=True, edge_weight=ctx.edge_weight,
+        ei_true, ew_true, mw_true = mask_edges_for_partition(
+            ctx.edge_index,
+            cond.bool(),
+            partition=True,
+            edge_weight=ctx.edge_weight,
+            message_weight=ctx.message_weight,
             mode=self.mode, tau=self.tau,
         )
-        ei_false, ew_false = mask_edges_for_partition(
-            ctx.edge_index, cond.bool(), partition=False, edge_weight=ctx.edge_weight,
+        ei_false, ew_false, mw_false = mask_edges_for_partition(
+            ctx.edge_index,
+            cond.bool(),
+            partition=False,
+            edge_weight=ctx.edge_weight,
+            message_weight=ctx.message_weight,
             mode=self.mode, tau=self.tau,
         )
 
@@ -370,13 +406,13 @@ class BranchLayer(nn.Module):
         saved_states = {k: v.clone() for k, v in ctx.state._states.items()}
 
         # Run true branch
-        ctx_true = _sub_context(ctx, ei_true, ew_true)
+        ctx_true = _sub_context(ctx, ei_true, ew_true, mw_true)
         out_true = self.true_branch(x, ctx_true)
         states_after_true = {k: v.clone() for k, v in ctx.state._states.items()}
 
         # Restore state fully (remove keys created by the true branch)
         ctx.state._states = {k: v.clone() for k, v in saved_states.items()}
-        ctx_false = _sub_context(ctx, ei_false, ew_false)
+        ctx_false = _sub_context(ctx, ei_false, ew_false, mw_false)
         out_false = self.false_branch(x, ctx_false)
         states_after_false = {k: v.clone() for k, v in ctx.state._states.items()}
 
@@ -447,7 +483,12 @@ class MuxLayer(nn.Module):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _sub_context(ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor) -> RoundContext:
+def _sub_context(
+    ctx: RoundContext,
+    edge_index: Tensor,
+    edge_weight: Tensor | None,
+    message_weight: Tensor | None,
+) -> RoundContext:
     """Create a shallow copy of *ctx* with a different topology.
 
     The ``state`` is **shared** so that branch sub-programs can read / write
@@ -456,7 +497,8 @@ def _sub_context(ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor) -> 
     """
     sub = RoundContext.__new__(RoundContext)
     sub.edge_index = edge_index
-    sub.edge_weight = edge_weight
+    sub.edge_weight = edge_weight if edge_weight is not None else ctx.edge_weight
+    sub.message_weight = message_weight
     sub.num_nodes = ctx.num_nodes
     sub.round_num = ctx.round_num
     sub.state = ctx.state  # shared state
