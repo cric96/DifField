@@ -8,12 +8,14 @@ import torch
 
 from aggregate_gnn import (
     EventSchedule,
+    RelaxedRadiusScenario,
     ScheduledEvent,
     SimulationEngine,
     SpatialScenario,
     boids_acceleration_dense,
     bounce_in_box,
     build_spatial_graph,
+    gradient,
     limit_speed,
     mux,
     nbr,
@@ -76,6 +78,69 @@ def test_build_spatial_graph_distance_mode():
         edge_weight_mode="distance",
     )
     assert torch.allclose(edge_weight, torch.tensor([0.2, 0.2]), atol=1e-6)
+
+
+def test_spatial_distance_weights_support_position_gradients_on_fixed_topology():
+    positions = torch.tensor(
+        [
+            [0.0, 0.0],
+            [0.35, 0.1],
+            [0.9, 0.6],
+        ],
+        dtype=torch.float32,
+        requires_grad=True,
+    )
+    scenario = SpatialScenario(
+        positions=positions,
+        fully_connected=True,
+        edge_weight_mode="distance",
+    )
+    engine = SimulationEngine.from_scenario(scenario)
+    source = scenario.marker(0)
+
+    def program(_runtime):
+        return gradient(source, name="geo")
+
+    output, _ = engine.run(rounds=3, program=program, signals={"source": source})
+
+    loss = output[output.isfinite()].sum()
+    loss.backward()
+
+    assert positions.grad is not None
+    assert torch.isfinite(positions.grad).all()
+    assert positions.grad.abs().sum().item() > 0.0
+
+
+def test_relaxed_radius_scenario_supports_radius_gradients():
+    radius = torch.tensor(0.35, requires_grad=True)
+    positions = torch.tensor(
+        [
+            [0.0, 0.0],
+            [0.36, 0.0],
+            [0.80, 0.0],
+        ],
+        dtype=torch.float32,
+    )
+    scenario = RelaxedRadiusScenario(
+        positions=positions,
+        edge_radius=radius,
+        relaxation_tau=0.03,
+        penalty_strength=15.0,
+    )
+    engine = SimulationEngine.from_scenario(scenario)
+    source = scenario.marker(0)
+
+    def program(_runtime):
+        return gradient(source, name="relaxed")
+
+    output, _ = engine.run(rounds=3, program=program, signals={"source": source})
+
+    loss = output[2]
+    loss.backward()
+
+    assert radius.grad is not None
+    assert torch.isfinite(radius.grad)
+    assert radius.grad.item() < 0.0
 
 
 def test_engine_uses_refreshed_topology_each_round():

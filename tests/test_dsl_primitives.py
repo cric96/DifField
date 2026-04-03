@@ -283,6 +283,27 @@ class TestGradient:
 
         assert torch.allclose(d, torch.tensor([0.0, 2.0, 4.0]))
 
+    def test_nbr_range_is_differentiable_with_edge_weight_tensor(self):
+        edge_index, _ = triangle_graph()
+        edge_weight = torch.tensor([2.0, 2.0, 2.0, 2.0, 10.0, 10.0], requires_grad=True)
+        source = torch.tensor([1.0, 0.0, 0.0])
+        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
+
+        for _ in range(4):
+            with ctx.round():
+                d = rep(
+                    "weighted_dist",
+                    float("inf"),
+                    lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + nbrRange(), aggr="min")),
+                )
+
+        loss = d[d.isfinite()].sum()
+        loss.backward()
+
+        assert edge_weight.grad is not None
+        assert torch.isfinite(edge_weight.grad).all()
+        assert edge_weight.grad.abs().sum().item() > 0.0
+
     def test_nested_rep_multiple_nbr_differentiability(self):
         rows, cols = 3, 3
         edge_index, n = make_grid_graph(rows, cols)

@@ -27,7 +27,7 @@ try:
 except ImportError:
     from common import auto_rounds, run_gradient_program
 
-from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep
+from aggregate_gnn import GridScenario, SimulationEngine, mux, nbr, rep, nbrRange
 from aggregate_gnn.dsl import field
 from aggregate_gnn.utils import get_device
 
@@ -57,9 +57,10 @@ def build_large_data(args, device: torch.device):
 
 
 def run_large_gradient(args, scenario, source, device: torch.device):
-    engine = SimulationEngine.from_scenario(scenario)
     rounds = auto_rounds(args.rows, args.cols, args.rounds)
     weight = torch.tensor(1.0, device=device, requires_grad=True)
+    scenario.set_edge_weight(weight)
+    engine = SimulationEngine.from_scenario(scenario)
 
     print(f"Running {rounds} rounds of aggregate computation...")
     start_time = time.time()
@@ -74,7 +75,11 @@ def run_large_gradient(args, scenario, source, device: torch.device):
     )
 
     def program(_runtime):
-        return rep("dist", float("inf"), lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr="min")))
+        return rep(
+            "dist", 
+            float("inf"), 
+            lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + 1, aggr="min"))
+        )
 
     output, _ = engine.run(rounds=rounds, program=program, signals={"source": source}, recorder=recorder)
 
@@ -166,7 +171,7 @@ def main():
 
     print("Computing gradient w.r.t. weight w...")
     start_time = time.time()
-    loss = output.sum()
+    loss = output[output.isfinite()].sum()
     loss.backward()
     backward_time = time.time() - start_time
     print(f"Backward pass in {backward_time:.4f}s")

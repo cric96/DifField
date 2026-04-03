@@ -12,6 +12,7 @@ from aggregate_gnn import (
     SimulationEngine,
     SnapshotRecorder,
     build_spatial_graph,
+    gradient,
     mux,
     nbr,
     rep,
@@ -137,6 +138,26 @@ def test_fully_connected_scenario_sync_context_sets_complete_topology():
 
     scenario.sync_context(engine.ctx._ctx)
     assert torch.allclose(engine.ctx._ctx.edge_weight, torch.ones(6))
+
+
+def test_grid_scenario_custom_edge_weight_supports_gradient_backward():
+    scale = torch.tensor(1.5, requires_grad=True)
+    scenario = GridScenario(1, 3, connectivity=4)
+    scenario.set_edge_weight(scale)
+    engine = SimulationEngine.from_scenario(scenario)
+
+    source = scenario.marker(0, 0)
+
+    def program(_runtime):
+        return gradient(source, name="weighted")
+
+    output, _ = engine.run(rounds=4, program=program, signals={"source": source})
+
+    loss = output[output.isfinite()].sum()
+    loss.backward()
+
+    assert scale.grad is not None
+    assert abs(scale.grad.item() - 3.0) < 1e-6
 
 
 def test_build_spatial_graph_handles_empty_positions():

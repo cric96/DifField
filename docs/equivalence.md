@@ -462,6 +462,45 @@ $c$ and $\tau$. The `mux` combinator is a linear interpolation
 $T$-round unrolled computation graph follows standard automatic
 differentiation (back-propagation through time). $\square$
 
+### 5.4 Runtime Edge Metrics and Relaxed Topology
+
+In the implementation, the neighbourhood range sensor `nbrRange()` is a
+direct view of the current runtime edge metric. This yields three distinct
+autograd regimes for weighted shortest-path style programs such as
+`gradient(source)`:
+
+1. **Fixed topology, learnable edge metric.** If the graph structure is fixed
+   and the runtime edge weights are tensors on the computation graph, then
+   gradients propagate through `nbrRange()` exactly as they do through any
+   other tensor expression. This covers, for example, grid or fully connected
+   scenarios with a learnable scalar or per-edge weight tensor.
+2. **Fixed topology, geometric distance metric.** If the edge set is fixed and
+   the edge metric is computed from positions, gradients also propagate to the
+   geometry. A fully connected spatial scenario with distance-based edge
+   weights is the simplest instance.
+3. **Hard topology rebuilds.** Radius and k-NN graph construction use discrete
+   comparisons and index selection, so exact gradients with respect to edge
+   birth/death are not available through the hard topology itself. In this
+   regime, gradients flow through the chosen edge weights for a fixed edge set,
+   but not through the combinatorial change in the adjacency pattern.
+
+To recover a smooth optimisation path for connectivity learning, the runtime
+can replace hard edge deletion with an additive barrier on a fixed candidate
+graph. The current implementation exposes this as `RelaxedRadiusScenario`,
+whose edge cost is:
+
+$$
+   ilde{w}_{ji}
+= w^{\mathrm{base}}_{ji}
++ \lambda \tau \, \operatorname{softplus}\!\left(\frac{\lVert p_j - p_i \rVert - r}{\tau}\right),
+$$
+
+where $w^{\mathrm{base}}_{ji}$ is the base metric (typically Euclidean
+distance), $r$ is the preferred communication radius, $\tau$ is a smoothing
+temperature, and $\lambda$ controls how strongly long edges are discouraged.
+The candidate graph remains fixed, but path costs vary smoothly with positions
+and with the learnable radius parameter.
+
 ---
 
 ## 6. Fixed-Point Convergence
@@ -571,6 +610,7 @@ end-to-end differentiation.
 | **Definition 3** — `rep` | `rep(name, init, fn)` | `name: str`, `init: float\|Tensor`, `fn: Tensor → Tensor` |
 | rep state storage | `StateManager.get_or_init(name, init_val)` | Stores `Tensor [N, *d]` keyed by `name` |
 | **Definition 4** — `nbr` | `nbr(expr, aggr, mode, tau, ...)` | `aggr: str\|Callable`, `mode: "hard"\|"soft"`, `tau: float` |
+| Runtime edge metric / range | `nbrRange()` | Reads `ctx.edge_weight`; differentiable iff the runtime edge metric is differentiable |
 | Message transform $\varphi$ | `NbrLayer(transform_fn=...)` | `transform_fn: Tensor → Tensor` (optional) |
 | Named export (tag) | `nbr(..., tag="name")` | Stores expression in `ctx.exports[tag]` |
 | Scatter aggregation $\bigoplus$ | `scatter_aggr(src, index, N, aggr, mode, tau)` | Dispatches to sum/mean/min/max or custom callable |
@@ -588,6 +628,8 @@ end-to-end differentiation.
 | **Definition 13** — Soft-max | `_scatter_softmax(src, index, N, tau, fill)` | Via negation: $-\operatorname{softmin}(-x)$ |
 | **Definition 14** — Soft partition mask | `mask_edges_for_partition(..., mode="soft", tau)` | Per-partition sigmoid weights |
 | Same-partition mask (alternative) | `mask_edges(edge_index, cond, mode, tau)` | $\sigma(\tau(P_{\text{same}} - 0.5))$ |
+| Fixed-topology learnable range | `GridScenario(..., edge_weight=...)`, `set_edge_weight(...)` | Attaches a tensor-valued edge metric for use by `nbrRange()` |
+| Relaxed spatial connectivity | `RelaxedRadiusScenario(positions, edge_radius, ...)` | Fully connected candidate graph with smooth additive radius penalty |
 | Local device execution | `DeviceContext(num_neighbors)` | Star graph: node 0 = self, 1…K = neighbours |
 
 ---
