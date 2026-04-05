@@ -183,6 +183,36 @@ class MovingGraphVisualizationPipeline:
                 links_width=spec.links_width,
             )
 
+    def render_gif_only(
+        self,
+        *,
+        pos_seq: torch.Tensor,
+        vel_seq: torch.Tensor,
+        highlight_idx: int,
+        output_path: str,
+        title: str,
+        spec: VizSpec,
+    ) -> None:
+        if not spec.gif_enabled:
+            return
+
+        positions_by_round, values_by_round, edge_index_by_round = self.collect_round_data(pos_seq=pos_seq, vel_seq=vel_seq)
+        if not positions_by_round:
+            return
+
+        export_moving_gif(
+            positions_by_round=positions_by_round,
+            values_by_round=values_by_round,
+            source_idx=highlight_idx,
+            output_path=output_path,
+            title=title,
+            fps=max(1, spec.gif_fps),
+            edge_index_by_round=edge_index_by_round,
+            show_links=spec.show_links,
+            links_alpha=spec.links_alpha,
+            links_width=spec.links_width,
+        )
+
     def render_checkpoint_suite(
         self,
         *,

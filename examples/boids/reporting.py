@@ -5,14 +5,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .config import LearnableBoidsSpec
 
-def extract_teacher_parameters(args: Any) -> dict[str, float]:
+
+def extract_teacher_parameters_from_spec(spec: LearnableBoidsSpec) -> dict[str, float]:
     return {
-        "w_sep": float(args.teacher_w_sep),
-        "w_align": float(args.teacher_w_align),
-        "w_cohesion": float(args.teacher_w_cohesion),
-        "damping": float(args.teacher_damping),
-        "max_speed": float(args.teacher_max_speed),
+        "w_sep": float(spec.teacher.w_sep),
+        "w_align": float(spec.teacher.w_align),
+        "w_cohesion": float(spec.teacher.w_cohesion),
+        "damping": float(spec.teacher.damping),
+        "max_speed": float(spec.teacher.max_speed),
     }
 
 
@@ -23,8 +25,6 @@ def extract_learned_parameters(history: dict[str, list[float]]) -> dict[str, flo
         "w_cohesion": history["w_cohesion"][-1],
         "damping": history["damping"][-1],
         "max_speed": history["max_speed"][-1],
-        "tau_align": history["tau_align"][-1],
-        "tau_cohesion": history["tau_cohesion"][-1],
     }
 
 
@@ -50,11 +50,10 @@ class BoidsSummaryBuilder:
     """Builder pattern for nested summary payload generation."""
 
     run_name: str
-    args: Any
+    spec: LearnableBoidsSpec
     history: dict[str, list[float]]
     model: Any
-    train_max_speed: bool
-    init_max_speed_target: float
+    effective_curriculum_max_horizon: int
     recovery: dict[str, dict[str, float]]
 
     def build(self) -> dict[str, Any]:
@@ -64,7 +63,7 @@ class BoidsSummaryBuilder:
             "training": self._training_payload(),
             "validation": self._validation_payload(),
             "parameters": {
-                "teacher": extract_teacher_parameters(self.args),
+                "teacher": extract_teacher_parameters_from_spec(self.spec),
                 "learned": extract_learned_parameters(self.history),
                 "recovery": self.recovery,
             },
@@ -74,52 +73,84 @@ class BoidsSummaryBuilder:
     def _run_payload(self) -> dict[str, Any]:
         return {
             "run_name": self.run_name,
-            "mode": self.args.mode,
-            "seed": self.args.seed,
-            "epochs": self.args.epochs,
-            "rounds": self.args.rounds,
-            "num_nodes": self.args.num_nodes,
+            "seed": self.spec.seed,
+            "epochs": self.spec.training.epochs,
+            "rounds": self.spec.simulation.rounds,
+            "num_nodes": self.spec.simulation.num_nodes,
         }
 
     def _configuration_payload(self) -> dict[str, Any]:
+        replay_trace_dir = self.spec.training.replay_trace_dir
         return {
-            "train_max_speed": self.train_max_speed,
-            "init_damping_target": self.args.init_damping_target,
-            "init_max_speed_target": self.init_max_speed_target,
-            "init_connectivity": self.args.init_connectivity,
-            "init_k_neighbors": self.args.init_k_neighbors,
-            "init_min_degree": self.args.init_min_degree,
-            "init_velocity_scale": self.args.init_velocity_scale,
-            "curriculum_min_horizon": self.args.curriculum_min_horizon,
-            "curriculum_max_horizon": self.args.curriculum_max_horizon,
-            "trunc_window": self.args.trunc_window,
-            "num_initial_conditions": self.args.num_initial_conditions,
-            "velocity_loss_weight": self.args.velocity_loss_weight,
+            "training_objective": "trace_teacher_forced_preclip_stepwise",
+            "supervision_mode": self.spec.training.supervision_mode,
+            "replay_trace_dir": (None if replay_trace_dir is None else str(replay_trace_dir)),
+            "save_replay_traces": self.spec.training.save_replay_traces,
+            "init_w_sep_target": self.spec.model.init_w_sep_target,
+            "init_w_align_target": self.spec.model.init_w_align_target,
+            "init_w_cohesion_target": self.spec.model.init_w_cohesion_target,
+            "init_damping_target": self.spec.model.init_damping_target,
+            "init_max_speed_target": self.spec.model.init_max_speed_target,
+            "init_connectivity": self.spec.model.init_connectivity,
+            "init_k_neighbors": self.spec.model.init_k_neighbors,
+            "init_min_degree": self.spec.model.init_min_degree,
+            "init_velocity_scale": self.spec.simulation.init_velocity_scale,
+            "curriculum_min_horizon": self.spec.training.min_horizon,
+            "curriculum_max_horizon": self.effective_curriculum_max_horizon,
+            "curriculum_ramp_fraction": self.spec.training.curriculum_ramp_fraction,
+            "final_lr_ratio": self.spec.training.final_lr_ratio,
+            "trunc_window": self.spec.training.trunc_window,
+            "num_initial_conditions": self.spec.training.num_initial_conditions,
+            "velocity_loss_weight": self.spec.training.velocity_loss_weight,
+            "separation_loss_weight": self.spec.training.separation_loss_weight,
         }
 
     def _training_payload(self) -> dict[str, float | bool]:
         return {
-            "final_total": self.history["total"][-1],
             "final_total_loss": self.history["total"][-1],
             "final_pos_loss": self.history["pos_loss"][-1],
             "final_vel_loss": self.history["vel_loss"][-1],
+            "final_preclip_vel_loss": self.history["vel_loss"][-1],
+            "final_per_step_loss": self.history["per_step_loss"][-1],
+            "final_objective_loss": self.history["objective_loss"][-1],
+            "final_sep_focus_loss": self.history["sep_focus_loss"][-1],
             "final_traj_loss": self.history["pos_loss"][-1],
             "final_center_error": self.history["center_error"][-1],
             "best_pos_loss": min(self.history["pos_loss"]),
             "best_vel_loss": min(self.history["vel_loss"]),
+            "best_preclip_vel_loss": min(self.history["vel_loss"]),
             "best_traj_loss": min(self.history["pos_loss"]),
-            "best_total": min(self.history["total"]),
             "best_total_loss": min(self.history["total"]),
+            "best_per_step_loss": min(self.history["per_step_loss"]),
+            "best_objective_loss": min(self.history["objective_loss"]),
             "has_nan": bool(any(value != value for value in self.history["total"])),
         }
 
-    def _validation_payload(self) -> dict[str, float]:
+    def _validation_payload(self) -> dict[str, Any]:
         return {
-            "final_val_total_loss": self.history["val_total_loss"][-1],
-            "final_val_pos_loss": self.history["val_pos_loss"][-1],
-            "final_val_vel_loss": self.history["val_vel_loss"][-1],
-            "final_val_traj_loss": self.history["val_pos_loss"][-1],
-            "final_val_center_error": self.history["val_center_error"][-1],
+            "curriculum_horizon": {
+                "rounds": self.history["val_curriculum_horizon"][-1],
+                "final_total_loss": self.history["val_curriculum_total_loss"][-1],
+                "final_pos_loss": self.history["val_curriculum_pos_loss"][-1],
+                "final_vel_loss": self.history["val_curriculum_vel_loss"][-1],
+                "final_per_step_loss": self.history["val_curriculum_per_step_loss"][-1],
+                "final_traj_loss": self.history["val_curriculum_pos_loss"][-1],
+                "final_center_error": self.history["val_curriculum_center_error"][-1],
+            },
+            "full_horizon": {
+                "rounds": self.history["val_full_horizon"][-1],
+                "final_total_loss": self.history["val_full_total_loss"][-1],
+                "final_pos_loss": self.history["val_full_pos_loss"][-1],
+                "final_vel_loss": self.history["val_full_vel_loss"][-1],
+                "final_per_step_loss": self.history["val_full_per_step_loss"][-1],
+                "final_traj_loss": self.history["val_full_pos_loss"][-1],
+                "final_center_error": self.history["val_full_center_error"][-1],
+            },
+            "final_val_total_loss": self.history["val_full_total_loss"][-1],
+            "final_val_pos_loss": self.history["val_full_pos_loss"][-1],
+            "final_val_vel_loss": self.history["val_full_vel_loss"][-1],
+            "final_val_traj_loss": self.history["val_full_pos_loss"][-1],
+            "final_val_center_error": self.history["val_full_center_error"][-1],
         }
 
     def _diagnostics_payload(self) -> dict[str, Any]:

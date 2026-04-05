@@ -26,22 +26,6 @@ from .neighbor import NeighborExpr, nbr_range
 from .primitives import field, mux, nbr, rep
 
 
-def broadcast(
-    mask: Tensor, 
-    value: Tensor, 
-    name: str = "bc_cc"
-) -> Tensor:
-    r"""Propagate a value from root nodes to the rest of the network via collect_cast."""
-    cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
-    return gradient_cast(
-        source=cond,
-        center=value,
-        accumulation=lambda x: x,
-        name=name,
-        mode="hard",
-        tau=DEFAULT_TAU_SOFT_AGGR,
-    )
-
 def gradient(
     source: float | Tensor,
     weight: float | Tensor | NeighborExpr | None = None,
@@ -103,6 +87,22 @@ def gradient_cast(
 
     state = rep(f"_gc_{name}", init_state, update)
     return unpack_cast_state(state, payload_shape)[1]
+
+def broadcast(
+    mask: Tensor, 
+    value: Tensor, 
+    name: str = "bc_cc"
+) -> Tensor:
+    r"""Propagate a value from root nodes to the rest of the network via collect_cast."""
+    cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
+    return gradient_cast(
+        source=cond,
+        center=value,
+        accumulation=lambda x: x,
+        name=name,
+        mode="hard",
+        tau=DEFAULT_TAU_SOFT_AGGR,
+    )
 
 
 def collect_cast(

@@ -4,35 +4,83 @@ from __future__ import annotations
 
 import argparse
 
+DEFAULTS = {
+    "num_nodes": 24,
+    "rounds": 24,
+    "epochs": 40,
+    "supervision_mode": "teacher",
+    "teacher_w_sep": 0.05,
+    "teacher_w_align": 0.90,
+    "teacher_w_cohesion": 0.35,
+    "init_w_sep_target": 0.02,
+    "init_w_align_target": 0.08,
+    "init_w_cohesion_target": 1.10,
+    "teacher_damping": 0.94,
+    "teacher_max_speed": 0.014,
+    "init_damping_target": 0.72,
+    "init_max_speed_target": 0.014,
+    "lr": 0.05,
+    "curriculum_ramp_fraction": 1.0,
+    "final_lr_ratio": 1.0,
+    "num_initial_conditions": 1,
+    "velocity_loss_weight": 1.0,
+    "separation_loss_weight": 0.0,
+    "print_every": 5,
+    "record_every": 2,
+    "checkpoint_every_epochs": 40,
+    "eval_seeds": "101",
+    "eval_every": 5,
+}
+
 HISTORY_KEYS = [
     "epoch",
     "horizon",
     "total",
+    "per_step_loss",
+    "objective_loss",
     "pos_loss",
     "vel_loss",
+    "sep_focus_loss",
     "center_error",
     "w_sep",
+    "w_sep_abs_error",
+    "w_sep_rel_error",
     "w_align",
+    "w_align_abs_error",
+    "w_align_rel_error",
     "w_cohesion",
+    "w_cohesion_abs_error",
+    "w_cohesion_rel_error",
     "damping",
+    "damping_abs_error",
+    "damping_rel_error",
     "max_speed",
-    "tau_align",
-    "tau_cohesion",
+    "max_speed_abs_error",
+    "max_speed_rel_error",
     "grad_norm",
+    "lr",
     "cap_fraction",
     "pre_clip_speed",
-    "val_total_loss",
-    "val_pos_loss",
-    "val_vel_loss",
-    "val_center_error",
+    "val_curriculum_horizon",
+    "val_curriculum_total_loss",
+    "val_curriculum_pos_loss",
+    "val_curriculum_vel_loss",
+    "val_curriculum_per_step_loss",
+    "val_curriculum_center_error",
+    "val_full_horizon",
+    "val_full_total_loss",
+    "val_full_pos_loss",
+    "val_full_vel_loss",
+    "val_full_per_step_loss",
+    "val_full_center_error",
 ]
 
 
 def parse_learnable_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Aggregate boids with learnable dynamics")
-    parser.add_argument("--num-nodes", type=int, default=60)
-    parser.add_argument("--rounds", type=int, default=80)
-    parser.add_argument("--epochs", type=int, default=120)
+    parser = argparse.ArgumentParser(description="Aggregate boids demo with learnable dynamics")
+    parser.add_argument("--num-nodes", type=int, default=DEFAULTS["num_nodes"])
+    parser.add_argument("--rounds", type=int, default=DEFAULTS["rounds"])
+    parser.add_argument("--epochs", type=int, default=DEFAULTS["epochs"])
     parser.add_argument("--radius", type=float, default=0.23)
     parser.add_argument("--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid")
     parser.add_argument("--init-k-neighbors", type=int, default=8)
@@ -40,35 +88,38 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--sep", type=float, default=0.06)
     parser.add_argument("--dt", type=float, default=1.0)
     parser.add_argument("--init-velocity-scale", type=float, default=0.014, help="Uniform initial velocity scale for sampled initial conditions")
-    parser.add_argument("--teacher-w-sep", type=float, default=1.0, help="Teacher separation weight")
-    parser.add_argument("--teacher-w-align", type=float, default=0.7, help="Teacher alignment weight")
-    parser.add_argument("--teacher-w-cohesion", type=float, default=0.6, help="Teacher cohesion weight")
-    parser.add_argument("--teacher-damping", type=float, default=0.95)
-    parser.add_argument("--teacher-max-speed", type=float, default=0.014)
-    parser.add_argument("--init-damping-target", type=float, default=0.94, help="Initial learnable damping value in (0,1)")
-    parser.add_argument("--init-max-speed-target", type=float, default=0.03, help="Initial learnable speed cap > 0")
+    parser.add_argument("--teacher-w-sep", type=float, default=DEFAULTS["teacher_w_sep"], help="Teacher separation weight")
+    parser.add_argument("--teacher-w-align", type=float, default=DEFAULTS["teacher_w_align"], help="Teacher alignment weight")
+    parser.add_argument("--teacher-w-cohesion", type=float, default=DEFAULTS["teacher_w_cohesion"], help="Teacher cohesion weight")
+    parser.add_argument("--init-w-sep-target", type=float, default=DEFAULTS["init_w_sep_target"], help="Initial learnable separation weight target")
+    parser.add_argument("--init-w-align-target", type=float, default=DEFAULTS["init_w_align_target"], help="Initial learnable alignment weight target")
+    parser.add_argument("--init-w-cohesion-target", type=float, default=DEFAULTS["init_w_cohesion_target"], help="Initial learnable cohesion weight target")
+    parser.add_argument("--teacher-damping", type=float, default=DEFAULTS["teacher_damping"])
+    parser.add_argument("--teacher-max-speed", type=float, default=DEFAULTS["teacher_max_speed"])
+    parser.add_argument("--init-damping-target", type=float, default=DEFAULTS["init_damping_target"], help="Initial learnable damping value in (0,1)")
+    parser.add_argument("--init-max-speed-target", type=float, default=DEFAULTS["init_max_speed_target"], help="Initial learnable speed cap > 0")
     parser.add_argument("--max-speed-min", type=float, default=0.004, help="Lower bound for learnable speed cap")
     parser.add_argument("--max-speed-max", type=float, default=0.06, help="Upper bound for learnable speed cap")
-    parser.add_argument(
-        "--train-max-speed-in-weights",
-        action="store_true",
-        help="When mode=weights, also optimize max_speed instead of keeping it fixed at the teacher cap",
-    )
     parser.add_argument("--seed", type=int, default=5)
-    parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--mode", choices=["weights", "attention", "joint"], default="joint")
+    parser.add_argument("--lr", type=float, default=DEFAULTS["lr"])
     parser.add_argument("--out-dir", type=str, default="generated/results")
     parser.add_argument("--run-name", type=str, default="")
-    parser.add_argument("--curriculum-min-horizon", type=int, default=3)
-    parser.add_argument("--curriculum-max-horizon", type=int, default=80)
-    parser.add_argument("--trunc-window", type=int, default=8)
-    parser.add_argument("--num-initial-conditions", type=int, default=6)
-    parser.add_argument("--velocity-loss-weight", type=float, default=10.0)
-    parser.add_argument("--print-every", type=int, default=20)
-    parser.add_argument("--record-every", type=int, default=5)
-    parser.add_argument("--checkpoint-every-epochs", type=int, default=20)
-    parser.add_argument("--eval-seeds", type=str, default="", help="Comma-separated held-out seeds")
-    parser.add_argument("--eval-every", type=int, default=20)
+    parser.add_argument("--supervision-mode", choices=["teacher", "replay"], default=DEFAULTS["supervision_mode"], help="Use online teacher traces or persisted replay traces")
+    parser.add_argument("--replay-trace-dir", type=str, default="", help="Directory containing or receiving persisted replay traces")
+    parser.add_argument("--save-replay-traces", action="store_true", help="Persist teacher traces while training in teacher mode")
+    parser.add_argument("--curriculum-min-horizon", type=int, default=None, help="Minimum teacher-forced horizon; defaults to full rounds")
+    parser.add_argument("--curriculum-max-horizon", type=int, default=None, help="Maximum teacher-forced horizon; defaults to full rounds")
+    parser.add_argument("--curriculum-ramp-fraction", type=float, default=DEFAULTS["curriculum_ramp_fraction"])
+    parser.add_argument("--final-lr-ratio", type=float, default=DEFAULTS["final_lr_ratio"])
+    parser.add_argument("--trunc-window", type=int, default=None, help="Detach recurrent state every N rounds; defaults to full rounds")
+    parser.add_argument("--num-initial-conditions", type=int, default=DEFAULTS["num_initial_conditions"])
+    parser.add_argument("--velocity-loss-weight", type=float, default=DEFAULTS["velocity_loss_weight"])
+    parser.add_argument("--separation-loss-weight", type=float, default=DEFAULTS["separation_loss_weight"])
+    parser.add_argument("--print-every", type=int, default=DEFAULTS["print_every"])
+    parser.add_argument("--record-every", type=int, default=DEFAULTS["record_every"])
+    parser.add_argument("--checkpoint-every-epochs", type=int, default=DEFAULTS["checkpoint_every_epochs"])
+    parser.add_argument("--eval-seeds", type=str, default=DEFAULTS["eval_seeds"], help="Comma-separated held-out seeds")
+    parser.add_argument("--eval-every", type=int, default=DEFAULTS["eval_every"])
     parser.add_argument("--highlight-node", type=int, default=0)
     parser.add_argument("--viz-prefix", type=str, default="generated/boids/learnable")
     parser.add_argument("--gif-fps", type=int, default=8)
@@ -77,6 +128,5 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links in visual outputs")
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
-    parser.add_argument("--no-compare-panel", action="store_true", help="Disable predicted-vs-teacher side-by-side panel")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()

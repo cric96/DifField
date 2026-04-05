@@ -53,16 +53,23 @@ def _plot_loss_curves(history: dict[str, list[float]], output_path: Path, title_
         return
 
     epochs = history["epoch"]
+    marker = "o" if len(epochs) == 1 else None
     fig, ax = plt.subplots(figsize=(9.0, 5.0))
-    ax.plot(epochs, history["total"], label="train total", linewidth=2.0)
-    ax.plot(epochs, history["pos_loss"], label="train pos", linewidth=1.8)
-    ax.plot(epochs, history["vel_loss"], label="train vel", linewidth=1.6)
+    train_key = "total"
+    train_label = "train objective (pre-clip)"
+    ax.plot(epochs, history[train_key], label=train_label, linewidth=2.0, marker=marker)
 
-    val_x, val_y = _finite_pairs(epochs, history.get("val_total_loss", []))
-    if val_x:
-        ax.plot(val_x, val_y, label="val total", linewidth=1.8, linestyle="--")
+    for key, label, linestyle in [
+        ("val_full_per_step_loss", "val per-step (full)", ":"),
+    ]:
+        if key not in history:
+            continue
+        val_x, val_y = _finite_pairs(epochs, history.get(key, []))
+        if val_x:
+            val_marker = "o" if len(val_x) == 1 else None
+            ax.plot(val_x, val_y, label=label, linewidth=1.8, linestyle=linestyle, marker=val_marker)
 
-    ax.set_title(f"{title_prefix}Loss Curves")
+    ax.set_title(f"{title_prefix}Teacher-forced Train Objective vs Full-rollout Validation Loss")
     ax.set_xlabel("epoch")
     ax.set_ylabel("loss")
     ax.grid(alpha=0.25)
@@ -78,24 +85,27 @@ def _plot_parameter_trajectories(history: dict[str, list[float]], output_path: P
         return
 
     epochs = history["epoch"]
+    marker = "o" if len(epochs) == 1 else None
     fig, axes = plt.subplots(2, 1, figsize=(9.0, 7.5), sharex=True)
 
-    axes[0].plot(epochs, history["w_sep"], label="w_sep")
-    axes[0].plot(epochs, history["w_align"], label="w_align")
-    axes[0].plot(epochs, history["w_cohesion"], label="w_cohesion")
-    axes[0].plot(epochs, history["max_speed"], label="max_speed")
-    axes[0].plot(epochs, history["damping"], label="damping")
+    axes[0].plot(epochs, history["w_sep"], label="w_sep", marker=marker)
+    axes[0].plot(epochs, history["w_align"], label="w_align", marker=marker)
+    axes[0].plot(epochs, history["w_cohesion"], label="w_cohesion", marker=marker)
+    axes[0].plot(epochs, history["max_speed"], label="max_speed", marker=marker)
+    axes[0].plot(epochs, history["damping"], label="damping", marker=marker)
     axes[0].set_ylabel("parameter value")
     axes[0].set_title(f"{title_prefix}Model Parameter Trajectories")
     axes[0].grid(alpha=0.25)
     axes[0].legend(loc="best")
 
-    axes[1].plot(epochs, history["tau_align"], label="tau_align")
-    axes[1].plot(epochs, history["tau_cohesion"], label="tau_cohesion")
+    tau_keys = [key for key in ("tau_align", "tau_cohesion") if key in history]
+    for key in tau_keys:
+        axes[1].plot(epochs, history[key], label=key, marker=marker)
     axes[1].set_xlabel("epoch")
     axes[1].set_ylabel("temperature")
     axes[1].grid(alpha=0.25)
-    axes[1].legend(loc="best")
+    if tau_keys:
+        axes[1].legend(loc="best")
 
     fig.tight_layout()
     fig.savefig(output_path, dpi=150)
@@ -108,18 +118,28 @@ def _plot_training_health(history: dict[str, list[float]], output_path: Path, ti
         return
 
     epochs = history["epoch"]
+    marker = "o" if len(epochs) == 1 else None
     fig, axes = plt.subplots(2, 1, figsize=(9.0, 7.2), sharex=True)
 
-    axes[0].plot(epochs, history["grad_norm"], color="tab:orange", label="grad_norm")
+    axes[0].plot(epochs, history["grad_norm"], color="tab:orange", label="grad_norm", marker=marker)
     axes[0].set_ylabel("norm")
     axes[0].set_title(f"{title_prefix}Gradient Norm")
     axes[0].grid(alpha=0.25)
     axes[0].legend(loc="best")
 
-    axes[1].plot(epochs, history["center_error"], color="tab:green", label="train center_error")
-    val_x, val_y = _finite_pairs(epochs, history.get("val_center_error", []))
-    if val_x:
-        axes[1].plot(val_x, val_y, color="tab:red", linestyle="--", label="val center_error")
+    axes[1].plot(epochs, history["center_error"], color="tab:green", label="train center_error", marker=marker)
+    validation_curves = [
+        ("val_curriculum_center_error", "val center (curriculum)", "tab:red", "--"),
+        ("val_full_center_error", "val center (full)", "tab:purple", ":"),
+        ("val_center_error", "val center_error", "tab:red", "--"),
+    ]
+    for key, label, color, linestyle in validation_curves:
+        if key not in history:
+            continue
+        val_x, val_y = _finite_pairs(epochs, history.get(key, []))
+        if val_x:
+            val_marker = "o" if len(val_x) == 1 else None
+            axes[1].plot(val_x, val_y, color=color, linestyle=linestyle, label=label, marker=val_marker)
     axes[1].set_xlabel("epoch")
     axes[1].set_ylabel("error")
     axes[1].set_title("Center Error")
@@ -195,6 +215,7 @@ def _plot_parameter_errors(
     if not parameter_names:
         return
 
+    marker = "o" if len(epochs) == 1 else None
     fig, axes = plt.subplots(2, 1, figsize=(9.0, 7.5), sharex=True)
 
     for name in parameter_names:
@@ -204,8 +225,8 @@ def _plot_parameter_errors(
             abs(value - teacher_value) / max(abs(teacher_value), 1e-9) * 100.0
             for value in history[name]
         ]
-        axes[0].plot(epochs, abs_errors, label=name)
-        axes[1].plot(epochs, rel_errors, label=name)
+        axes[0].plot(epochs, abs_errors, label=name, marker=marker)
+        axes[1].plot(epochs, rel_errors, label=name, marker=marker)
 
     axes[0].set_ylabel("abs error")
     axes[0].set_title(f"{title_prefix}Parameter Error vs Teacher")
@@ -229,12 +250,15 @@ def export_diagnostics(
     title_prefix: str = "",
     teacher_params: dict[str, float] | None = None,
     learned_params: dict[str, float] | None = None,
+    compact: bool = False,
 ) -> None:
     prefix = Path(output_prefix)
     prefix.parent.mkdir(parents=True, exist_ok=True)
 
     _plot_loss_curves(history, prefix.with_name(prefix.name + "_loss.png"), title_prefix)
     _plot_parameter_trajectories(history, prefix.with_name(prefix.name + "_params.png"), title_prefix)
+    if compact:
+        return
     _plot_training_health(history, prefix.with_name(prefix.name + "_health.png"), title_prefix)
 
     if teacher_params is not None:

@@ -94,7 +94,7 @@ class SmallChannelWorkflow:
         snapshot_steps = [5, 15, 30, 60, self.spec.program.rounds - 1]
         record_rounds = None if record_all else set(snapshot_steps)
         recorder = SnapshotRecorder(
-            state_fields=["dist_src", "dist_dst", "_bc_dist_channel"],
+            state_fields=["dist_src", "dist_dst", "_gc_dist_channel"],
             capture_output=True,
             record_rounds=record_rounds,
         )
@@ -227,7 +227,7 @@ class LargeChannelWorkflow:
         snapshot_steps = [10, 50, 100, 200, self.spec.program.rounds - 1]
         record_rounds = None if record_all else set(snapshot_steps)
         recorder = SnapshotRecorder(
-            state_fields=["dist_src", "dist_dst", "_bc_dist_channel"],
+            state_fields=["dist_src", "dist_dst", "_gc_dist_channel"],
             capture_output=True,
             record_rounds=record_rounds,
         )

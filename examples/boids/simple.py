@@ -13,10 +13,18 @@ sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
 
-from autofield import SpatialScenario, bounce_in_box, limit_speed, nbr, normalize_vectors, rep
+from autofield import SpatialScenario, bounce_in_box, rep
 from autofield.dsl import AggregateContext
 from autofield.utils import get_device
-from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
+
+try:
+    from ..shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
+    from .core import sample_initial_boids_state
+    from .logics import reference_boids_velocity_update
+except ImportError:
+    from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
+    from boids.core import sample_initial_boids_state
+    from boids.logics import reference_boids_velocity_update
 
 
 def parse_args() -> argparse.Namespace:
@@ -60,25 +68,28 @@ def aggregate_boids_velocity(
     damping: float,
     max_speed: float,
 ) -> torch.Tensor:
-    neigh_vel = nbr(vel, aggr="mean")
-    neigh_pos = nbr(pos, aggr="mean")
-    align_force = neigh_vel - vel
-    cohesion_force = neigh_pos - pos
-    dx = pos[:, 0].unsqueeze(1) - pos[:, 0].unsqueeze(0)
-    dy = pos[:, 1].unsqueeze(1) - pos[:, 1].unsqueeze(0)
-    dist = torch.sqrt(dx.pow(2) + dy.pow(2) + 1e-9)
-    sep_mask = (dist <= sep) & (dist > 0)
-    sep_force = torch.stack([(dx * sep_mask).sum(dim=1), (dy * sep_mask).sum(dim=1)], dim=1)
-    acc = w_sep * normalize_vectors(sep_force) + w_align * align_force + w_cohesion * cohesion_force
-    return limit_speed(damping * vel + dt * acc, max_speed)
+    return reference_boids_velocity_update(
+        vel,
+        pos,
+        dt=dt,
+        sep=sep,
+        w_sep=w_sep,
+        w_align=w_align,
+        w_cohesion=w_cohesion,
+        damping=damping,
+        max_speed=max_speed,
+    )
 
 
 def main() -> None:
     args = parse_args()
     device = get_device(args.device)
-    torch.manual_seed(args.seed)
-    positions = torch.rand(args.num_nodes, 2, device=device)
-    velocities0 = normalize_vectors(torch.rand(args.num_nodes, 2, device=device) * 2.0 - 1.0) * args.speed
+    positions, velocities0 = sample_initial_boids_state(
+        args.num_nodes,
+        seed=args.seed,
+        velocity_scale=args.speed,
+        device=device,
+    )
 
     scenario = SpatialScenario(
         positions=positions,

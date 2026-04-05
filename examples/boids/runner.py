@@ -18,6 +18,9 @@ class LearnableRunOptions:
     eval_seeds: str
     eval_every: int
     skip_viz: bool
+    supervision_mode: str = "teacher"
+    replay_trace_dir: str = ""
+    save_replay_traces: bool = False
     device: str = ""
 
 
@@ -39,7 +42,6 @@ def build_learnable_command(
     *,
     options: LearnableRunOptions,
     run_name: str,
-    mode: str,
     lr: float,
     seed: int | None = None,
     velocity_loss_weight: float | None = None,
@@ -47,8 +49,6 @@ def build_learnable_command(
     cmd = [
         options.python,
         "examples/boids/learnable.py",
-        "--mode",
-        mode,
         "--epochs",
         str(options.epochs),
         "--rounds",
@@ -65,7 +65,15 @@ def build_learnable_command(
         options.eval_seeds,
         "--eval-every",
         str(options.eval_every),
+        "--supervision-mode",
+        options.supervision_mode,
     ]
+
+    if options.replay_trace_dir:
+        cmd.extend(["--replay-trace-dir", options.replay_trace_dir])
+
+    if options.save_replay_traces:
+        cmd.append("--save-replay-traces")
 
     if options.device:
         cmd.extend(["--device", options.device])
@@ -77,7 +85,7 @@ def build_learnable_command(
         cmd.extend(["--velocity-loss-weight", str(velocity_loss_weight)])
 
     if options.skip_viz:
-        cmd.extend(["--no-viz", "--no-gif", "--no-compare-panel"])
+        cmd.extend(["--no-viz", "--no-gif"])
     return cmd
 
 
@@ -85,7 +93,6 @@ def run_learnable_subprocess(
     *,
     options: LearnableRunOptions,
     run_name: str,
-    mode: str,
     lr: float,
     seed: int | None = None,
     velocity_loss_weight: float | None = None,
@@ -94,7 +101,6 @@ def run_learnable_subprocess(
     cmd = build_learnable_command(
         options=options,
         run_name=run_name,
-        mode=mode,
         lr=lr,
         seed=seed,
         velocity_loss_weight=velocity_loss_weight,

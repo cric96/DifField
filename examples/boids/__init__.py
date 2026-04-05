@@ -1,8 +1,12 @@
-"""Boids example family."""
+"""Boids example family.
 
-from .learnable import main as learnable_main
-from .model import LearnableAggregateBoids, teacher_rollout
-from .simple import main as simple_main
+Keep package exports lazy so importing submodules like `boids.runner`
+does not eagerly import the whole example stack.
+"""
+
+from __future__ import annotations
+
+from typing import Any
 
 __all__ = [
     "LearnableAggregateBoids",
@@ -10,3 +14,27 @@ __all__ = [
     "simple_main",
     "teacher_rollout",
 ]
+
+
+def __getattr__(name: str) -> Any:
+    if name == "LearnableAggregateBoids":
+        from .model import LearnableAggregateBoids
+
+        return LearnableAggregateBoids
+    if name == "teacher_rollout":
+        from .model import teacher_rollout
+
+        return teacher_rollout
+    if name == "learnable_main":
+        from .learnable import main
+
+        return main
+    if name == "simple_main":
+        from .simple import main
+
+        return main
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return sorted(__all__)

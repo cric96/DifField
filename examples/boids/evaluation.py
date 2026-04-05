@@ -22,17 +22,19 @@ from shared.metrics import is_finite_number, mean, nested_get, std
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate learnable boids across modes and seeds")
+    parser = argparse.ArgumentParser(description="Evaluate learnable boids demo across seeds")
     parser.add_argument("--seeds", type=str, default="11,13,17,19,23,32")
-    parser.add_argument("--modes", type=str, default="weights,attention,joint")
-    parser.add_argument("--epochs", type=int, default=120)
-    parser.add_argument("--rounds", type=int, default=30)
-    parser.add_argument("--num-nodes", type=int, default=40)
-    parser.add_argument("--lr", type=float, default=0.01)
-    parser.add_argument("--eval-seeds", type=str, default="101,103,107")
-    parser.add_argument("--eval-every", type=int, default=20)
+    parser.add_argument("--epochs", type=int, default=40)
+    parser.add_argument("--rounds", type=int, default=24)
+    parser.add_argument("--num-nodes", type=int, default=24)
+    parser.add_argument("--lr", type=float, default=0.05)
+    parser.add_argument("--eval-seeds", type=str, default="101")
+    parser.add_argument("--eval-every", type=int, default=5)
     parser.add_argument("--out-dir", type=str, default="generated/results/evaluation")
     parser.add_argument("--python", type=str, default=sys.executable)
+    parser.add_argument("--supervision-mode", choices=["teacher", "replay"], default="teacher")
+    parser.add_argument("--replay-trace-dir", type=str, default="", help="Optional shared replay trace directory passed to learnable.py")
+    parser.add_argument("--save-replay-traces", action="store_true", help="Persist teacher traces while evaluating in teacher mode")
     parser.add_argument("--skip-viz", action="store_true", help="Pass --no-viz --no-gif to each run")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
@@ -85,10 +87,14 @@ def _plot_mode_training_bands(mode: str, histories: list[dict[str, list[float]]]
         return
 
     epochs = histories[0].get("epoch", [])
-    total_stats = _series_mean_std(histories, "total")
-    val_total_stats = _series_mean_std(histories, "val_total_loss")
+    total_stats = _series_mean_std(histories, "per_step_loss")
+    val_curr_total_stats = _series_mean_std(histories, "val_curriculum_total_loss")
+    val_full_total_stats = _series_mean_std(histories, "val_full_total_loss")
+    val_curr_step_stats = _series_mean_std(histories, "val_curriculum_per_step_loss")
+    val_full_step_stats = _series_mean_std(histories, "val_full_per_step_loss")
     center_stats = _series_mean_std(histories, "center_error")
-    val_center_stats = _series_mean_std(histories, "val_center_error")
+    val_curr_center_stats = _series_mean_std(histories, "val_curriculum_center_error")
+    val_full_center_stats = _series_mean_std(histories, "val_full_center_error")
 
     if not epochs or total_stats is None or center_stats is None:
         return
@@ -97,24 +103,32 @@ def _plot_mode_training_bands(mode: str, histories: list[dict[str, list[float]]]
         len(epochs),
         len(total_stats[0]),
         len(center_stats[0]),
-        len(val_total_stats[0]) if val_total_stats is not None else len(epochs),
-        len(val_center_stats[0]) if val_center_stats is not None else len(epochs),
+        len(val_curr_step_stats[0]) if val_curr_step_stats is not None else len(epochs),
+        len(val_full_step_stats[0]) if val_full_step_stats is not None else len(epochs),
+        len(val_curr_total_stats[0]) if val_curr_total_stats is not None else len(epochs),
+        len(val_full_total_stats[0]) if val_full_total_stats is not None else len(epochs),
+        len(val_curr_center_stats[0]) if val_curr_center_stats is not None else len(epochs),
+        len(val_full_center_stats[0]) if val_full_center_stats is not None else len(epochs),
     )
     epochs = epochs[:min_len]
 
     fig, axes = plt.subplots(2, 1, figsize=(9.5, 7.5), sharex=True)
 
-    _plot_band(axes[0], epochs, total_stats[0][:min_len], total_stats[1][:min_len], "train total")
-    if val_total_stats is not None:
-        _plot_band(axes[0], epochs, val_total_stats[0][:min_len], val_total_stats[1][:min_len], "val total")
-    axes[0].set_ylabel("loss")
-    axes[0].set_title(f"{mode} Training Loss Across Seeds")
+    _plot_band(axes[0], epochs, total_stats[0][:min_len], total_stats[1][:min_len], "train objective (pre-clip)")
+    if val_curr_step_stats is not None:
+        _plot_band(axes[0], epochs, val_curr_step_stats[0][:min_len], val_curr_step_stats[1][:min_len], "val per-step (curriculum)")
+    if val_full_step_stats is not None:
+        _plot_band(axes[0], epochs, val_full_step_stats[0][:min_len], val_full_step_stats[1][:min_len], "val per-step (full)")
+    axes[0].set_ylabel("loss / step")
+    axes[0].set_title(f"{mode} Teacher-forced Objective Across Seeds")
     axes[0].grid(alpha=0.25)
     axes[0].legend(loc="best")
 
     _plot_band(axes[1], epochs, center_stats[0][:min_len], center_stats[1][:min_len], "train center")
-    if val_center_stats is not None:
-        _plot_band(axes[1], epochs, val_center_stats[0][:min_len], val_center_stats[1][:min_len], "val center")
+    if val_curr_center_stats is not None:
+        _plot_band(axes[1], epochs, val_curr_center_stats[0][:min_len], val_curr_center_stats[1][:min_len], "val center (curriculum)")
+    if val_full_center_stats is not None:
+        _plot_band(axes[1], epochs, val_full_center_stats[0][:min_len], val_full_center_stats[1][:min_len], "val center (full)")
     axes[1].set_xlabel("epoch")
     axes[1].set_ylabel("error")
     axes[1].set_title(f"{mode} Center Error Across Seeds")
@@ -204,7 +218,6 @@ def _export_mode_plots(
 def main() -> None:
     args = parse_args()
     seeds = _parse_csv(args.seeds)
-    modes = _parse_csv(args.modes)
     root = Path(args.out_dir)
     root.mkdir(parents=True, exist_ok=True)
     run_options = LearnableRunOptions(
@@ -216,46 +229,50 @@ def main() -> None:
         eval_seeds=args.eval_seeds,
         eval_every=args.eval_every,
         skip_viz=args.skip_viz,
+        supervision_mode=args.supervision_mode,
+        replay_trace_dir=args.replay_trace_dir,
+        save_replay_traces=args.save_replay_traces,
         device=args.device,
     )
 
-    print(f"=== Boids Evaluation: {len(modes)} modes × {len(seeds)} seeds = {len(modes) * len(seeds)} runs ===")
-    results: dict[str, list[dict]] = {mode: [] for mode in modes}
-    histories_by_mode: dict[str, list[dict[str, list[float]]]] = {mode: [] for mode in modes}
-    for mode in modes:
-        for seed in seeds:
-            run_name = f"{mode}_seed{seed}"
-            print(f"  running {run_name} ...")
-            outcome = run_learnable_subprocess(
-                options=run_options,
-                run_name=run_name,
-                mode=mode,
-                seed=int(seed),
-                lr=args.lr,
-            )
-            if not outcome.ok:
-                print(f"  FAILED {run_name}: exit={outcome.returncode}")
-                if outcome.stderr:
-                    for line in outcome.stderr.strip().splitlines()[-5:]:
-                        print(f"    {line}")
-                continue
-            results[mode].append(outcome.summary or {})
-            history = _load_history(outcome.run_dir)
-            if history is not None:
-                histories_by_mode[mode].append(history)
+    label = "demo"
+    print(f"=== Boids Demo Evaluation: {len(seeds)} seeds ===")
+    summaries: list[dict] = []
+    histories: list[dict[str, list[float]]] = []
+    for seed in seeds:
+        run_name = f"{label}_seed{seed}"
+        print(f"  running {run_name} ...")
+        outcome = run_learnable_subprocess(
+            options=run_options,
+            run_name=run_name,
+            seed=int(seed),
+            lr=args.lr,
+        )
+        if not outcome.ok:
+            print(f"  FAILED {run_name}: exit={outcome.returncode}")
+            if outcome.stderr:
+                for line in outcome.stderr.strip().splitlines()[-5:]:
+                    print(f"    {line}")
+            continue
+        summaries.append(outcome.summary or {})
+        history = _load_history(outcome.run_dir)
+        if history is not None:
+            histories.append(history)
 
     metrics = {
-        "final_total_loss": "training.final_total_loss",
-        "best_total_loss": "training.best_total_loss",
-        "final_center_error": "training.final_center_error",
+        "train_total_loss": "training.final_total_loss",
+        "train_per_step_loss": "training.final_per_step_loss",
+        "train_center_error": "training.final_center_error",
+        "val_curriculum_total_loss": "validation.curriculum_horizon.final_total_loss",
+        "val_curriculum_per_step_loss": "validation.curriculum_horizon.final_per_step_loss",
+        "val_full_total_loss": "validation.full_horizon.final_total_loss",
+        "val_full_per_step_loss": "validation.full_horizon.final_per_step_loss",
+        "val_full_center_error": "validation.full_horizon.final_center_error",
     }
     recovery_params = ["w_sep", "w_align", "w_cohesion", "damping", "max_speed"]
     rows = []
-    for mode in modes:
-        summaries = results[mode]
-        if not summaries:
-            continue
-        row: dict[str, str | float] = {"mode": mode, "runs": len(summaries)}
+    if summaries:
+        row: dict[str, str | float] = {"mode": label, "runs": len(summaries)}
         for metric_name, metric_path in metrics.items():
             values = [
                 float(nested_get(summary, metric_path))
@@ -284,10 +301,10 @@ def main() -> None:
         print(f"\nSaved {csv_path}")
 
     print("\n### Results\n")
-    header = f"| {'mode':^10} | {'runs':>4} | {'total_loss':>12} | {'best_total':>12} | {'center_err':>12} |"
+    header = f"| {'mode':^10} | {'runs':>4} | {'train_total':>12} | {'train_step':>12} | {'val_curr':>12} | {'val_full':>12} | {'center_err':>12} |"
     header += "".join(f" {name + '_rel':>12} |" for name in recovery_params)
     print(header)
-    print("|" + "-" * 12 + "|" + ("-" * 6 + "|") + (("-" * 14 + "|") * 3) + (("-" * 14 + "|") * len(recovery_params)))
+    print("|" + "-" * 12 + "|" + ("-" * 6 + "|") + (("-" * 14 + "|") * 5) + (("-" * 14 + "|") * len(recovery_params)))
 
     def _fmt(row: dict[str, str | float], key: str) -> str:
         mean_value = row.get(f"{key}_mean", float("nan"))
@@ -306,16 +323,19 @@ def main() -> None:
         return f"{mean_value:.1%}"
 
     for row in rows:
-        line = f"| {row['mode']:^10} | {row['runs']:>4} | {_fmt(row, 'final_total_loss'):>12} | {_fmt(row, 'best_total_loss'):>12} | {_fmt(row, 'final_center_error'):>12} |"
+        line = (
+            f"| {row['mode']:^10} | {row['runs']:>4} | {_fmt(row, 'train_total_loss'):>12} |"
+            f" {_fmt(row, 'train_per_step_loss'):>12} | {_fmt(row, 'val_curriculum_total_loss'):>12} |"
+            f" {_fmt(row, 'val_full_total_loss'):>12} | {_fmt(row, 'val_full_center_error'):>12} |"
+        )
         for name in recovery_params:
             line += f" {_fmt_percent(row, f'recovery_{name}_rel'):>12} |"
         print(line)
 
     with (root / "all_summaries.json").open("w", encoding="utf-8") as handle:
-        json.dump({mode: results[mode] for mode in modes}, handle, indent=2)
+        json.dump({label: summaries}, handle, indent=2)
 
-    for mode in modes:
-        _export_mode_plots(mode, results[mode], histories_by_mode[mode], root)
+    _export_mode_plots(label, summaries, histories, root)
 
     print("\nDone.")
 

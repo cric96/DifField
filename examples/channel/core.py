@@ -38,7 +38,13 @@ def build_snapshot_payloads(
     for round_idx, payload in records.items():
         dist_src = payload.get("dist_src", torch.full((num_nodes,), float("inf")))
         dist_dst = payload.get("dist_dst", torch.full((num_nodes,), float("inf")))
-        dist_sd = payload.get("_bc_dist_channel", torch.full((num_nodes,), float("inf")))
+        dist_sd_state = payload.get("_gc_dist_channel")
+        if dist_sd_state is None:
+            dist_sd = torch.full((num_nodes,), float("inf"))
+        elif dist_sd_state.dim() > 1:
+            dist_sd = dist_sd_state[:, 1]
+        else:
+            dist_sd = dist_sd_state
         snapshots[round_idx] = {
             "dist_src": dist_src,
             "dist_dst": dist_dst,

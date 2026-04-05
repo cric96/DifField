@@ -238,14 +238,16 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
     if plt is None:
         print("matplotlib not available; skipping large channel evolution plot")
         return
-    from mpl_toolkits.axes_grid1 import make_axes_locatable
-
     field_keys = ["dist_src", "dist_dst", "sum", "dist_sd", "channel"]
     field_labels = ["dist_src", "dist_dst", "sum (src+dst)", "broadcast", "channel"]
-    fig, axes = plt.subplots(len(field_keys), len(snapshot_steps), figsize=(3.5 * len(snapshot_steps), 2.5 * len(field_keys)))
-    row_images = []
+    fig, axes = plt.subplots(
+        len(field_keys),
+        len(snapshot_steps) + 1,
+        figsize=(3.5 * len(snapshot_steps) + 0.7, 2.5 * len(field_keys)),
+        gridspec_kw={"width_ratios": [1.0] * len(snapshot_steps) + [0.035]},
+    )
     for row_idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels)):
-        last_image = None
+        row_image = None
         for col_idx, step in enumerate(snapshot_steps):
             ax = axes[row_idx, col_idx]
             grid = to_grid(snapshots[step][field_key], rows, cols, obstacle)
@@ -253,18 +255,14 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
                 image = ax.imshow(grid, cmap="Oranges", vmin=0, vmax=1, interpolation="nearest", aspect="equal")
             else:
                 image = ax.imshow(grid, cmap="viridis", interpolation="nearest", aspect="equal")
-            last_image = image
+            row_image = image
             ax.set_title(snapshot_labels[col_idx], fontsize=8)
             if col_idx == 0:
                 ax.set_ylabel(field_label, fontsize=8)
             ax.set_xticks([])
             ax.set_yticks([])
-        row_images.append(last_image)
-    for row_idx, image in enumerate(row_images):
-        last_ax = axes[row_idx, len(snapshot_steps) - 1]
-        divider = make_axes_locatable(last_ax)
-        color_ax = divider.append_axes("right", size="3%", pad=0.05)
-        fig.colorbar(image, cax=color_ax)
+        color_ax = axes[row_idx, -1]
+        fig.colorbar(row_image, cax=color_ax)
     fig.suptitle(
         f"Large-scale channel evolution - {rows}x{cols}, {num_nodes} devices, {rounds} rounds, {elapsed:.1f}s",
         fontsize=12,

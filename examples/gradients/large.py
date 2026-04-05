@@ -78,7 +78,7 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         return rep(
             "dist", 
             float("inf"), 
-            lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + 1, aggr="min"))
+            lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr="min"))
         )
 
     output, _ = engine.run(rounds=rounds, program=program, signals={"source": source}, recorder=recorder)

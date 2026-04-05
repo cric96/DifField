@@ -160,7 +160,7 @@ def main():
         schedule=schedule,
     )
 
-    center = torch.tensor([0.5, 0.5])
+    center = torch.tensor([0.5, 0.5], device=runtime.scenario.device)
     closest_idx = torch.argmin(torch.norm(runtime.scenario.positions - center, dim=1)).item()
 
     print("=== Moving Nodes Gradient ===")

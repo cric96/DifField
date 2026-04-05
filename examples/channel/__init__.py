@@ -2,7 +2,7 @@
 
 from .core import CHANNEL_THRESHOLD, channel_body
 from .large import main as large_main
-from .small import build_scenario, main as small_main
+from .small import main as small_main
 from .specs import ChannelProgramSpec, GridSpec, LargeChannelSpec, SmallChannelSpec
 from .viz import (
 	plot_channel_evolution,
@@ -16,7 +16,6 @@ from .viz import (
 from .workflow import LargeChannelWorkflow, SmallChannelWorkflow
 
 __all__ = [
-	"build_scenario",
 	"CHANNEL_THRESHOLD",
 	"ChannelProgramSpec",
 	"channel_body",
