@@ -62,7 +62,9 @@ def _scatter_max(
 
 def _scatter_softmin(src: Tensor, index: Tensor, num_nodes: int, tau: float, fill_value: float) -> Tensor:
     r"""Differentiable soft-min per bucket using the logsumexp trick."""
-    neg_src_scaled = -src / tau
+    finite = torch.isfinite(src)
+    safe_src = torch.where(finite, src, torch.zeros_like(src))
+    neg_src_scaled = torch.where(finite, -safe_src / tau, torch.full_like(src, float("-inf")))
     shape = (num_nodes,) + src.shape[1:]
 
     bucket_max = scatter_hard(
@@ -72,24 +74,35 @@ def _scatter_softmin(src: Tensor, index: Tensor, num_nodes: int, tau: float, fil
         aggr="max",
         fill_value=float("-inf"),
     )
-    shifted = neg_src_scaled - bucket_max[index]
-    exp_shifted = shifted.exp()
+    shifted = torch.where(
+        finite,
+        neg_src_scaled - bucket_max[index],
+        torch.full_like(src, float("-inf")),
+    )
+    exp_shifted = torch.where(finite, shifted.exp(), torch.zeros_like(src))
     sum_exp = scatter_hard(exp_shifted, index, num_nodes, aggr="sum", fill_value=0.0)
 
     has_messages = sum_exp > 0
+    soft_log_sum_exp = bucket_max + sum_exp.clamp(min=LOG_EPSILON).log()
     log_sum_exp = torch.where(
         has_messages,
-        bucket_max + sum_exp.clamp(min=LOG_EPSILON).log(),
-        src.new_full(shape, -fill_value / tau),
+        soft_log_sum_exp,
+        torch.zeros_like(soft_log_sum_exp),
     )
     result = -tau * log_sum_exp
 
+    if finite.dim() == 1:
+        valid_messages = finite.to(dtype=src.dtype)
+    else:
+        reduce_dims = tuple(range(1, finite.dim()))
+        valid_messages = finite.all(dim=reduce_dims).to(dtype=src.dtype)
     msg_count = src.new_zeros(num_nodes)
-    msg_count.scatter_add_(0, index, src.new_ones(index.shape[0]))
+    msg_count.scatter_add_(0, index, valid_messages)
     is_isolated = msg_count == 0
     if result.dim() > 1:
         is_isolated = is_isolated.unsqueeze(-1)
-    return torch.where(is_isolated, src.new_full(shape, fill_value), result)
+    fill = src.new_full(shape, fill_value)
+    return torch.where(is_isolated, fill, result)
 
 
 def _scatter_softmax(src: Tensor, index: Tensor, num_nodes: int, tau: float, fill_value: float) -> Tensor:

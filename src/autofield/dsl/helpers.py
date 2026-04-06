@@ -77,11 +77,21 @@ def edge_sources_targets(edge_index: Tensor) -> tuple[Tensor, Tensor]:
 
 def hard_parent_ids(potential: Tensor, ctx: RoundContext | None = None) -> Tensor:
     """Select one admissible parent per node according to the potential field."""
+    return hard_parent_ids_with_edge_cost(potential, edge_cost=None, ctx=ctx)
+
+
+def hard_parent_ids_with_edge_cost(
+    potential: Tensor,
+    edge_cost: Tensor | None,
+    ctx: RoundContext | None = None,
+) -> Tensor:
+    """Select one admissible parent per node with an optional explicit edge cost."""
     ctx = resolve_context(ctx)
     src, tgt = edge_sources_targets(ctx.edge_index)
     parent_potential = potential[src]
     child_potential = potential[tgt]
-    path_cost = parent_potential + ctx.edge_weight
+    effective_edge_cost = ctx.edge_weight if edge_cost is None else edge_cost
+    path_cost = parent_potential + effective_edge_cost
     tolerance = 1e-6 + 1e-5 * torch.maximum(path_cost.abs(), child_potential.abs())
     admissible = (parent_potential < child_potential) & (path_cost <= child_potential + tolerance)
 
@@ -111,19 +121,60 @@ def hard_parent_ids(potential: Tensor, ctx: RoundContext | None = None) -> Tenso
     return torch.where(torch.isfinite(candidate_potential), candidate_parent, sentinel)
 
 
-def soft_parent_weights(potential: Tensor, tau: float, ctx: RoundContext | None = None) -> Tensor:
+def soft_parent_weights(potential: Tensor, tau: float | Tensor, ctx: RoundContext | None = None) -> Tensor:
     """Compute relaxed parent-selection weights for soft collect semantics."""
+    return soft_parent_weights_with_edge_cost(potential, tau, edge_cost=None, ctx=ctx)
+
+
+def soft_parent_weights_with_edge_cost(
+    potential: Tensor,
+    tau: float | Tensor,
+    edge_cost: Tensor | None,
+    ctx: RoundContext | None = None,
+) -> Tensor:
+    """Compute relaxed parent-selection weights with an optional explicit edge cost."""
     ctx = resolve_context(ctx)
     src, tgt = edge_sources_targets(ctx.edge_index)
-    effective_tau = max(float(tau), LOG_EPSILON)
+    if isinstance(tau, Tensor):
+        effective_tau = tau.to(device=potential.device, dtype=potential.dtype).clamp_min(LOG_EPSILON)
+    else:
+        effective_tau = potential.new_tensor(max(float(tau), LOG_EPSILON))
     parent_potential = potential[tgt]
     child_potential = potential[src]
-    path_cost = parent_potential + ctx.edge_weight
-    lower_gate = torch.sigmoid((child_potential - parent_potential) / effective_tau)
-    path_gate = torch.sigmoid((child_potential - path_cost) / effective_tau)
-    logits = -parent_potential / effective_tau
+    effective_edge_cost = ctx.edge_weight if edge_cost is None else edge_cost
+    path_cost = parent_potential + effective_edge_cost
+    finite = torch.isfinite(parent_potential) & torch.isfinite(child_potential) & torch.isfinite(path_cost)
+    safe_parent_potential = torch.where(finite, parent_potential, torch.zeros_like(parent_potential))
+    safe_child_potential = torch.where(finite, child_potential, torch.zeros_like(child_potential))
+    safe_path_cost = torch.where(finite, path_cost, torch.zeros_like(path_cost))
+    lower_gate = torch.where(
+        finite,
+        torch.sigmoid((safe_child_potential - safe_parent_potential) / effective_tau),
+        torch.zeros_like(parent_potential),
+    )
+    path_gate = torch.where(
+        finite,
+        torch.sigmoid((safe_child_potential - safe_path_cost) / effective_tau),
+        torch.zeros_like(parent_potential),
+    )
+    logits_raw = -safe_parent_potential / effective_tau
+    logits = torch.where(
+        finite,
+        logits_raw,
+        torch.full_like(parent_potential, float("-inf")),
+    )
     bucket_max = scatter_aggr(logits, src, ctx.num_nodes, aggr="max", fill_value=float("-inf"))
-    stabilized = (logits - bucket_max[src]).exp() * lower_gate * path_gate
+    safe_bucket_max = torch.where(finite, bucket_max[src], torch.zeros_like(parent_potential))
+    shifted = torch.where(
+        finite,
+        logits_raw - safe_bucket_max,
+        torch.full_like(parent_potential, float("-inf")),
+    )
+    stabilized = torch.where(
+        finite,
+        shifted.exp() * lower_gate * path_gate,
+        torch.zeros_like(parent_potential),
+    )
     denom = scatter_aggr(stabilized, src, ctx.num_nodes, aggr="sum")
     return torch.where(
         denom[src] > 0,

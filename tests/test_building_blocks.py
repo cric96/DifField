@@ -6,7 +6,7 @@ sys.path.insert(0, "src")
 
 import torch
 
-from autofield import AggregateContext, collect_cast, gradient_cast
+from autofield import AggregateContext, collect_cast, gradient_cast, nbr_range
 from tests.support import line_graph, weighted_collect_graph
 
 
@@ -73,6 +73,24 @@ class TestGradientCast:
                 )
 
         assert torch.allclose(soft, hard, atol=1e-3)
+
+    def test_weighted_multi_source_propagates_nearest_root_payload(self):
+        edge_index, edge_weight, n = weighted_collect_graph()
+        source = torch.tensor([1.0, 0.0, 0.0, 1.0])
+        center = torch.tensor([10.0, -1.0, -1.0, 20.0])
+        ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
+
+        for _ in range(4):
+            with ctx.round():
+                output = gradient_cast(
+                    source,
+                    center,
+                    lambda value: value,
+                    weight=nbr_range(),
+                    name="weighted_multi_source",
+                )
+
+        assert torch.allclose(output, torch.tensor([10.0, 10.0, 20.0, 20.0]))
 
 
 class TestCollectCast:

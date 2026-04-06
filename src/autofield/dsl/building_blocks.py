@@ -15,10 +15,12 @@ from .helpers import (
     edge_sources_targets,
     ensure_field,
     hard_parent_ids,
+    hard_parent_ids_with_edge_cost,
     pack_cast_state,
     require_scalar_field,
     scale_messages,
     soft_parent_weights,
+    soft_parent_weights_with_edge_cost,
     unpack_cast_state,
     validate_cast_mode,
 )
@@ -56,6 +58,7 @@ def gradient_cast(
     center: float | Tensor,
     accumulation: Callable[[Tensor], Tensor],
     *,
+    weight: float | Tensor | NeighborExpr | None = None,
     name: str = "gradient_cast",
     mode: str = "hard",
     tau: float = DEFAULT_TAU_SOFT_AGGR,
@@ -68,11 +71,23 @@ def gradient_cast(
     init_state = pack_cast_state(field.inf(), center_field)
     source_state = pack_cast_state(field.zeros(), center_field)
 
+    def edge_cost_for_cast(ctx: RoundContext) -> Tensor:
+        if weight is None:
+            if ctx.edge_weight is not None:
+                return ctx.edge_weight
+            return torch.ones(ctx.edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32)
+        if isinstance(weight, NeighborExpr):
+            return weight.evaluate(ctx=ctx, edge_index=ctx.edge_index, edge_weight=ctx.edge_weight)
+        src, _ = edge_sources_targets(ctx.edge_index)
+        field_value = ensure_field(weight, ctx)
+        return field_value[src]
+
     def update(state: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
         old_distance, old_payload = unpack_cast_state(state, payload_shape)
         src, tgt = edge_sources_targets(ctx.edge_index)
+        edge_cost = edge_cost_for_cast(ctx)
         messages = pack_cast_state(
-            old_distance[src] + ctx.edge_weight,
+            old_distance[src] + edge_cost,
             accumulation(old_payload[src]),
         )
         propagated = scatter_min_by_first(
@@ -91,7 +106,8 @@ def gradient_cast(
 def broadcast(
     mask: Tensor, 
     value: Tensor, 
-    name: str = "bc_cc"
+    name: str = "bc_cc",
+    weight: float | Tensor | NeighborExpr | None = None,
 ) -> Tensor:
     r"""Propagate a value from root nodes to the rest of the network via collect_cast."""
     cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
@@ -99,6 +115,7 @@ def broadcast(
         source=cond,
         center=value,
         accumulation=lambda x: x,
+        weight=weight,
         name=name,
         mode="hard",
         tau=DEFAULT_TAU_SOFT_AGGR,
@@ -111,6 +128,7 @@ def collect_cast(
     null: float | Tensor,
     accumulation: Callable[[Tensor, Tensor], Tensor],
     *,
+    weight: float | Tensor | NeighborExpr | None = None,
     name: str = "collect_cast",
     mode: str = "hard",
     tau: float = DEFAULT_TAU_SOFT_AGGR,
@@ -121,10 +139,22 @@ def collect_cast(
     local_field = ensure_field(local)
     null_field = broadcast_like(null, local_field)
 
+    def edge_cost_for_collect(ctx: RoundContext) -> Tensor:
+        if weight is None:
+            if ctx.edge_weight is not None:
+                return ctx.edge_weight
+            return torch.ones(ctx.edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32)
+        if isinstance(weight, NeighborExpr):
+            return weight.evaluate(ctx=ctx, edge_index=ctx.edge_index, edge_weight=ctx.edge_weight)
+        src, _ = edge_sources_targets(ctx.edge_index)
+        field_value = ensure_field(weight, ctx)
+        return field_value[src]
+
     def update(collected: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
         src, tgt = edge_sources_targets(ctx.edge_index)
+        edge_cost = edge_cost_for_collect(ctx)
         if mode == "hard":
-            parent_ids = hard_parent_ids(potential_field, ctx)
+            parent_ids = hard_parent_ids_with_edge_cost(potential_field, edge_cost=edge_cost, ctx=ctx)
             keep = parent_ids[src] == tgt
             child_values = scatter_binary_fold(
                 collected[src[keep]],
@@ -134,7 +164,7 @@ def collect_cast(
                 null_field,
             )
         else:
-            parent_weight = soft_parent_weights(potential_field, tau, ctx)
+            parent_weight = soft_parent_weights_with_edge_cost(potential_field, tau, edge_cost=edge_cost, ctx=ctx)
             child_values = scatter_binary_fold(
                 scale_messages(collected[src], parent_weight),
                 tgt,

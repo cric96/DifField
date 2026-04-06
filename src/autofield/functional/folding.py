@@ -19,7 +19,7 @@ def scatter_min_by_first(
     num_nodes: int,
     *,
     mode: str = "hard",
-    tau: float = 1.0,
+    tau: float | Tensor = 1.0,
     fill_row: Tensor | None = None,
 ) -> Tensor:
     """Select the full row whose first component is minimal in each bucket."""
@@ -59,7 +59,10 @@ def scatter_min_by_first(
     if mode != "soft":
         raise ValueError(f"Unknown mode: {mode}")
 
-    effective_tau = max(float(tau), LOG_EPSILON)
+    if isinstance(tau, Tensor):
+        effective_tau = tau.to(device=src.device, dtype=src.dtype).clamp_min(LOG_EPSILON)
+    else:
+        effective_tau = src.new_tensor(max(float(tau), LOG_EPSILON))
     cost = src[:, 0]
     cost_out = scatter_aggr(
         cost,
@@ -71,9 +74,14 @@ def scatter_min_by_first(
         fill_value=float(fill[0, 0].item()) if fill.shape[0] > 0 else FILL_VALUE_MIN,
     )
 
-    logits = -cost / effective_tau
+    finite = torch.isfinite(cost)
+    safe_cost = torch.where(finite, cost, torch.zeros_like(cost))
+    logits_raw = -safe_cost / effective_tau
+    logits = torch.where(finite, logits_raw, torch.full_like(cost, float("-inf")))
     bucket_max = scatter_hard(logits, index, num_nodes, aggr="max", fill_value=float("-inf"))
-    score = (logits - bucket_max[index]).exp()
+    safe_bucket_max = torch.where(finite, bucket_max[index], torch.zeros_like(cost))
+    shifted = torch.where(finite, logits_raw - safe_bucket_max, torch.full_like(cost, float("-inf")))
+    score = torch.where(finite, shifted.exp(), torch.zeros_like(cost))
     score_sum = scatter_hard(score, index, num_nodes, aggr="sum", fill_value=0.0)
 
     out = fill.clone()
