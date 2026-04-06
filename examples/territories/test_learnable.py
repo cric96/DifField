@@ -7,11 +7,16 @@ import torch
 import torch.nn.functional as F
 
 from autofield import GridScenario, SimulationEngine
-from examples.territories.core import auto_rounds, build_layout, decode_territory_output, make_territory_program
-from examples.territories.evaluation_utils import evaluate_seeds
-from examples.territories.models import LearnableTerritoryModel
+from examples.territories.domain import (
+    auto_rounds,
+    build_layout,
+    decode_territory_output,
+    make_territory_program,
+)
+from examples.territories.evaluation import evaluate_seeds
+from examples.territories.model import LearnableTerritoryModel
 from examples.territories.reporting import compute_parameter_recovery_metrics
-from examples.territories.specs import (
+from examples.territories.domain.specs import (
     GridSpec,
     LearnableTerritoriesSpec,
     TerritoryEvaluationSpec,
@@ -63,8 +68,12 @@ def _rollout_summary(
         (4, "asymmetric_canyon"),
     ],
 )
-def test_territory_program_conserves_total_demand_at_sinks(num_sinks: int, scenario_preset: str):
-    scenario = GridScenario(7, 7, connectivity=4, device=torch.device("cpu"), edge_weight=1.0)
+def test_territory_program_conserves_total_demand_at_sinks(
+    num_sinks: int, scenario_preset: str
+):
+    scenario = GridScenario(
+        7, 7, connectivity=4, device=torch.device("cpu"), edge_weight=1.0
+    )
     model = LearnableTerritoryModel(
         mode="scalars",
         init_range_weight_target=1.0,
@@ -85,13 +94,18 @@ def test_territory_program_conserves_total_demand_at_sinks(num_sinks: int, scena
         decoded.hard_owner[torch.tensor(layout.sink_indices, dtype=torch.long)],
         torch.arange(layout.num_sinks, dtype=torch.long),
     )
-    assert abs(float(decoded.sink_loads.sum().item()) - float(layout.demand.sum().item())) < 5e-3
+    assert (
+        abs(float(decoded.sink_loads.sum().item()) - float(layout.demand.sum().item()))
+        < 5e-3
+    )
     assert decoded.sink_loads.shape[0] == layout.num_sinks
     assert torch.isfinite(decoded.sink_risks).all()
 
 
 def test_final_only_summary_training_decreases_loss():
-    scenario = GridScenario(8, 8, connectivity=4, device=torch.device("cpu"), edge_weight=1.0)
+    scenario = GridScenario(
+        8, 8, connectivity=4, device=torch.device("cpu"), edge_weight=1.0
+    )
     teacher = LearnableTerritoryModel(
         mode="scalars",
         init_range_weight_target=1.0,
@@ -142,8 +156,12 @@ def test_final_only_summary_training_decreases_loss():
 def test_evaluate_seeds_returns_seed_breakdown_and_dispersion():
     spec = LearnableTerritoriesSpec(
         grid=GridSpec(rows=6, cols=6, connectivity=4),
-        program=TerritoryProgramSpec(rounds=0, num_sinks=4, scenario_preset="asymmetric_canyon"),
-        teacher=TerritoryTeacherSpec(range_weight=1.0, risk_weight=1.8, assignment_tau=0.25),
+        program=TerritoryProgramSpec(
+            rounds=0, num_sinks=4, scenario_preset="asymmetric_canyon"
+        ),
+        teacher=TerritoryTeacherSpec(
+            range_weight=1.0, risk_weight=1.8, assignment_tau=0.25
+        ),
         model=TerritoryModelSpec(
             mode="scalars",
             hidden_dim=16,
@@ -178,7 +196,9 @@ def test_evaluate_seeds_returns_seed_breakdown_and_dispersion():
 
 
 def test_build_layout_accepts_explicit_sink_positions():
-    scenario = GridScenario(9, 9, connectivity=4, device=torch.device("cpu"), edge_weight=1.0)
+    scenario = GridScenario(
+        9, 9, connectivity=4, device=torch.device("cpu"), edge_weight=1.0
+    )
     explicit_positions = ((1, 1), (2, 6), (6, 2), (7, 7))
 
     layout = build_layout(
@@ -197,7 +217,9 @@ def test_build_layout_accepts_explicit_sink_positions():
 
 def test_decode_territory_output_validates_width():
     output = torch.zeros(10, 5)
-    scenario = GridScenario(9, 9, connectivity=4, device=torch.device("cpu"), edge_weight=1.0)
+    scenario = GridScenario(
+        9, 9, connectivity=4, device=torch.device("cpu"), edge_weight=1.0
+    )
     layout = build_layout(scenario, num_sinks=4, seed=4, scenario_preset="balanced")
 
     with pytest.raises(ValueError, match="width"):

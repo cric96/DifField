@@ -18,11 +18,11 @@ __all__ = [
 
 def __getattr__(name: str) -> Any:
     if name == "LearnableAggregateBoids":
-        from .model import LearnableAggregateBoids
+        from .model.boids_model import LearnableAggregateBoids
 
         return LearnableAggregateBoids
     if name == "teacher_rollout":
-        from .model import teacher_rollout
+        from .domain.teacher import teacher_rollout
 
         return teacher_rollout
     if name == "learnable_main":

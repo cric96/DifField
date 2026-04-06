@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
@@ -14,11 +15,11 @@ import torch
 from autofield.utils import get_device
 
 try:
-    from .specs import MovingGradientSpec
-    from .workflow import MovingGradientWorkflow
+    from .domain.specs import MovingGradientSpec
+    from .training.moving_workflow import MovingGradientWorkflow
 except ImportError:
-    from specs import MovingGradientSpec
-    from workflow import MovingGradientWorkflow
+    from gradients.domain.specs import MovingGradientSpec
+    from gradients.training.moving_workflow import MovingGradientWorkflow
 
 
 def parse_args():
@@ -32,8 +33,12 @@ def parse_args():
     parser.add_argument("--source", type=int, default=0)
     parser.add_argument("--target", type=int, default=10)
     parser.add_argument("--learn", choices=["motion", "ac", "both"], default="both")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_moving_learnable")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
+    parser.add_argument(
+        "--viz-prefix", type=str, default="generated/gradient_moving_learnable"
+    )
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")

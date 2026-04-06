@@ -129,6 +129,37 @@ class TestNbr:
 
         assert torch.allclose(round_ctx.exports["scores"], x)
 
+    def test_include_self_can_force_self_aggregation(self):
+        edge_index = torch.tensor(
+            [
+                [0, 1, 1, 2, 0, 1, 2],
+                [1, 0, 2, 1, 0, 1, 2],
+            ],
+            dtype=torch.long,
+        )
+        ctx = AggregateContext(edge_index, 3)
+        x = torch.tensor([1.0, 2.0, 3.0])
+
+        with ctx.round():
+            no_self = nbr(x, aggr="sum", include_self=False)
+        with ctx.round():
+            with_self = nbr(x, aggr="sum", include_self=True)
+
+        assert torch.allclose(no_self, torch.tensor([2.0, 4.0, 2.0]))
+        assert torch.allclose(with_self, torch.tensor([3.0, 6.0, 5.0]))
+
+    def test_include_self_works_for_neighbor_expr(self):
+        edge_index, n = line_graph()
+        ctx = AggregateContext(edge_index, n)
+
+        with ctx.round():
+            no_self = nbr(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=False)
+        with ctx.round():
+            with_self = nbr(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=True)
+
+        assert torch.allclose(no_self, torch.tensor([1.0, 2.0, 2.0, 1.0]))
+        assert torch.allclose(with_self, torch.tensor([2.0, 3.0, 3.0, 2.0]))
+
 
 class TestBranch:
     def test_isolation(self):

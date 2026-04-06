@@ -10,16 +10,34 @@ from types import SimpleNamespace
 
 import torch
 
-from examples.boids.logics import teacher_rollout_from_specs
+from examples.boids.domain.teacher import teacher_rollout_from_specs
 from examples.boids.cli import DEFAULTS
-from examples.boids.config import ModelSpec, SimulationSpec, TeacherDynamics, build_learnable_spec
-from examples.boids.core import sample_initial_boids_state
-from examples.boids.evaluation_utils import evaluate_seed
-from examples.boids.learnable import curriculum_horizon_with_fraction, make_initial_conditions, scheduled_learning_rate, teacher_forced_step_losses
-from examples.boids.losses import close_pair_distance_loss, trajectory_loss_components
-from examples.boids.model import LearnableAggregateBoids
-from examples.boids.replay import build_supervision_traces, load_boids_trace, save_boids_trace, teacher_trace_from_specs, trace_file_path
-from examples.boids.reporting import extract_learned_parameters
+from examples.boids.domain.specs import (
+    ModelSpec,
+    SimulationSpec,
+    TeacherDynamics,
+    build_learnable_spec,
+)
+from examples.boids.domain.geometry import (
+    sample_initial_state as sample_initial_boids_state,
+)
+from examples.boids.evaluation.evaluator import evaluate_seed
+from examples.boids.training.curriculum import (
+    curriculum_horizon as curriculum_horizon_with_fraction,
+    scheduled_learning_rate,
+)
+from examples.boids.training.supervision import teacher_forced_step_losses
+from examples.boids.losses.separation import close_pair_distance_loss
+from examples.boids.losses.trajectory import trajectory_loss_components
+from examples.boids.model.boids_model import LearnableAggregateBoids
+from examples.boids.training.trace import (
+    build_supervision_traces,
+    load_boids_trace,
+    save_boids_trace,
+    teacher_trace_from_specs,
+    trace_file_path,
+)
+from examples.boids.reporting.recovery import extract_learned_parameters
 
 
 def _make_learnable_args(**overrides: object) -> SimpleNamespace:
@@ -134,7 +152,9 @@ def _bounded_sigmoid_inverse(value: float, low: float, high: float) -> torch.Ten
     return torch.logit(torch.tensor(scaled, dtype=torch.float32))
 
 
-def _teacher_specs(model: LearnableAggregateBoids, rounds: int) -> tuple[SimulationSpec, TeacherDynamics, ModelSpec]:
+def _teacher_specs(
+    model: LearnableAggregateBoids, rounds: int
+) -> tuple[SimulationSpec, TeacherDynamics, ModelSpec]:
     simulation = SimulationSpec(
         num_nodes=model.positions0.shape[0],
         rounds=rounds,
@@ -253,9 +273,15 @@ def test_rollout_reports_dynamic_topology_metrics():
 
     model.rollout(rounds=6)
 
-    assert torch.isfinite(torch.tensor(model.last_rollout_graph_health["mean_num_edges"]))
-    assert torch.isfinite(torch.tensor(model.last_rollout_graph_health["mean_min_degree"]))
-    assert torch.isfinite(torch.tensor(model.last_rollout_graph_health["max_num_components"]))
+    assert torch.isfinite(
+        torch.tensor(model.last_rollout_graph_health["mean_num_edges"])
+    )
+    assert torch.isfinite(
+        torch.tensor(model.last_rollout_graph_health["mean_min_degree"])
+    )
+    assert torch.isfinite(
+        torch.tensor(model.last_rollout_graph_health["max_num_components"])
+    )
     assert model.last_rollout_graph_health["mean_num_edges"] > 0.0
     assert model.last_rollout_graph_health["mean_min_degree"] >= 0.0
     assert model.last_rollout_graph_health["max_num_components"] >= 1.0
@@ -402,7 +428,9 @@ def test_boids_trace_roundtrip_preserves_teacher_targets(tmp_path: Path):
     )
     path = trace_file_path(tmp_path, seed=101, rounds=simulation.rounds)
     save_boids_trace(trace, path)
-    loaded = load_boids_trace(path, device=torch.device("cpu"), expected_metadata=trace.metadata)
+    loaded = load_boids_trace(
+        path, device=torch.device("cpu"), expected_metadata=trace.metadata
+    )
 
     assert loaded.metadata == trace.metadata
     assert torch.allclose(loaded.positions0, trace.positions0)
@@ -410,6 +438,18 @@ def test_boids_trace_roundtrip_preserves_teacher_targets(tmp_path: Path):
     assert torch.allclose(loaded.pos_seq, trace.pos_seq)
     assert torch.allclose(loaded.vel_seq, trace.vel_seq)
     assert torch.allclose(loaded.preclip_vel_seq, trace.preclip_vel_seq)
+
+
+def _make_initial_conditions(spec) -> list[tuple[torch.Tensor, torch.Tensor]]:
+    return [
+        sample_initial_boids_state(
+            spec.simulation.num_nodes,
+            seed=spec.seed + idx * 1337,
+            velocity_scale=spec.simulation.init_velocity_scale,
+            device=spec.simulation.device,
+        )
+        for idx in range(spec.training.num_initial_conditions)
+    ]
 
 
 def test_build_supervision_traces_replay_mode_reuses_materialized_files(tmp_path: Path):
@@ -425,7 +465,7 @@ def test_build_supervision_traces_replay_mode_reuses_materialized_files(tmp_path
         viz_prefix="generated/tests/demo_replay_files/learnable",
     )
 
-    initial_conditions = make_initial_conditions(spec)
+    initial_conditions = _make_initial_conditions(spec)
     traces = build_supervision_traces(initial_conditions, spec=spec)
 
     assert len(traces) == 2
@@ -532,9 +572,15 @@ def test_curriculum_horizon_with_fraction_slows_ramp_for_long_runs():
 
 def test_scheduled_learning_rate_decays_after_curriculum():
     base_lr = 0.01
-    early = scheduled_learning_rate(base_lr, 100, 500, ramp_fraction=0.85, final_lr_ratio=0.1)
-    late = scheduled_learning_rate(base_lr, 450, 500, ramp_fraction=0.85, final_lr_ratio=0.1)
-    final = scheduled_learning_rate(base_lr, 499, 500, ramp_fraction=0.85, final_lr_ratio=0.1)
+    early = scheduled_learning_rate(
+        base_lr, 100, 500, ramp_fraction=0.85, final_lr_ratio=0.1
+    )
+    late = scheduled_learning_rate(
+        base_lr, 450, 500, ramp_fraction=0.85, final_lr_ratio=0.1
+    )
+    final = scheduled_learning_rate(
+        base_lr, 499, 500, ramp_fraction=0.85, final_lr_ratio=0.1
+    )
 
     assert abs(early - base_lr) < 1e-12
     assert late < base_lr
@@ -579,9 +625,13 @@ def test_teacher_forced_step_losses_vanish_when_model_matches_teacher():
         model.w_sep_raw.copy_(_softplus_inverse(teacher.w_sep))
         model.w_align_raw.copy_(_softplus_inverse(teacher.w_align))
         model.w_cohesion_raw.copy_(_softplus_inverse(teacher.w_cohesion))
-        model.damping_raw.copy_(torch.logit(torch.tensor(teacher.damping, dtype=torch.float32)))
+        model.damping_raw.copy_(
+            torch.logit(torch.tensor(teacher.damping, dtype=torch.float32))
+        )
         model.max_speed_raw.copy_(
-            _bounded_sigmoid_inverse(teacher.max_speed, model.max_speed_min, model.max_speed_max),
+            _bounded_sigmoid_inverse(
+                teacher.max_speed, model.max_speed_min, model.max_speed_max
+            ),
         )
 
     trace = teacher_trace_from_specs(
@@ -609,7 +659,9 @@ def test_truncated_rollout_backpropagates_finite_gradients():
     model = _make_model()
     velocities0 = (torch.rand_like(model.positions0) - 0.5) * 0.01
 
-    pred_pos_seq, pred_vel_seq, _ = model.rollout(rounds=6, velocities0=velocities0, trunc_window=2)
+    pred_pos_seq, pred_vel_seq, _ = model.rollout(
+        rounds=6, velocities0=velocities0, trunc_window=2
+    )
     loss = pred_pos_seq.square().mean() + pred_vel_seq.square().mean()
     loss.backward()
 
@@ -625,9 +677,13 @@ def test_weights_rollout_matches_teacher_when_parameters_match():
         model.w_sep_raw.copy_(_softplus_inverse(teacher.w_sep))
         model.w_align_raw.copy_(_softplus_inverse(teacher.w_align))
         model.w_cohesion_raw.copy_(_softplus_inverse(teacher.w_cohesion))
-        model.damping_raw.copy_(torch.logit(torch.tensor(teacher.damping, dtype=torch.float32)))
+        model.damping_raw.copy_(
+            torch.logit(torch.tensor(teacher.damping, dtype=torch.float32))
+        )
         model.max_speed_raw.copy_(
-            _bounded_sigmoid_inverse(teacher.max_speed, model.max_speed_min, model.max_speed_max),
+            _bounded_sigmoid_inverse(
+                teacher.max_speed, model.max_speed_min, model.max_speed_max
+            ),
         )
 
     teacher_pos_seq, teacher_vel_seq = teacher_rollout_from_specs(
@@ -638,7 +694,9 @@ def test_weights_rollout_matches_teacher_when_parameters_match():
         teacher=teacher,
         model=model_spec,
     )
-    pred_pos_seq, pred_vel_seq, _ = model.rollout(rounds=simulation.rounds, velocities0=velocities0)
+    pred_pos_seq, pred_vel_seq, _ = model.rollout(
+        rounds=simulation.rounds, velocities0=velocities0
+    )
 
     assert torch.allclose(pred_pos_seq, teacher_pos_seq, atol=1e-5)
     assert torch.allclose(pred_vel_seq, teacher_vel_seq, atol=1e-5)
@@ -658,8 +716,12 @@ def test_rollout_truncation_matches_full_when_window_covers_horizon():
         dtype=torch.float32,
     )
 
-    full_pos, full_vel, full_final = model.rollout(rounds=4, velocities0=velocities0, trunc_window=None)
-    trunc_pos, trunc_vel, trunc_final = model.rollout(rounds=4, velocities0=velocities0, trunc_window=4)
+    full_pos, full_vel, full_final = model.rollout(
+        rounds=4, velocities0=velocities0, trunc_window=None
+    )
+    trunc_pos, trunc_vel, trunc_final = model.rollout(
+        rounds=4, velocities0=velocities0, trunc_window=4
+    )
 
     assert torch.allclose(trunc_pos, full_pos, atol=1e-6)
     assert torch.allclose(trunc_vel, full_vel, atol=1e-6)
@@ -680,7 +742,9 @@ def test_truncated_training_reduces_teacher_loss():
         ],
         dtype=torch.float32,
     )
-    simulation, teacher_pos_seq, teacher_vel_seq = _boids_teacher_targets(model, rounds=4, velocities0=velocities0)
+    simulation, teacher_pos_seq, teacher_vel_seq = _boids_teacher_targets(
+        model, rounds=4, velocities0=velocities0
+    )
     optimizer = torch.optim.Adam(model.trainable_parameters(), lr=0.05)
 
     losses = []

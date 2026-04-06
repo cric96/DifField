@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
@@ -14,11 +15,11 @@ import torch
 from autofield.utils import get_device
 
 try:
-    from .specs import AttentionGradientSpec, GridSpec, TrainingSpec
-    from .workflow import AttentionGradientWorkflow
+    from .domain.specs import AttentionGradientSpec, GridSpec, TrainingSpec
+    from .training.attention_workflow import AttentionGradientWorkflow
 except ImportError:
-    from specs import AttentionGradientSpec, GridSpec, TrainingSpec
-    from workflow import AttentionGradientWorkflow
+    from gradients.domain.specs import AttentionGradientSpec, GridSpec, TrainingSpec
+    from gradients.training.attention_workflow import AttentionGradientWorkflow
 
 
 def parse_args():
@@ -28,8 +29,12 @@ def parse_args():
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs")
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_attention")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
+    parser.add_argument(
+        "--viz-prefix", type=str, default="generated/gradient_attention"
+    )
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")

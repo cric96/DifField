@@ -197,3 +197,15 @@ class TestDeviceContext:
             result = nbr(expr, aggr="sum", tag="chan")
 
         assert device.result(result).item() == 5.0
+
+    def test_include_self_overrides_device_self_loop_topology(self):
+        device = DeviceContext(num_neighbors=1, self_loop=True)
+        expr = device.local_field(own=4.0, nbr=[2.0])
+
+        with device.round():
+            without_self = nbr(expr, aggr="sum", include_self=False)
+        with device.round():
+            with_self = nbr(expr, aggr="sum", include_self=True)
+
+        assert device.result(without_self).item() == 2.0
+        assert device.result(with_self).item() == 6.0

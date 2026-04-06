@@ -21,9 +21,11 @@ except ImportError:
     plt = None
 
 try:
-    from .common import auto_rounds, build_corner_source_grid, run_gradient_program
+    from .domain.program import auto_rounds, run_gradient_program
+    from .domain.grid import build_corner_source_grid
 except ImportError:
-    from common import auto_rounds, build_corner_source_grid, run_gradient_program
+    from gradients.domain.program import auto_rounds, run_gradient_program
+    from gradients.domain.grid import build_corner_source_grid
 
 from autofield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
@@ -33,10 +35,14 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Fixed Gradient AC program")
     parser.add_argument("--rows", type=int, default=5, help="Grid rows")
     parser.add_argument("--cols", type=int, default=5, help="Grid cols")
-    parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
+    parser.add_argument(
+        "--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)"
+    )
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--weight", type=float, default=1.0, help="Fixed edge weight")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     parser.add_argument("--viz-prefix", type=str, default="generated/gradient_fixed")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
@@ -44,7 +50,11 @@ def parse_args():
     return parser.parse_args()
 
 
-def plot_results(dist: torch.Tensor, expected: torch.Tensor, viz_prefix: str = "generated/gradient_fixed") -> None:
+def plot_results(
+    dist: torch.Tensor,
+    expected: torch.Tensor,
+    viz_prefix: str = "generated/gradient_fixed",
+) -> None:
     if plt is None:
         return
 
@@ -68,7 +78,9 @@ def main():
     args = parse_args()
     torch.manual_seed(args.seed)
     device = get_device(args.device)
-    scenario, source, expected = build_corner_source_grid(args.rows, args.cols, device=device)
+    scenario, source, expected = build_corner_source_grid(
+        args.rows, args.cols, device=device
+    )
     rounds = auto_rounds(args.rows, args.cols, args.rounds)
 
     recorder = None
@@ -94,9 +106,15 @@ def main():
             fps=args.gif_fps,
         )
 
-    print(f"Final distance (0,0)->({args.rows-1},{args.cols-1}): {dist[scenario.num_nodes-1].item():.2f}")
+    print(
+        f"Final distance (0,0)->({args.rows - 1},{args.cols - 1}): {dist[scenario.num_nodes - 1].item():.2f}"
+    )
     if not args.no_viz:
-        plot_results(dist.view(args.rows, args.cols), expected.view(args.rows, args.cols), viz_prefix=args.viz_prefix)
+        plot_results(
+            dist.view(args.rows, args.cols),
+            expected.view(args.rows, args.cols),
+            viz_prefix=args.viz_prefix,
+        )
 
 
 if __name__ == "__main__":

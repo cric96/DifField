@@ -1,6 +1,6 @@
 """Learnable multi-sink territories example family."""
 
-from .core import (
+from .domain import (
     TerritoryLayout,
     TerritoryOutputs,
     auto_rounds,
@@ -8,10 +8,10 @@ from .core import (
     decode_territory_output,
     make_territory_program,
 )
-from .evaluation_utils import evaluate_seed, evaluate_seeds
-from .models import LearnableTerritoryModel
+from .evaluation import evaluate_seed, evaluate_seeds
+from .model import LearnableTerritoryModel
 from .reporting import TerritoriesSummaryBuilder, compute_parameter_recovery_metrics
-from .specs import (
+from .domain.specs import (
     GridSpec,
     LearnableTerritoriesSpec,
     TerritoryEvaluationSpec,
@@ -20,12 +20,10 @@ from .specs import (
     TerritoryTeacherSpec,
     TerritoryTrainingSpec,
 )
-from .workflow import LearnableTerritoriesWorkflow
 
 __all__ = [
     "GridSpec",
     "LearnableTerritoriesSpec",
-    "LearnableTerritoriesWorkflow",
     "LearnableTerritoryModel",
     "TerritoryEvaluationSpec",
     "TerritoryLayout",

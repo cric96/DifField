@@ -18,13 +18,21 @@ from autofield.dsl import AggregateContext
 from autofield.utils import get_device
 
 try:
-    from ..shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
-    from .core import sample_initial_boids_state
-    from .logics import reference_boids_velocity_update
+    from ..shared.plotting import (
+        export_moving_gif,
+        plot_moving_snapshots,
+        plot_node_trajectories,
+    )
+    from .domain.geometry import sample_initial_state as sample_initial_boids_state
+    from .domain.dynamics import reference_boids_velocity_update
 except ImportError:
-    from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
-    from boids.core import sample_initial_boids_state
-    from boids.logics import reference_boids_velocity_update
+    from shared.plotting import (
+        export_moving_gif,
+        plot_moving_snapshots,
+        plot_node_trajectories,
+    )
+    from boids.domain.geometry import sample_initial_state as sample_initial_boids_state
+    from boids.domain.dynamics import reference_boids_velocity_update
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,10 +40,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-nodes", type=int, default=60)
     parser.add_argument("--rounds", type=int, default=80)
     parser.add_argument("--radius", type=float, default=0.23)
-    parser.add_argument("--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid")
+    parser.add_argument(
+        "--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid"
+    )
     parser.add_argument("--init-k-neighbors", type=int, default=8)
     parser.add_argument("--init-min-degree", type=int, default=2)
-    parser.add_argument("--sep", type=float, default=0.06, help="Distance threshold for separation influence")
+    parser.add_argument(
+        "--sep",
+        type=float,
+        default=0.06,
+        help="Distance threshold for separation influence",
+    )
     parser.add_argument("--dt", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=5)
     parser.add_argument("--w-sep", type=float, default=1.0)
@@ -49,10 +64,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gif-fps", type=int, default=8)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
-    parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links in visual outputs")
+    parser.add_argument(
+        "--hide-links",
+        action="store_true",
+        help="Do not draw graph links in visual outputs",
+    )
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     return parser.parse_args()
 
 
@@ -93,18 +114,24 @@ def main() -> None:
 
     scenario = SpatialScenario(
         positions=positions,
-        edge_radius=args.radius if args.init_connectivity in {"radius", "hybrid"} else None,
+        edge_radius=args.radius
+        if args.init_connectivity in {"radius", "hybrid"}
+        else None,
         k_neighbors=args.init_k_neighbors if args.init_connectivity == "knn" else None,
         ensure_init_connected=args.init_connectivity == "hybrid",
         init_min_degree=args.init_min_degree,
         init_k_neighbors=args.init_k_neighbors,
         device=device,
     )
-    ctx = AggregateContext(scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight)
+    ctx = AggregateContext(
+        scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight
+    )
     positions_by_round: dict[int, torch.Tensor] = {}
     edge_index_by_round: dict[int, torch.Tensor] = {}
     values_by_round: dict[int, torch.Tensor] = {}
-    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {args.rounds - 1}
+    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {
+        args.rounds - 1
+    }
 
     for step in range(args.rounds):
         scenario.sync_context(ctx._ctx)
@@ -137,7 +164,9 @@ def main() -> None:
     center = scenario.positions.mean(dim=0)
     spread = (scenario.positions - center).norm(dim=1).mean().item()
     print("=== Pure Aggregate Boids ===")
-    print(f"nodes={args.num_nodes} rounds={args.rounds} radius={args.radius} sep={args.sep} spread={spread:.4f} edges={scenario.edge_index.shape[1]}")
+    print(
+        f"nodes={args.num_nodes} rounds={args.rounds} radius={args.radius} sep={args.sep} spread={spread:.4f} edges={scenario.edge_index.shape[1]}"
+    )
     print(
         f"init_connectivity={args.init_connectivity} init_components={int(scenario.init_graph_stats['num_components'])} "
         f"init_min_degree={scenario.init_graph_stats['min_degree']:.0f} init_edges={int(scenario.init_graph_stats['num_edges'])}"
@@ -157,7 +186,9 @@ def main() -> None:
             links_width=args.links_width,
         )
         plot_node_trajectories(
-            positions_over_time=[positions_by_round[idx] for idx in sorted(positions_by_round.keys())],
+            positions_over_time=[
+                positions_by_round[idx] for idx in sorted(positions_by_round.keys())
+            ],
             source_idx=highlight_idx,
             output_path=f"{args.viz_prefix}_trajectories.png",
             title="Pure Aggregate Boids trajectories",

@@ -23,9 +23,9 @@ from autofield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 try:
-    from .common import auto_rounds, run_gradient_program
+    from .domain.program import auto_rounds, run_gradient_program
 except ImportError:
-    from common import auto_rounds, run_gradient_program
+    from gradients.domain.program import auto_rounds, run_gradient_program
 
 from autofield import GridScenario, SimulationEngine, mux, nbr, rep, nbr_range
 from autofield.dsl import field
@@ -36,9 +36,13 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Large-scale Gradient")
     parser.add_argument("--rows", type=int, default=500, help="Grid rows")
     parser.add_argument("--cols", type=int, default=500, help="Grid cols")
-    parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
+    parser.add_argument(
+        "--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)"
+    )
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     parser.add_argument("--viz-prefix", type=str, default="generated/gradient_large")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable visualization")
@@ -76,12 +80,16 @@ def run_large_gradient(args, scenario, source, device: torch.device):
 
     def program(_runtime):
         return rep(
-            "dist", 
-            float("inf"), 
-            lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + weight, aggr="min"))
+            "dist",
+            float("inf"),
+            lambda dist_old: mux(
+                source, field.of(0.0), nbr(dist_old + weight, aggr="min")
+            ),
         )
 
-    output, _ = engine.run(rounds=rounds, program=program, signals={"source": source}, recorder=recorder)
+    output, _ = engine.run(
+        rounds=rounds, program=program, signals={"source": source}, recorder=recorder
+    )
 
     if not args.no_gif and not args.no_viz:
         print("Generating evolution GIF...")
@@ -89,7 +97,11 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         gif_records = recorder.records
         if len(gif_records) > 50:
             step = len(gif_records) // 50
-            gif_records = {k: v for i, (k, v) in enumerate(sorted(gif_records.items())) if i % step == 0}
+            gif_records = {
+                k: v
+                for i, (k, v) in enumerate(sorted(gif_records.items()))
+                if i % step == 0
+            }
 
         save_grid_simulation_gif(
             gif_records,
@@ -103,7 +115,11 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         )
 
     snapshots = {
-        round_idx + 1: payload["output"].detach().cpu().view(args.rows, args.cols).clone()
+        round_idx + 1: payload["output"]
+        .detach()
+        .cpu()
+        .view(args.rows, args.cols)
+        .clone()
         for round_idx, payload in recorder.records.items()
         if not (not args.no_gif) or (round_idx + 1) in record_at
     }
@@ -112,7 +128,9 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         torch.cuda.synchronize()
 
     compute_time = time.time() - start_time
-    print(f"Computation finished in {compute_time:.4f}s ({compute_time / rounds:.6f}s per round)")
+    print(
+        f"Computation finished in {compute_time:.4f}s ({compute_time / rounds:.6f}s per round)"
+    )
     return output, weight, snapshots, compute_time, rounds
 
 
@@ -138,7 +156,9 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     plt.figure(figsize=(8, 6))
     plt.imshow(dist.numpy(), cmap="magma")
     plt.colorbar(label="Distance")
-    plt.title(f"Final Gradient field on {args.rows}x{args.cols} grid (Source at center)")
+    plt.title(
+        f"Final Gradient field on {args.rows}x{args.cols} grid (Source at center)"
+    )
     final_path = f"{args.viz_prefix}.png"
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(final_path)
@@ -150,7 +170,9 @@ def main():
     torch.manual_seed(args.seed)
     device = get_device(args.device)
 
-    print(f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows * args.cols} nodes) ===")
+    print(
+        f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows * args.cols} nodes) ==="
+    )
     print(f"Device: {device}")
 
     print("Building graph...")
@@ -159,7 +181,9 @@ def main():
     graph_time = time.time() - start_time
     print(f"Graph built in {graph_time:.4f}s (Edges: {scenario.edge_index.shape[1]})")
 
-    output, weight, snapshots, _, rounds = run_large_gradient(args, scenario, source, device)
+    output, weight, snapshots, _, rounds = run_large_gradient(
+        args, scenario, source, device
+    )
 
     dist = output.detach().cpu().view(args.rows, args.cols)
     center_val = dist[center_r, center_c].item()

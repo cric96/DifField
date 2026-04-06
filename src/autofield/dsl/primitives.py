@@ -47,11 +47,12 @@ def nbr(
     edge_index: Tensor | None = None,
     edge_weight: Tensor | None = None,
     tag: str | None = None,
+    include_self: bool | None = None,
 ) -> Tensor:
     r"""Neighborhood message passing."""
     from ..layers import NbrLayer
 
-    return NbrLayer(aggr=aggr, mode=mode, tau=tau, fill_value=fill_value)(
+    return NbrLayer(aggr=aggr, mode=mode, tau=tau, fill_value=fill_value, include_self=include_self)(
         expr,
         edge_index=edge_index,
         edge_weight=edge_weight,
