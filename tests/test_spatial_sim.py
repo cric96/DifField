@@ -1,9 +1,5 @@
 """Tests for dynamic spatial simulation support."""
 
-import sys
-
-sys.path.insert(0, "src")
-
 import torch
 
 from autofield import (
@@ -35,7 +31,9 @@ def test_build_spatial_graph_radius_edges_and_weights():
         dtype=torch.float32,
     )
 
-    edge_index, edge_weight = build_spatial_graph(positions, edge_radius=0.25, self_loops=False)
+    edge_index, edge_weight = build_spatial_graph(
+        positions, edge_radius=0.25, self_loops=False
+    )
 
     edges = {tuple(e) for e in edge_index.t().tolist()}
     assert edges == {(0, 1), (1, 0)}
@@ -162,14 +160,22 @@ def test_engine_uses_refreshed_topology_each_round():
         new_pos[2] = torch.tensor([0.34, 0.0])
         runtime.scenario.update_positions(new_pos, refresh_topology=True)
 
-    schedule = EventSchedule([
-        ScheduledEvent(round_idx=1, callback=move_node_2, name="move_node_2"),
-    ])
+    schedule = EventSchedule(
+        [
+            ScheduledEvent(round_idx=1, callback=move_node_2, name="move_node_2"),
+        ]
+    )
 
     def program(_runtime):
-        return rep("dist", float("inf"), lambda d: mux(source, field.of(0.0), nbr(d + 1.0, aggr="min")))
+        return rep(
+            "dist",
+            float("inf"),
+            lambda d: mux(source, field.of(0.0), nbr(d + 1.0, aggr="min")),
+        )
 
-    output, _ = engine.run(rounds=3, program=program, signals={"source": source}, schedule=schedule)
+    output, _ = engine.run(
+        rounds=3, program=program, signals={"source": source}, schedule=schedule
+    )
 
     # In this rep/nbr program, hop propagation takes one round per edge after source initialization.
     assert torch.isfinite(output[2])
@@ -268,4 +274,8 @@ def test_spatial_scenario_knn_mode_keeps_init_stats_available():
     )
 
     # Non-hybrid mode still exposes the stats keys.
-    assert set(scenario.init_graph_stats.keys()) == {"num_edges", "min_degree", "num_components"}
+    assert set(scenario.init_graph_stats.keys()) == {
+        "num_edges",
+        "min_degree",
+        "num_components",
+    }

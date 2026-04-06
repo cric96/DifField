@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import pytest
 import torch
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 from autofield import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
 from autofield.functional import scatter_min_by_first
-from tests.support import line_graph
 
 
 class TestScatterAggr:
@@ -26,19 +27,25 @@ class TestScatterAggr:
     def test_min_hard(self):
         src = torch.tensor([3.0, 1.0, 5.0])
         index = torch.tensor([0, 0, 1])
-        out = scatter_aggr(src, index, 2, aggr="min", mode="hard", fill_value=float("inf"))
+        out = scatter_aggr(
+            src, index, 2, aggr="min", mode="hard", fill_value=float("inf")
+        )
         assert torch.allclose(out, torch.tensor([1.0, 5.0]))
 
     def test_min_soft(self):
         src = torch.tensor([3.0, 1.0, 5.0])
         index = torch.tensor([0, 0, 1])
-        out = scatter_aggr(src, index, 2, aggr="min", mode="soft", tau=0.01, fill_value=float("inf"))
+        out = scatter_aggr(
+            src, index, 2, aggr="min", mode="soft", tau=0.01, fill_value=float("inf")
+        )
         assert torch.allclose(out, torch.tensor([1.0, 5.0]), atol=0.05)
 
     def test_max_hard(self):
         src = torch.tensor([3.0, 1.0, 5.0])
         index = torch.tensor([0, 0, 1])
-        out = scatter_aggr(src, index, 2, aggr="max", mode="hard", fill_value=float("-inf"))
+        out = scatter_aggr(
+            src, index, 2, aggr="max", mode="hard", fill_value=float("-inf")
+        )
         assert torch.allclose(out, torch.tensor([3.0, 5.0]))
 
     def test_min_by_first_hard_keeps_last_equal_minimum(self):
@@ -57,7 +64,9 @@ class TestScatterAggr:
         def shifted_sum(msg, bucket_index, num_nodes):
             return scatter_aggr(msg, bucket_index, num_nodes, aggr="sum") + 1.0
 
-        out = scatter_aggr(src, index, 2, aggr=shifted_sum, mode="soft", tau=0.1, fill_value=-123.0)
+        out = scatter_aggr(
+            src, index, 2, aggr=shifted_sum, mode="soft", tau=0.1, fill_value=-123.0
+        )
         assert torch.allclose(out, torch.tensor([4.0, 4.0]))
 
     def test_min_fill_value_for_isolated_nodes(self):
@@ -70,7 +79,9 @@ class TestScatterAggr:
         src = torch.tensor([3.0, 1.0, 5.0], requires_grad=True)
         index = torch.tensor([0, 0, 1])
 
-        out = scatter_aggr(src, index, 2, aggr="min", mode="soft", tau=1e-2, fill_value=float("inf"))
+        out = scatter_aggr(
+            src, index, 2, aggr="min", mode="soft", tau=1e-2, fill_value=float("inf")
+        )
         out[0].backward()
 
         assert src.grad is not None
@@ -80,6 +91,30 @@ class TestScatterAggr:
     def test_invalid_aggregation_raises(self):
         with pytest.raises(ValueError, match="Unknown aggregation"):
             scatter_aggr(torch.tensor([1.0]), torch.tensor([0]), 1, aggr="median")
+
+    @settings(deadline=None)
+    @given(
+        values=st.lists(
+            st.floats(min_value=-100, max_value=100), min_size=1, max_size=20
+        ),
+        indices=st.lists(
+            st.integers(min_value=0, max_value=5), min_size=1, max_size=20
+        ),
+    )
+    def test_scatter_sum_property(self, values, indices):
+        # make sizes match
+        n = min(len(values), len(indices))
+        src = torch.tensor(values[:n], dtype=torch.float32)
+        idx = torch.tensor(indices[:n], dtype=torch.long)
+        num_nodes = 6
+
+        out = scatter_aggr(src, idx, num_nodes, aggr="sum")
+
+        expected = torch.zeros(num_nodes)
+        for i, val in zip(idx.tolist(), src.tolist()):
+            expected[i] += val
+
+        assert torch.allclose(out, expected, atol=1e-4)
 
 
 class TestSoftWhere:
@@ -106,23 +141,25 @@ class TestSoftWhere:
 
 
 class TestMaskEdges:
-    def test_hard_mask(self):
-        edge_index, _ = line_graph()
+    def test_hard_mask(self, line_topology):
+        edge_index, _ = line_topology
         cond = torch.tensor([True, True, False, False])
         ei_out, edge_weight = mask_edges(edge_index, cond, mode="hard")
         assert ei_out.shape[1] == 4
         assert torch.allclose(edge_weight, torch.ones(4))
 
-    def test_soft_mask_returns_continuous_weights(self):
-        edge_index, _ = line_graph()
+    def test_soft_mask_returns_continuous_weights(self, line_topology):
+        edge_index, _ = line_topology
         cond = torch.tensor([1.0, 0.8, 0.2, 0.0])
         _, edge_weight = mask_edges(edge_index, cond, mode="soft", tau=8.0)
         assert edge_weight.shape[0] == edge_index.shape[1]
         assert ((edge_weight >= 0.0) & (edge_weight <= 1.0)).all()
         assert edge_weight[0] > edge_weight[2]
 
-    def test_mask_edges_for_partition_hard_filters_auxiliary_weights(self):
-        edge_index, _ = line_graph()
+    def test_mask_edges_for_partition_hard_filters_auxiliary_weights(
+        self, line_topology
+    ):
+        edge_index, _ = line_topology
         cond = torch.tensor([True, True, False, False])
         edge_weight = torch.tensor([1.0, 1.0, 2.0, 2.0, 3.0, 3.0])
         message_weight = torch.tensor([10.0, 11.0, 20.0, 21.0, 30.0, 31.0])
@@ -140,8 +177,8 @@ class TestMaskEdges:
         assert torch.allclose(ew_out, torch.tensor([1.0, 1.0]))
         assert torch.allclose(mw_out, torch.tensor([10.0, 11.0]))
 
-    def test_mask_edges_for_partition_soft_composes_message_weight(self):
-        edge_index, _ = line_graph()
+    def test_mask_edges_for_partition_soft_composes_message_weight(self, line_topology):
+        edge_index, _ = line_topology
         cond = torch.tensor([1.0, 0.8, 0.2, 0.0])
         message_weight = torch.full((edge_index.shape[1],), 2.0)
 

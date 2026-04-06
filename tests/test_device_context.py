@@ -2,24 +2,39 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 
 from autofield import AggregateContext, branch, gradient, mux, nbr, nbr_range, rep
 from autofield.dsl import DeviceContext, field
 
 
+@pytest.mark.parametrize(
+    "own, nbrs",
+    [
+        (1.0, 0.0),
+        (5.0, [1.0, 2.0, 3.0]),
+        (0.0, [1.0]),
+    ],
+)
+def test_local_field(own, nbrs):
+    num_nbrs = 1 if isinstance(nbrs, float) else len(nbrs)
+    device = DeviceContext(num_neighbors=num_nbrs)
+    f = device.local_field(own=own, nbr=nbrs)
+    assert f.shape == (num_nbrs + 1,)
+    assert f[0] == own
+    if isinstance(nbrs, float):
+        assert f[1] == nbrs
+    else:
+        assert torch.allclose(f[1:], torch.tensor(nbrs, dtype=torch.float32))
+
+
+def test_result():
+    t = torch.tensor([42.0, 1.0, 2.0])
+    assert DeviceContext.result(t) == 42.0
+
+
 class TestDeviceContext:
-    def test_local_field(self):
-        device = DeviceContext(num_neighbors=3)
-        f = device.local_field(own=1.0, nbr=0.0)
-        assert f.shape == (4,)
-        assert f[0] == 1.0
-        assert (f[1:] == 0.0).all()
-
-    def test_result(self):
-        t = torch.tensor([42.0, 1.0, 2.0])
-        assert DeviceContext.result(t) == 42.0
-
     def test_local_matches_global(self):
         edge_index = torch.tensor(
             [
@@ -35,18 +50,35 @@ class TestDeviceContext:
         global_states = []
         for _ in range(4):
             with ctx.round():
-                d = rep("dist", float("inf"), lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")))
+                d = rep(
+                    "dist",
+                    float("inf"),
+                    lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")),
+                )
             global_states.append(d.detach().clone())
 
         device_id = 2
         device = DeviceContext(num_neighbors=1)
         source_local = device.local_field(own=source[device_id].item(), nbr=0.0)
         for round_idx in range(4):
-            neighbor_exports = None if round_idx == 0 else {"dist": [global_states[round_idx - 1][1].item()]}
+            neighbor_exports = (
+                None
+                if round_idx == 0
+                else {"dist": [global_states[round_idx - 1][1].item()]}
+            )
             with device.round(neighbor_exports=neighbor_exports):
-                d_local = rep("dist", float("inf"), lambda dist: mux(source_local, field.of(0.0), nbr(dist + w, aggr="min")))
+                d_local = rep(
+                    "dist",
+                    float("inf"),
+                    lambda dist: mux(
+                        source_local, field.of(0.0), nbr(dist + w, aggr="min")
+                    ),
+                )
 
-        assert abs(device.result(d_local).item() - global_states[-1][device_id].item()) < 1e-6
+        assert (
+            abs(device.result(d_local).item() - global_states[-1][device_id].item())
+            < 1e-6
+        )
 
     def test_isolated_device(self):
         device = DeviceContext(num_neighbors=0)
@@ -54,7 +86,13 @@ class TestDeviceContext:
         w = torch.tensor(1.0)
         for _ in range(3):
             with device.round():
-                d = rep("dist", float("inf"), lambda dist: mux(source_local, field.of(0.0), nbr(dist + w, aggr="min")))
+                d = rep(
+                    "dist",
+                    float("inf"),
+                    lambda dist: mux(
+                        source_local, field.of(0.0), nbr(dist + w, aggr="min")
+                    ),
+                )
         assert device.result(d).item() == 0.0
 
     def test_neighbor_ranges_available_locally(self):
@@ -86,7 +124,11 @@ class TestDeviceContext:
         device = DeviceContext(num_neighbors=1, self_loop=False)
         source_local = device.local_field(own=0.0, nbr=0.0)
         for round_idx in range(4):
-            neighbor_exports = None if round_idx == 0 else {"_grad_dist": [global_states[round_idx - 1][1].item()]}
+            neighbor_exports = (
+                None
+                if round_idx == 0
+                else {"_grad_dist": [global_states[round_idx - 1][1].item()]}
+            )
             with device.round(neighbor_exports=neighbor_exports, neighbor_ranges=[3.0]):
                 d_local = gradient(source_local, name="dist")
 
@@ -106,8 +148,16 @@ class TestDeviceContext:
             with dev.round(neighbor_exports=exports):
                 val = branch(
                     cond,
-                    lambda: rep("state", dev.local_field(0.0), lambda s: nbr(s, aggr="sum") + 1.0),
-                    lambda: rep("state", dev.local_field(0.0), lambda s: nbr(s, aggr="max") + 10.0),
+                    lambda: rep(
+                        "state",
+                        dev.local_field(0.0),
+                        lambda s: nbr(s, aggr="sum") + 1.0,
+                    ),
+                    lambda: rep(
+                        "state",
+                        dev.local_field(0.0),
+                        lambda s: nbr(s, aggr="max") + 10.0,
+                    ),
                 )
             return dev.result(val).item()
 
@@ -158,7 +208,10 @@ class TestDeviceContext:
             return dev.result(x).item(), dev.result(y).item(), dev.result(z).item()
 
         def snapshot_states(*devices):
-            return [{"x": device.get_state("x"), "y": device.get_state("y")} for device in devices]
+            return [
+                {"x": device.get_state("x"), "y": device.get_state("y")}
+                for device in devices
+            ]
 
         def make_exports(snap, nbr_indices):
             return {

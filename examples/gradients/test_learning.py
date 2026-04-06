@@ -5,13 +5,16 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from examples.gradients.common import auto_rounds, build_corner_source_grid
-from examples.gradients.models import GradientModel
+from examples.gradients.domain.program import auto_rounds
+from examples.gradients.domain.grid import build_corner_source_grid
+from examples.gradients.model.distance_model import GradientModel
 
 
 def test_gradient_model_training_decreases_loss_and_recovers_unit_weight():
     torch.manual_seed(0)
-    scenario, source, target = build_corner_source_grid(4, 4, connectivity=4, device=torch.device("cpu"))
+    scenario, source, target = build_corner_source_grid(
+        4, 4, connectivity=4, device=torch.device("cpu")
+    )
     rounds = auto_rounds(4, 4, 0)
     model = GradientModel(scenario, rounds, init_w=3.0)
     optimizer = torch.optim.Adam(model.parameters(), lr=0.05)

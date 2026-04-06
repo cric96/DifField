@@ -58,8 +58,14 @@ explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests", "examples"]
+markers = [
+    "unit: unit tests",
+    "integration: integration tests",
+    "slow: slow tests",
+]
 
 [dependency-groups]
 dev = [
     "pytest>=9.0.2",
+    "hypothesis>=6.100.0",
 ]

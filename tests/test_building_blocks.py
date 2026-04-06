@@ -1,48 +1,46 @@
 """Tests for higher-order aggregate building blocks."""
 
-import sys
-
-sys.path.insert(0, "src")
-
 import torch
 
 from autofield import AggregateContext, collect_cast, gradient_cast, nbr_range
-from tests.support import line_graph, weighted_collect_graph
 
 
 class TestGradientCast:
-    def test_hop_count_on_line(self):
-        edge_index, n = line_graph()
+    def test_hop_count_on_line(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = gradient_cast(source, 0.0, lambda value: value + 1.0, name="hop_count")
+            with line_ctx.round():
+                output = gradient_cast(
+                    source, 0.0, lambda value: value + 1.0, name="hop_count"
+                )
 
         assert torch.allclose(output, torch.tensor([0.0, 1.0, 2.0, 3.0]))
 
-    def test_payload_propagates_from_source(self):
-        edge_index, n = line_graph()
+    def test_payload_propagates_from_source(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
         center = torch.tensor([10.0, 20.0, 30.0, 40.0])
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = gradient_cast(source, center, lambda value: value + 1.0, name="payload")
+            with line_ctx.round():
+                output = gradient_cast(
+                    source, center, lambda value: value + 1.0, name="payload"
+                )
 
         assert torch.allclose(output, torch.tensor([10.0, 11.0, 12.0, 13.0]))
 
-    def test_backward_through_accumulation_parameter(self):
-        edge_index, n = line_graph()
+    def test_backward_through_accumulation_parameter(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
         step = torch.tensor(1.0, requires_grad=True)
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = gradient_cast(source, 0.0, lambda value: value + step, name="backprop")
+            with line_ctx.round():
+                output = gradient_cast(
+                    source, 0.0, lambda value: value + step, name="backprop"
+                )
 
         loss = output.sum()
         loss.backward()
@@ -51,14 +49,16 @@ class TestGradientCast:
         assert torch.isfinite(step.grad)
         assert step.grad.item() != 0.0
 
-    def test_soft_matches_hard_on_line(self):
-        edge_index, n = line_graph()
+    def test_soft_matches_hard_on_line(self, line_topology):
+        edge_index, n = line_topology
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
 
         hard_ctx = AggregateContext(edge_index, n)
         for _ in range(4):
             with hard_ctx.round():
-                hard = gradient_cast(source, 0.0, lambda value: value + 1.0, name="hard")
+                hard = gradient_cast(
+                    source, 0.0, lambda value: value + 1.0, name="hard"
+                )
 
         soft_ctx = AggregateContext(edge_index, n)
         for _ in range(4):
@@ -74,8 +74,10 @@ class TestGradientCast:
 
         assert torch.allclose(soft, hard, atol=1e-3)
 
-    def test_weighted_multi_source_propagates_nearest_root_payload(self):
-        edge_index, edge_weight, n = weighted_collect_graph()
+    def test_weighted_multi_source_propagates_nearest_root_payload(
+        self, weighted_collect_topology
+    ):
+        edge_index, edge_weight, n = weighted_collect_topology
         source = torch.tensor([1.0, 0.0, 0.0, 1.0])
         center = torch.tensor([10.0, -1.0, -1.0, 20.0])
         ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
@@ -94,39 +96,46 @@ class TestGradientCast:
 
 
 class TestCollectCast:
-    def test_collects_subtree_sizes_on_line(self):
-        edge_index, n = line_graph()
+    def test_collects_subtree_sizes_on_line(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32)
         local = torch.ones(n)
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = collect_cast(potential, local, 0.0, lambda acc, value: acc + value, name="sizes")
+            with line_ctx.round():
+                output = collect_cast(
+                    potential, local, 0.0, lambda acc, value: acc + value, name="sizes"
+                )
 
         assert torch.allclose(output, torch.tensor([4.0, 3.0, 2.0, 1.0]))
 
-    def test_equal_potentials_leave_nodes_as_roots(self):
-        edge_index, n = line_graph()
+    def test_equal_potentials_leave_nodes_as_roots(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         potential = torch.zeros(n)
         local = torch.ones(n)
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = collect_cast(potential, local, 0.0, lambda acc, value: acc + value, name="roots")
+            with line_ctx.round():
+                output = collect_cast(
+                    potential, local, 0.0, lambda acc, value: acc + value, name="roots"
+                )
 
         assert torch.allclose(output, torch.ones(n))
 
-    def test_backward_to_local_payloads(self):
-        edge_index, n = line_graph()
+    def test_backward_to_local_payloads(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32)
         local = torch.ones(n, requires_grad=True)
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
-                output = collect_cast(potential, local, 0.0, lambda acc, value: acc + value, name="local_grad")
+            with line_ctx.round():
+                output = collect_cast(
+                    potential,
+                    local,
+                    0.0,
+                    lambda acc, value: acc + value,
+                    name="local_grad",
+                )
 
         output[0].backward()
 
@@ -134,14 +143,13 @@ class TestCollectCast:
         assert torch.isfinite(local.grad).all()
         assert torch.allclose(local.grad, torch.ones(n))
 
-    def test_soft_backpropagates_through_potential(self):
-        edge_index, n = line_graph()
+    def test_soft_backpropagates_through_potential(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32, requires_grad=True)
         local = torch.ones(n)
-        ctx = AggregateContext(edge_index, n)
 
         for _ in range(4):
-            with ctx.round():
+            with line_ctx.round():
                 output = collect_cast(
                     potential,
                     local,
@@ -158,8 +166,10 @@ class TestCollectCast:
         assert torch.isfinite(potential.grad).all()
         assert potential.grad.abs().sum().item() > 0.0
 
-    def test_weighted_collect_uses_shortest_path_parents(self):
-        edge_index, edge_weight, n = weighted_collect_graph()
+    def test_weighted_collect_uses_shortest_path_parents(
+        self, weighted_collect_topology
+    ):
+        edge_index, edge_weight, n = weighted_collect_topology
         potential = torch.tensor([0.0, 1.0, 2.0, 3.0])
         local = torch.tensor([0.0, 10.0, 20.0, 1.0])
         ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
