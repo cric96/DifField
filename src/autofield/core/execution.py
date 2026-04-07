@@ -52,3 +52,14 @@ class AggregateContext:
     @property
     def round_num(self) -> int:
         return self._ctx.round_num
+
+    @property
+    def num_nodes(self) -> int:
+        return self._ctx.num_nodes
+
+    @property
+    def state(self):
+        return self._ctx.state
+
+    def get_state(self, name: str):
+        return self._ctx.state.get_state(name)

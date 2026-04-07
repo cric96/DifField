@@ -26,28 +26,26 @@ class TestRep:
         results = []
         for _ in range(5):
             with line_ctx.round():
-                val = rep("counter", 0.0, lambda s: s + 1)
+                val = rep(0.0, lambda s: s + 1)
             results.append(val[0].item())
         assert results == [1.0, 2.0, 3.0, 4.0, 5.0]
 
     def test_per_node_state(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         init = torch.arange(n, dtype=torch.float32)
         for _ in range(3):
             with line_ctx.round():
-                val = rep("state", init, lambda s: s + 1)
+                val = rep(init, lambda s: s + 1)
         assert torch.allclose(val, init + 3)
 
     def test_nested_rep_multiple_nbr(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         results = []
         for _ in range(3):
             with line_ctx.round():
                 val = rep(
-                    "outer",
                     torch.zeros(n),
                     lambda outer_s: rep(
-                        "inner",
                         torch.zeros(n),
                         lambda inner_s: (
                             nbr(outer_s, aggr="sum") + nbr(inner_s, aggr="sum") + 1.0
@@ -65,7 +63,7 @@ class TestRep:
         ctx = AggregateContext(edge_index, n)
         for _ in range(3):
             with ctx.round():
-                val = rep("counter", 0.0, lambda s: s + 1)
+                val = rep(0.0, lambda s: s + 1)
         assert torch.allclose(val, torch.tensor([3.0, 3.0, 3.0, 3.0]))
 
     def test_rep_empty_topology(self, empty_topology):
@@ -73,7 +71,7 @@ class TestRep:
         ctx = AggregateContext(edge_index, n)
         for _ in range(3):
             with ctx.round():
-                val = rep("counter", 0.0, lambda s: s + 1)
+                val = rep(0.0, lambda s: s + 1)
         assert val.shape == (0,)
 
 
@@ -208,7 +206,7 @@ class TestBranch:
                 reset_states={"val": 0.0},
             )
         assert torch.allclose(
-            line_ctx._ctx.state._states["val"], torch.tensor([1.0, 1.0, 1.0, 1.0])
+            line_ctx.state.get_state("val"), torch.tensor([1.0, 1.0, 1.0, 1.0])
         )
 
         cond2 = torch.tensor([True, True, True, False])
@@ -220,11 +218,11 @@ class TestBranch:
                 reset_states={"val": 0.0},
             )
         assert torch.allclose(
-            line_ctx._ctx.state._states["val"], torch.tensor([2.0, 2.0, 2.0, 1.0])
+            line_ctx.state.get_state("val"), torch.tensor([2.0, 2.0, 2.0, 1.0])
         )
 
     def test_branch_rep_nbr_nested(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond = torch.tensor([True, True, False, False])
 
         results = []
@@ -284,7 +282,6 @@ class TestGradient:
         for _ in range(rows + cols):
             with ctx.round():
                 d = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(source, torch.zeros(n), nbr(dist + w, aggr="min")),
                 )
@@ -308,7 +305,6 @@ class TestGradient:
         for _ in range(6):
             with ctx.round():
                 d = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(source, torch.zeros(n), nbr(dist + w, aggr="min")),
                 )
@@ -341,7 +337,6 @@ class TestGradient:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    "weighted_dist",
                     float("inf"),
                     lambda dist_old: mux(
                         source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")
@@ -366,10 +361,8 @@ class TestGradient:
         for _ in range(3):
             with ctx.round():
                 val = rep(
-                    "outer",
                     torch.zeros(n),
                     lambda outer_s: rep(
-                        "inner",
                         torch.zeros(n),
                         lambda inner_s: (
                             nbr(outer_s * w1, aggr="sum")
@@ -390,20 +383,20 @@ class TestGradient:
 
 class TestField:
     def test_const(self, triangle_ctx):
-        n = triangle_ctx._ctx.num_nodes
+        n = triangle_ctx.num_nodes
         with triangle_ctx.round():
             value = const(2.5)
         assert torch.allclose(value, torch.full((n,), 2.5))
 
     def test_of(self, triangle_ctx):
-        n = triangle_ctx._ctx.num_nodes
+        n = triangle_ctx.num_nodes
         with triangle_ctx.round():
             f = field.of(3.14)
         assert f.shape == (n,)
         assert torch.allclose(f, torch.tensor([3.14, 3.14, 3.14]))
 
     def test_zeros_ones_inf(self, triangle_ctx):
-        n = triangle_ctx._ctx.num_nodes
+        n = triangle_ctx.num_nodes
         with triangle_ctx.round():
             z = field.zeros()
             o = field.ones()
@@ -433,7 +426,6 @@ class TestField:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")),
                 )
@@ -448,3 +440,57 @@ class TestField:
                 out = broadcast(source, payload, name="payload")
 
         assert torch.allclose(out, torch.tensor([10.0, 10.0, 10.0, 10.0]))
+
+
+class TestAutoNaming:
+    def test_rep_without_name_accumulates(self, line_ctx):
+        results = []
+        for _ in range(3):
+            with line_ctx.round():
+                val = rep(0.0, lambda s: s + 1)
+            results.append(val[0].item())
+        assert results == [1.0, 2.0, 3.0]
+
+    def test_rep_same_position_same_name_in_branch(self, line_ctx):
+        n = line_ctx.num_nodes
+        cond = torch.tensor([True, True, False, False])
+
+        results = []
+        for _ in range(3):
+            with line_ctx.round():
+                val = branch(
+                    cond,
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0),
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0),
+                )
+            results.append(val.clone())
+
+        assert torch.allclose(results[0], torch.tensor([1.0, 1.0, 10.0, 10.0]))
+        assert torch.allclose(results[1], torch.tensor([2.0, 2.0, 20.0, 20.0]))
+        assert torch.allclose(results[2], torch.tensor([3.0, 3.0, 30.0, 30.0]))
+
+    def test_rep_different_positions_different_names(self, line_ctx):
+        n = line_ctx.num_nodes
+        with line_ctx.round():
+            a = rep(torch.zeros(n), lambda s: s + 1.0)
+            b = rep(torch.zeros(n), lambda s: s + 10.0)
+        assert torch.allclose(a, torch.ones(n))
+        assert torch.allclose(b, torch.full((n,), 10.0))
+
+    def test_two_nbr_same_level_different_tags(self, triangle_ctx):
+        x = torch.tensor([1.0, 2.0, 3.0])
+        with triangle_ctx.round() as round_ctx:
+            a = nbr(x, aggr="sum")
+            b = nbr(x, aggr="max")
+        assert torch.allclose(a, torch.tensor([5.0, 4.0, 3.0]))
+        assert torch.allclose(b, torch.tensor([3.0, 3.0, 2.0]))
+        tags = list(round_ctx.exports.keys())
+        assert len(tags) == 2
+        assert tags[0] != tags[1]
+
+    def test_explicit_name_overrides_auto(self, line_ctx):
+        n = line_ctx.num_nodes
+        with line_ctx.round():
+            rep(0.0, lambda s: s + 1, name="my_state")
+        assert line_ctx.get_state("my_state") is not None
+        assert torch.allclose(line_ctx.get_state("my_state"), torch.ones(n))

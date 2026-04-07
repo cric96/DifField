@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
+import pytest
 
 from autofield import AggregateContext, branch, mux, nbr, rep
 from autofield.layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
@@ -27,7 +28,7 @@ class TestLayersInDSL:
         assert torch.allclose(m, torch.tensor([5.0, 4.0, 3.0]))
 
     def test_rep_layer_in_dsl(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         rep_layer = RepLayer("counter", 0.0, lambda s: s + 1)
         results = []
         for _ in range(3):
@@ -37,7 +38,7 @@ class TestLayersInDSL:
         assert results == [1.0, 2.0, 3.0]
 
     def test_layers_compose_with_dsl(self, triangle_ctx):
-        n = triangle_ctx._ctx.num_nodes
+        n = triangle_ctx.num_nodes
         nbr_layer = NbrLayer(aggr="min", fill_value=float("inf"))
         x = torch.tensor([10.0, 2.0, 5.0])
         with triangle_ctx.round():
@@ -50,14 +51,13 @@ class TestLayersInDSL:
         assert torch.allclose(result, torch.tensor([2.0, 0.0, 2.0]))
 
     def test_gradient_with_layers(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
         nbr_min = NbrLayer(aggr="min")
 
         for _ in range(4):
             with line_ctx.round():
                 d = rep(
-                    "d",
                     float("inf"),
                     lambda s: mux(source, torch.zeros(n), nbr_min(s + 1)),
                 )
@@ -90,7 +90,7 @@ class TestStandaloneLayers:
 
 class TestComposition:
     def test_mux_rep_branch_composition(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
 
         cond_mux = torch.tensor([True, True, False, False])
         cond_branch = torch.tensor([True, True, True, False])
@@ -101,7 +101,6 @@ class TestComposition:
                 val = mux(
                     cond_mux,
                     rep(
-                        "outer_rep",
                         torch.zeros(n),
                         lambda outer_s: branch(
                             cond_branch,
@@ -110,7 +109,6 @@ class TestComposition:
                         ),
                     ),
                     rep(
-                        "other_rep",
                         torch.zeros(n),
                         lambda s: nbr(s, aggr="sum") + 100.0,
                     ),
@@ -122,19 +120,17 @@ class TestComposition:
         assert torch.allclose(results[2], torch.tensor([4.0, 5.0, 600.0, 400.0]))
 
     def test_rep_branch_rep_composition(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond = torch.tensor([True, True, False, False])
 
         results = []
         for _ in range(3):
             with line_ctx.round():
                 val = rep(
-                    "outer",
                     torch.zeros(n),
                     lambda outer_s: branch(
                         cond,
                         lambda: rep(
-                            "inner_true",
                             torch.zeros(n),
                             lambda inner_s: (
                                 nbr(outer_s, aggr="sum")
@@ -143,7 +139,6 @@ class TestComposition:
                             ),
                         ),
                         lambda: rep(
-                            "inner_false",
                             torch.zeros(n),
                             lambda inner_s: (
                                 nbr(outer_s, aggr="max")
@@ -160,7 +155,7 @@ class TestComposition:
         assert torch.allclose(results[2], torch.tensor([7.0, 7.0, 70.0, 70.0]))
 
     def test_multiple_assignments_composition(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond = torch.tensor([True, True, False, False])
 
         results_x = []
@@ -169,17 +164,13 @@ class TestComposition:
 
         for _ in range(3):
             with line_ctx.round():
-                x = rep("x_rep", torch.zeros(n), lambda s: s + 1.0)
+                x = rep(torch.zeros(n), lambda s: s + 1.0)
                 y = branch(
                     cond,
-                    lambda: rep(
-                        "y_true", torch.zeros(n), lambda s: nbr(s, aggr="sum") + x
-                    ),
-                    lambda: rep(
-                        "y_false", torch.zeros(n), lambda s: nbr(s, aggr="max") + x * 2
-                    ),
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + x),
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="max") + x * 2),
                 )
-                z = rep("z_rep", torch.zeros(n), lambda s: nbr(s + y, aggr="sum"))
+                z = rep(torch.zeros(n), lambda s: nbr(s + y, aggr="sum"))
 
             results_x.append(x.clone())
             results_y.append(y.clone())
@@ -198,7 +189,7 @@ class TestComposition:
 
 class TestLocalAggregateBranchNbr:
     def test_nbr_inside_branch_ignores_cross_partition_neighbors(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         x = torch.tensor([10.0, 20.0, 30.0, 40.0])
         cond = torch.tensor([True, True, False, False])
 
@@ -213,7 +204,7 @@ class TestLocalAggregateBranchNbr:
         assert torch.allclose(result, torch.tensor([20.0, 10.0, 40.0, 30.0]))
 
     def test_rep_with_nbr_in_branch_isolates_accumulation(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond = torch.tensor([True, True, False, False])
 
         results = []
@@ -221,12 +212,8 @@ class TestLocalAggregateBranchNbr:
             with line_ctx.round():
                 val = branch(
                     cond,
-                    lambda: rep(
-                        "t", torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0
-                    ),
-                    lambda: rep(
-                        "f", torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0
-                    ),
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0),
+                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0),
                     branch_name="rep_nbr_iso",
                 )
             results.append(val.clone())
@@ -236,7 +223,7 @@ class TestLocalAggregateBranchNbr:
         assert torch.allclose(results[2], torch.tensor([3.0, 3.0, 30.0, 30.0]))
 
     def test_full_local_aggregate_round_pattern(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond = torch.tensor([True, True, False, False])
         local_input = torch.tensor([1.0, 2.0, 3.0, 4.0])
 
@@ -244,7 +231,6 @@ class TestLocalAggregateBranchNbr:
         for _ in range(3):
             with line_ctx.round():
                 val = rep(
-                    "agg_state",
                     torch.zeros(n),
                     lambda s: branch(
                         cond,
@@ -293,7 +279,7 @@ class TestLocalAggregateBranchNbr:
         assert (soft - hard).abs().max() < 25.0
 
     def test_branch_state_reset_on_partition_switch(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         cond1 = torch.tensor([True, True, False, False])
         cond2 = torch.tensor([True, False, False, False])
 

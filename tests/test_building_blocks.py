@@ -3,11 +3,12 @@
 import torch
 
 from autofield import AggregateContext, collect_cast, gradient_cast, nbr_range
+from conftest import assert_finite_gradients
 
 
 class TestGradientCast:
     def test_hop_count_on_line(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
 
         for _ in range(4):
@@ -19,7 +20,7 @@ class TestGradientCast:
         assert torch.allclose(output, torch.tensor([0.0, 1.0, 2.0, 3.0]))
 
     def test_payload_propagates_from_source(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
         center = torch.tensor([10.0, 20.0, 30.0, 40.0])
 
@@ -32,7 +33,7 @@ class TestGradientCast:
         assert torch.allclose(output, torch.tensor([10.0, 11.0, 12.0, 13.0]))
 
     def test_backward_through_accumulation_parameter(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
         step = torch.tensor(1.0, requires_grad=True)
 
@@ -45,8 +46,7 @@ class TestGradientCast:
         loss = output.sum()
         loss.backward()
 
-        assert step.grad is not None
-        assert torch.isfinite(step.grad)
+        assert_finite_gradients([step])
         assert step.grad.item() != 0.0
 
     def test_soft_matches_hard_on_line(self, line_topology):
@@ -97,7 +97,7 @@ class TestGradientCast:
 
 class TestCollectCast:
     def test_collects_subtree_sizes_on_line(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32)
         local = torch.ones(n)
 
@@ -110,7 +110,7 @@ class TestCollectCast:
         assert torch.allclose(output, torch.tensor([4.0, 3.0, 2.0, 1.0]))
 
     def test_equal_potentials_leave_nodes_as_roots(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         potential = torch.zeros(n)
         local = torch.ones(n)
 
@@ -123,7 +123,7 @@ class TestCollectCast:
         assert torch.allclose(output, torch.ones(n))
 
     def test_backward_to_local_payloads(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32)
         local = torch.ones(n, requires_grad=True)
 
@@ -139,12 +139,11 @@ class TestCollectCast:
 
         output[0].backward()
 
-        assert local.grad is not None
-        assert torch.isfinite(local.grad).all()
+        assert_finite_gradients([local])
         assert torch.allclose(local.grad, torch.ones(n))
 
     def test_soft_backpropagates_through_potential(self, line_ctx):
-        n = line_ctx._ctx.num_nodes
+        n = line_ctx.num_nodes
         potential = torch.arange(n, dtype=torch.float32, requires_grad=True)
         local = torch.ones(n)
 
@@ -162,8 +161,7 @@ class TestCollectCast:
 
         output[0].backward()
 
-        assert potential.grad is not None
-        assert torch.isfinite(potential.grad).all()
+        assert_finite_gradients([potential])
         assert potential.grad.abs().sum().item() > 0.0
 
     def test_weighted_collect_uses_shortest_path_parents(

@@ -102,7 +102,6 @@ class TestScatterAggr:
         ),
     )
     def test_scatter_sum_property(self, values, indices):
-        # make sizes match
         n = min(len(values), len(indices))
         src = torch.tensor(values[:n], dtype=torch.float32)
         idx = torch.tensor(indices[:n], dtype=torch.long)
