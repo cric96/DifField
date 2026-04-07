@@ -13,14 +13,14 @@ CHANNEL_THRESHOLD = 0.5
 def channel_body(source: torch.Tensor, dest: torch.Tensor, tolerance: float, noise: torch.Tensor | None = None) -> torch.Tensor:
     hop_noise = torch.zeros_like(source) if noise is None else noise
     dist_src = rep(
-        "dist_src",
         float("inf"),
         lambda dist_old: mux(source, field.of(0.0), nbr(dist_old + 1.0 + hop_noise, aggr="min")),
+        name="dist_src",
     )
     dist_dst = rep(
-        "dist_dst",
         float("inf"),
         lambda dist_old: mux(dest, field.of(0.0), nbr(dist_old + 1.0 + hop_noise, aggr="min")),
+        name="dist_dst",
     )
     dist_sd = broadcast(source > 0.5, dist_dst, name="dist_channel")
 

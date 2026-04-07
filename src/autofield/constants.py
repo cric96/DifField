@@ -9,7 +9,7 @@ the same well-documented value.
 CONDITION_THRESHOLD: float = 0.5
 """Threshold for interpreting a continuous condition as boolean.
 
-Used in :func:`soft_where`, :class:`BranchLayer` state merging,
+Used in :func:`field_where`, :class:`BranchLayer` state merging,
 and anywhere ``c >= CONDITION_THRESHOLD`` selects the "true" branch.
 """
 

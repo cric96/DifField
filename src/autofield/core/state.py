@@ -21,7 +21,7 @@ class StateManager:
             return first_state.device
         return self.device
 
-    def get_or_init(self, name: str, init_val: Tensor | float) -> Tensor:
+    def get_or_init(self, init_val: Tensor | float, *, name: str) -> Tensor:
         """Retrieve existing state or initialize it."""
         if name not in self._states:
             target_device = self._infer_device()
@@ -40,7 +40,7 @@ class StateManager:
                 )
         return self._states[name]
 
-    def update(self, name: str, new_val: Tensor) -> None:
+    def update(self, new_val: Tensor, *, name: str) -> None:
         """Store updated state (called after each round for a rep)."""
         self._states[name] = new_val
 
@@ -94,7 +94,7 @@ class StateManager:
         """Restore states from a snapshot."""
         self._states = {key: value.clone() for key, value in snapshot.items()}
 
-    def get_state(self, name: str) -> Tensor | None:
+    def get_state(self, *, name: str) -> Tensor | None:
         """Get a specific state by name, returning None if not found."""
         return self._states.get(name)
 

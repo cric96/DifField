@@ -9,7 +9,8 @@ from torch import Tensor
 
 from ..constants import BROADCAST_NEAR_ZERO, DEFAULT_TAU_SOFT_AGGR
 from ..core import RoundContext
-from ..functional import scatter_binary_fold, scatter_min_by_first
+from ..core.mode import get_default_mode
+from ..functional import field_where, scatter_binary_fold, scatter_min_by_first
 from .helpers import (
     broadcast_like,
     edge_sources_targets,
@@ -32,23 +33,25 @@ def gradient(
     weight: float | Tensor | NeighborExpr | None = None,
     *,
     name: str = "gradient",
-    mode: str = "hard",
-    tau: float = DEFAULT_TAU_SOFT_AGGR,
+    mode: str | None = None,
+    tau: float | None = None,
     fill_value: float = float("inf"),
 ) -> Tensor:
     r"""Compute a minimum-cost gradient / distance field from source nodes."""
-    validate_cast_mode(mode)
-    source_field = require_scalar_field("source", source)
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    validate_cast_mode(effective_mode)
+    source_field = require_scalar_field(source, name="source")
     step = nbr_range() if weight is None else weight
 
     return rep(
-        f"_grad_{name}",
         fill_value,
         lambda dist: mux(
             source_field,
             field.of(0.0),
-            nbr(dist + step, aggr="min", mode=mode, tau=tau, fill_value=fill_value),
+            nbr(dist + step, aggr="min", mode=effective_mode, tau=effective_tau, fill_value=fill_value),
         ),
+        name=f"_grad_{name}",
     )
 
 
@@ -59,12 +62,14 @@ def gradient_cast(
     *,
     weight: float | Tensor | NeighborExpr | None = None,
     name: str = "gradient_cast",
-    mode: str = "hard",
-    tau: float = DEFAULT_TAU_SOFT_AGGR,
+    mode: str | None = None,
+    tau: float | None = None,
 ) -> Tensor:
     r"""Propagate payloads outward along a minimum-potential gradient."""
-    validate_cast_mode(mode)
-    source_field = require_scalar_field("source", source)
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    validate_cast_mode(effective_mode)
+    source_field = require_scalar_field(source, name="source")
     center_field = ensure_field(center)
     payload_shape = center_field.shape[1:]
     init_state = pack_cast_state(field.inf(), center_field)
@@ -82,32 +87,37 @@ def gradient_cast(
             messages,
             tgt,
             ctx.num_nodes,
-            mode=mode,
-            tau=tau,
+            mode=effective_mode,
+            tau=effective_tau,
             fill_row=init_state,
         )
         return torch.where(source_field.unsqueeze(-1) >= 0.5, source_state, propagated)
 
-    state = rep(f"_gc_{name}", init_state, update)
+    state = rep(init_state, update, name=f"_gc_{name}")
     return unpack_cast_state(state, payload_shape)[1]
 
 
 def broadcast(
     mask: Tensor,
     value: Tensor,
+    *,
     name: str = "bc_cc",
     weight: float | Tensor | NeighborExpr | None = None,
+    mode: str | None = None,
+    tau: float | None = None,
 ) -> Tensor:
     r"""Propagate a value from root nodes to the rest of the network via collect_cast."""
     cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
     return gradient_cast(
         source=cond,
         center=value,
         accumulation=lambda x: x,
         weight=weight,
         name=name,
-        mode="hard",
-        tau=DEFAULT_TAU_SOFT_AGGR,
+        mode=effective_mode,
+        tau=effective_tau,
     )
 
 
@@ -119,19 +129,21 @@ def collect_cast(
     *,
     weight: float | Tensor | NeighborExpr | None = None,
     name: str = "collect_cast",
-    mode: str = "hard",
-    tau: float = DEFAULT_TAU_SOFT_AGGR,
+    mode: str | None = None,
+    tau: float | None = None,
 ) -> Tensor:
     r"""Collect payloads from children toward local minima of a potential field."""
-    validate_cast_mode(mode)
-    potential_field = require_scalar_field("potential", potential)
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    validate_cast_mode(effective_mode)
+    potential_field = require_scalar_field(potential, name="potential")
     local_field = ensure_field(local)
     null_field = broadcast_like(null, local_field)
 
     def update(collected: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
         src, tgt = edge_sources_targets(ctx.edge_index)
         edge_cost = resolve_edge_cost(weight, ctx)
-        if mode == "hard":
+        if effective_mode == "hard":
             parent_ids = hard_parent_ids_with_edge_cost(
                 potential_field, edge_cost=edge_cost, ctx=ctx
             )
@@ -145,7 +157,7 @@ def collect_cast(
             )
         else:
             parent_weight = soft_parent_weights_with_edge_cost(
-                potential_field, tau, edge_cost=edge_cost, ctx=ctx
+                potential_field, effective_tau, edge_cost=edge_cost, ctx=ctx
             )
             child_values = scatter_binary_fold(
                 scale_messages(collected[src], parent_weight),
@@ -156,4 +168,4 @@ def collect_cast(
             )
         return accumulation(local_field, child_values)
 
-    return rep(f"_cc_{name}", local_field, update)
+    return rep(local_field, update, name=f"_cc_{name}")

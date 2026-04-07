@@ -1,8 +1,8 @@
 """autofield — aggregate computing and differentiable field calculus."""
 
-from .core import AggregateContext, DeviceContext, RoundContext, StateManager
+from .core import AggregateContext, DeviceContext, RoundContext, StateManager, get_default_mode, set_default_mode, with_mode
 from .dsl import branch, broadcast, collect_cast, const, field, gradient, gradient_cast, mid, mux, nbr, nbr_range, nbrRange, rep
-from .functional import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
+from .functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
 from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
 from .pyg_backend import HAS_PYG
 from .sim import (
@@ -53,8 +53,12 @@ __all__ = [
     "scatter_aggr",
     "mask_edges",
     "mask_edges_for_partition",
-    "soft_where",
+    "field_where",
     "HAS_PYG",
+    # Mode configuration
+    "get_default_mode",
+    "set_default_mode",
+    "with_mode",
     # Simulation
     "GridScenario",
     "SimulationEngine",

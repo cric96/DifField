@@ -80,11 +80,11 @@ def run_large_gradient(args, scenario, source, device: torch.device):
 
     def program(_runtime):
         return rep(
-            "dist",
             float("inf"),
             lambda dist_old: mux(
                 source, field.of(0.0), nbr(dist_old + weight, aggr="min")
             ),
+            name="dist",
         )
 
     output, _ = engine.run(

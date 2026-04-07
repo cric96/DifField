@@ -43,9 +43,9 @@ class TestSimulationFramework:
         def program(runtime):
             src = runtime.signals["source"]
             return rep(
-                "dist",
                 float("inf"),
                 lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                name="dist",
             )
 
         output, runtime = engine.run(
@@ -73,9 +73,9 @@ class TestSimulationFramework:
         def program(rt):
             src = rt.signals["source"]
             return rep(
-                "dist",
                 float("inf"),
                 lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                name="dist",
             )
 
         out0 = engine.step(runtime=runtime, program=program, recorder=recorder)
@@ -125,7 +125,7 @@ class TestSnapshotRecorder:
         )
 
         def program(_runtime):
-            counter = rep("counter", 0.0, lambda s: s + 1)
+            counter = rep(0.0, lambda s: s + 1, name="counter")
             return nbr(counter, aggr="sum", tag="counter_msg")
 
         output, _ = engine.run(rounds=1, program=program, signals={}, recorder=recorder)

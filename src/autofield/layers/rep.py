@@ -17,9 +17,10 @@ class RepLayer(nn.Module):
 
     def __init__(
         self,
-        name: str,
         init_value: float | Tensor,
         update_fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | nn.Module,
+        *,
+        name: str,
     ) -> None:
         super().__init__()
         self.name = name
@@ -46,7 +47,7 @@ class RepLayer(nn.Module):
     def forward(self, x: Tensor, ctx: RoundContext | None = None) -> Tensor:
         """Run one step of the recurrence."""
         ctx = resolve_context(ctx)
-        state = ctx.state.get_or_init(self.name, self.init_value)
+        state = ctx.state.get_or_init(self.init_value, name=self.name)
 
         if self._num_positional_params <= 1:
             new_state = self.update_fn(state)
@@ -55,5 +56,5 @@ class RepLayer(nn.Module):
         else:
             new_state = self.update_fn(state, x, ctx)
 
-        ctx.state.update(self.name, new_state)
+        ctx.state.update(new_state, name=self.name)
         return new_state

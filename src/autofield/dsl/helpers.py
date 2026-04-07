@@ -51,7 +51,7 @@ def broadcast_like(value: float | Tensor, template: Tensor) -> Tensor:
 
 
 def require_scalar_field(
-    name: str, value: float | Tensor, ctx: RoundContext | None = None
+    value: float | Tensor, *, name: str, ctx: RoundContext | None = None
 ) -> Tensor:
     """Require *value* to normalize to a scalar node field."""
     field_value = ensure_field(value, ctx)

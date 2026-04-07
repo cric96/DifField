@@ -137,7 +137,7 @@ def main():
 
     def program(runtime):
         src = source.to(runtime.scenario.device)
-        return rep("dist", float("inf"), lambda dist_old: mux(src, field.of(0.0), nbr(dist_old + weight, aggr="min")))
+        return rep(float("inf"), lambda dist_old: mux(src, field.of(0.0), nbr(dist_old + weight, aggr="min")), name="dist")
 
     output, runtime = engine.run(
         rounds=args.rounds,

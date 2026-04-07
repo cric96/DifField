@@ -79,11 +79,11 @@ class LearnableMovingGradient(nn.Module):
             scenario.sync_context(ctx._ctx)
             with ctx.round():
                 dist = rep(
-                    "dist",
                     MAX_DIST,
                     lambda dist_old: mux(
                         source, field.of(0.0), nbr(dist_old + self.w, aggr="min")
                     ),
+                    name="dist",
                 )
 
             dist_feat = torch.nan_to_num(dist, nan=0.0, posinf=10.0, neginf=0.0)

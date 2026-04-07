@@ -70,9 +70,9 @@ class TestDeviceContextBasic:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")),
+                    name="dist",
                 )
             global_states.append(d.detach().clone())
 
@@ -87,11 +87,11 @@ class TestDeviceContextBasic:
             )
             with device.round(neighbor_exports=neighbor_exports):
                 d_local = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(
                         source_local, field.of(0.0), nbr(dist + w, aggr="min")
                     ),
+                    name="dist",
                 )
 
         assert (
@@ -106,11 +106,11 @@ class TestDeviceContextBasic:
         for _ in range(3):
             with device.round():
                 d = rep(
-                    "dist",
                     float("inf"),
                     lambda dist: mux(
                         source_local, field.of(0.0), nbr(dist + w, aggr="min")
                     ),
+                    name="dist",
                 )
         assert device.result(d).item() == 0.0
 
@@ -165,14 +165,14 @@ class TestDeviceContextBranching:
                 val = branch(
                     cond,
                     lambda: rep(
-                        "state",
                         dev.local_field(0.0),
                         lambda s: nbr(s, aggr="sum") + 1.0,
+                        name="state",
                     ),
                     lambda: rep(
-                        "state",
                         dev.local_field(0.0),
                         lambda s: nbr(s, aggr="max") + 10.0,
+                        name="state",
                     ),
                 )
             return dev.result(val).item()
@@ -327,16 +327,16 @@ class TestDeviceContextMultipleAssignments:
 
         def run_device(dev, src, exports):
             with dev.round(neighbor_exports=exports):
-                x = rep("x", dev.local_field(0.0), lambda s: s + 1.0)
+                x = rep(dev.local_field(0.0), lambda s: s + 1.0, name="x")
                 y = mux(
                     src,
-                    rep("y", dev.local_field(0.0), lambda s: nbr(s + x, aggr="sum")),
+                    rep(dev.local_field(0.0), lambda s: nbr(s + x, aggr="sum"), name="y"),
                     dev.local_field(100.0),
                 )
                 cond = x > 1.5
                 z = branch(
                     cond,
-                    lambda: rep("z", dev.local_field(0.0), lambda s: s + y + 10.0),
+                    lambda: rep(dev.local_field(0.0), lambda s: s + y + 10.0, name="z"),
                     lambda: dev.local_field(-1.0),
                 )
             return dev.result(x).item(), dev.result(y).item(), dev.result(z).item()

@@ -62,4 +62,4 @@ class AggregateContext:
         return self._ctx.state
 
     def get_state(self, name: str):
-        return self._ctx.state.get_state(name)
+        return self._ctx.state.get_state(name=name)

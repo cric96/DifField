@@ -31,7 +31,6 @@ def run_gradient_program(
 
     def program(_runtime):
         return rep(
-            "dist",
             float("inf"),
             lambda dist_old: mux(
                 source, field.of(0.0), nbr(dist_old + weight, aggr=aggr)

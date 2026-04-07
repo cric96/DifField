@@ -47,11 +47,11 @@ def render_moving_gradient_evolution(
         scenario.sync_context(ctx._ctx)
         with ctx.round():
             dist = rep(
-                "dist",
                 MAX_DIST,
                 lambda dist_old: mux(
                     source, field.of(0.0), nbr(dist_old + model.w, aggr="min")
                 ),
+                name="dist",
             )
 
         pos_by_round[r] = positions.clone()

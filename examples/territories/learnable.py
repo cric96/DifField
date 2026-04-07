@@ -149,7 +149,7 @@ def main():
                 f"epoch={epoch + 1:3d} train_total={eval_metrics['total']:.6f} range={params['range_weight']:.3f} risk={params['risk_weight']:.3f} tau={params['assignment_tau']:.3f}"
             )
 
-    model, history = trainer.run(on_epoch_end=on_epoch_end)
+    model, history, eval_checkpoints = trainer.run(on_epoch_end=on_epoch_end, save_eval_checkpoints=True)
 
     # 3. Final Evaluation
     from territories.evaluation.evaluator import evaluate_seeds
@@ -162,6 +162,8 @@ def main():
     if not args.no_viz:
         renderer = TerritoriesRenderer(spec)
         renderer.render_training_results(model, history, viz_prefix)
+        if eval_checkpoints:
+            renderer.render_territory_evolution(eval_checkpoints, viz_prefix)
 
     # 5. Reporting
     teacher_params = extract_teacher_parameters_from_spec(spec)

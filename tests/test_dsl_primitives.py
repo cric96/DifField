@@ -117,11 +117,11 @@ class TestNbr:
         for _ in range(4):
             with ctx.round():
                 dist = rep(
-                    "weighted_dist",
                     float("inf"),
                     lambda dist_old: mux(
                         source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")
                     ),
+                    name="weighted_dist",
                 )
 
         assert torch.allclose(dist, torch.tensor([0.0, 2.0, 4.0]))
@@ -201,24 +201,24 @@ class TestBranch:
         with line_ctx.round():
             branch(
                 cond1,
-                lambda: rep("val", 0.0, lambda s: s + 1),
-                lambda: rep("val", 0.0, lambda s: s + 1),
+                lambda: rep(0.0, lambda s: s + 1, name="val"),
+                lambda: rep(0.0, lambda s: s + 1, name="val"),
                 reset_states={"val": 0.0},
             )
         assert torch.allclose(
-            line_ctx.state.get_state("val"), torch.tensor([1.0, 1.0, 1.0, 1.0])
+            line_ctx.state.get_state(name="val"), torch.tensor([1.0, 1.0, 1.0, 1.0])
         )
 
         cond2 = torch.tensor([True, True, True, False])
         with line_ctx.round():
             branch(
                 cond2,
-                lambda: rep("val", 0.0, lambda s: s + 1),
-                lambda: rep("val", 0.0, lambda s: s + 1),
+                lambda: rep(0.0, lambda s: s + 1, name="val"),
+                lambda: rep(0.0, lambda s: s + 1, name="val"),
                 reset_states={"val": 0.0},
             )
         assert torch.allclose(
-            line_ctx.state.get_state("val"), torch.tensor([2.0, 2.0, 2.0, 1.0])
+            line_ctx.state.get_state(name="val"), torch.tensor([2.0, 2.0, 2.0, 1.0])
         )
 
     def test_branch_rep_nbr_nested(self, line_ctx):
@@ -231,10 +231,10 @@ class TestBranch:
                 val = branch(
                     cond,
                     lambda: rep(
-                        "true_val", torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0
+                        torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0, name="true_val"
                     ),
                     lambda: rep(
-                        "false_val", torch.zeros(n), lambda s: nbr(s, aggr="max") + 10.0
+                        torch.zeros(n), lambda s: nbr(s, aggr="max") + 10.0, name="false_val"
                     ),
                 )
             results.append(val.clone())
@@ -492,5 +492,5 @@ class TestAutoNaming:
         n = line_ctx.num_nodes
         with line_ctx.round():
             rep(0.0, lambda s: s + 1, name="my_state")
-        assert line_ctx.get_state("my_state") is not None
-        assert torch.allclose(line_ctx.get_state("my_state"), torch.ones(n))
+        assert line_ctx.get_state(name="my_state") is not None
+        assert torch.allclose(line_ctx.get_state(name="my_state"), torch.ones(n))

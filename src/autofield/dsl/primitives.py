@@ -12,7 +12,8 @@ from torch import Tensor
 
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
 from ..core import RoundContext, current_context, with_context
-from ..functional import soft_where
+from ..core.mode import get_default_mode
+from ..functional import field_where
 from .neighbor import NeighborExpr
 
 
@@ -62,42 +63,28 @@ def _auto_name(kind: str, **kwargs: object) -> str:
 
 
 def rep(
-    first_arg: float | Tensor | str,
-    second_arg: Callable[[Tensor], Tensor] | float | Tensor | None = None,
-    third_arg: Callable[[Tensor], Tensor] | None = None,
+    init: float | Tensor,
+    fn: Callable[[Tensor], Tensor],
     *,
     name: str | None = None,
 ) -> Tensor:
     r"""Temporal evolution (per-node recurrent state).
 
     Can be called as ``rep(init, fn)`` for auto-naming or
-    ``rep("my_name", init, fn)`` for backward compatibility.
-    An explicit ``name=`` keyword always wins.
+    ``rep(init, fn, name="my_name")`` for explicit naming.
     """
     from ..layers import RepLayer
 
-    if isinstance(first_arg, str):
-        explicit_name = first_arg
-        init = second_arg
-        fn = third_arg
-    else:
-        explicit_name = name
-        init = first_arg
-        fn = second_arg
+    resolved_name = name if name is not None else _auto_name("r")
 
-    resolved_name = explicit_name if explicit_name is not None else _auto_name("r")
-
-    if init is None or fn is None:
-        raise TypeError("rep() requires 'init' and 'fn' arguments")
-
-    return RepLayer(resolved_name, init, fn)(torch.empty(0))
+    return RepLayer(init, fn, name=resolved_name)(torch.empty(0))
 
 
 def nbr(
     expr: Tensor | NeighborExpr,
     aggr: str | Callable = "sum",
-    mode: str = "hard",
-    tau: float = DEFAULT_TAU_SOFT_AGGR,
+    mode: str | None = None,
+    tau: float | None = None,
     fill_value: float | None = None,
     edge_index: Tensor | None = None,
     edge_weight: Tensor | None = None,
@@ -112,11 +99,14 @@ def nbr(
     """
     from ..layers import NbrLayer
 
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+
     if tag is None and not isinstance(expr, NeighborExpr):
         tag = _auto_name("n", aggr=aggr)
 
     return NbrLayer(
-        aggr=aggr, mode=mode, tau=tau, fill_value=fill_value, include_self=include_self
+        aggr=aggr, mode=effective_mode, tau=effective_tau, fill_value=fill_value, include_self=include_self
     )(
         expr,
         edge_index=edge_index,
@@ -131,11 +121,14 @@ def branch(
     if_false: Callable[[], Tensor],
     branch_name: str = "branch",
     reset_states: dict[str, float | Tensor] | None = None,
-    mode: str = "hard",
-    tau: float = DEFAULT_TAU_BRANCH,
+    mode: str | None = None,
+    tau: float | None = None,
 ) -> Tensor:
     r"""Domain restriction with communication isolation and state reset."""
     from ..layers import BranchLayer
+
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_BRANCH
 
     true_mod = _LambdaModule(if_true) if not isinstance(if_true, nn.Module) else if_true
     false_mod = (
@@ -146,8 +139,8 @@ def branch(
         false_mod,
         branch_name=branch_name,
         reset_states=reset_states,
-        mode=mode,
-        tau=tau,
+        mode=effective_mode,
+        tau=effective_tau,
     )(torch.empty(0), cond)
 
 
@@ -155,11 +148,13 @@ def mux(
     cond: Tensor,
     if_true: Tensor | Callable[[], Tensor],
     if_false: Tensor | Callable[[], Tensor],
+    mode: str | None = None,
+    tau: float | None = None,
 ) -> Tensor:
     r"""Pointwise conditional selection (no topology change)."""
     val_true = if_true() if callable(if_true) else if_true
     val_false = if_false() if callable(if_false) else if_false
-    return soft_where(cond, val_true, val_false)
+    return field_where(cond, val_true, val_false, mode=mode, tau=tau)
 
 
 def const(value: float) -> Tensor:

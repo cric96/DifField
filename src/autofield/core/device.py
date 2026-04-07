@@ -97,7 +97,7 @@ class DeviceContext:
 
     def get_state(self, name: str) -> float:
         """Return this device's ``rep`` state for *name*."""
-        state_tensor = self._agg_ctx._ctx.state.get_state(name)
+        state_tensor = self._agg_ctx._ctx.state.get_state(name=name)
         if state_tensor is None:
             raise KeyError(f"State '{name}' not found")
         return state_tensor[0].item()
@@ -115,7 +115,7 @@ class DeviceContext:
         neighbor_exports: dict[str, list[float] | Tensor],
     ) -> None:
         for name, values in neighbor_exports.items():
-            state = ctx.state.get_state(name)
+            state = ctx.state.get_state(name=name)
             if state is None:
                 continue
             tensor = torch.as_tensor(values, dtype=state.dtype)

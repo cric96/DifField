@@ -31,8 +31,8 @@ class TerritoriesTrainingLoop:
         self.spec = spec
 
     def run(
-        self, on_epoch_end=None
-    ) -> tuple[LearnableTerritoryModel, dict[str, list[float]]]:
+        self, on_epoch_end=None, *, save_eval_checkpoints: bool = False
+    ) -> tuple[LearnableTerritoryModel, dict[str, list[float]], list[dict]]:
         """Execute the full training process."""
         spec = self.spec
         scenario = build_scenario_from_spec(spec)
@@ -82,6 +82,7 @@ class TerritoriesTrainingLoop:
         best_state = {
             key: value.detach().clone() for key, value in model.state_dict().items()
         }
+        eval_checkpoints: list[dict] = []
 
         for epoch in range(spec.training.epochs):
             optimizer.zero_grad()
@@ -164,5 +165,13 @@ class TerritoriesTrainingLoop:
             if on_epoch_end:
                 on_epoch_end(epoch, model, pred_train, eval_metrics)
 
+            if save_eval_checkpoints and (
+                (epoch + 1) % spec.training.eval_every == 0 or epoch + 1 == spec.training.epochs
+            ):
+                eval_checkpoints.append({
+                    "epoch": epoch + 1,
+                    "state_dict": {k: v.detach().clone() for k, v in model.state_dict().items()},
+                })
+
         model.load_state_dict(best_state)
-        return model, history.to_dict()
+        return model, history.to_dict(), eval_checkpoints

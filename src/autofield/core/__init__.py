@@ -3,6 +3,7 @@
 from .context import RoundContext, sub_context
 from .device import DeviceContext
 from .execution import AggregateContext
+from .mode import get_default_mode, set_default_mode, with_mode
 from .stack import (
     context_stack,
     current_context,
@@ -25,4 +26,7 @@ __all__ = [
     "resolve_context",
     "sub_context",
     "with_context",
+    "get_default_mode",
+    "set_default_mode",
+    "with_mode",
 ]

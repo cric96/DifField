@@ -296,6 +296,92 @@ class TerritoriesRenderer:
                 weight="bold",
             )
 
+    def render_territory_evolution(
+        self,
+        checkpoints: list[dict],
+        viz_prefix: str,
+    ) -> None:
+        if plt is None or not checkpoints:
+            return
+
+        from ..domain.factory import build_scenario_from_spec, build_teacher_model_from_spec
+
+        scenario = build_scenario_from_spec(self.spec)
+        teacher = build_teacher_model_from_spec(self.spec).to(scenario.device)
+
+        if self.spec.evaluation.eval_seeds:
+            eval_seed = self.spec.evaluation.eval_seeds[0]
+        else:
+            eval_seed = self.spec.training.train_seed
+
+        eval_layout = build_layout(scenario, seed=eval_seed, **self._program_args())
+
+        with torch.no_grad():
+            teacher_output = rollout_summary(
+                self.spec, scenario, eval_layout, teacher, name_prefix="teacher_evo_viz"
+            )
+
+        epochs = [cp["epoch"] for cp in checkpoints]
+        num_epochs = len(epochs)
+
+        max_cols = min(num_epochs, 5)
+        num_row_groups = (num_epochs + max_cols - 1) // max_cols
+
+        fig_height = 4.5 * num_row_groups + 1.5
+        fig_width = 3.8 * max_cols + 1.0
+        fig, axes = plt.subplots(num_row_groups, max_cols, figsize=(fig_width, fig_height))
+
+        if num_row_groups == 1 and max_cols == 1:
+            axes = [[axes]]
+        elif num_row_groups == 1:
+            axes = [axes]
+        elif max_cols == 1:
+            axes = [[ax] for ax in axes]
+
+        owner_cmap, owner_norm, _, _ = self._owner_style(eval_layout.num_sinks)
+
+        try:
+            from ...shared.plotting import to_grid
+        except ImportError:
+            from shared.plotting import to_grid
+
+        rows, cols = self.spec.grid.rows, self.spec.grid.cols
+        teacher_owner = to_grid(teacher_output.hard_owner.float(), rows, cols, replace_inf=False)
+
+        for idx, cp in enumerate(checkpoints):
+            row = idx // max_cols
+            col = idx % max_cols
+            ax = axes[row][col]
+
+            from ..model.territory_model import LearnableTerritoryModel
+            model = LearnableTerritoryModel.from_spec(self.spec.model).to(scenario.device)
+            model.load_state_dict(cp["state_dict"])
+
+            with torch.no_grad():
+                model_output = rollout_summary(
+                    self.spec, scenario, eval_layout, model, name_prefix=f"evo_viz_{idx}"
+                )
+
+            learned_owner = to_grid(model_output.hard_owner.float(), rows, cols, replace_inf=False)
+
+            ax.imshow(teacher_owner, cmap=owner_cmap, norm=owner_norm, interpolation="nearest", alpha=0.35)
+            ax.imshow(learned_owner, cmap=owner_cmap, norm=owner_norm, interpolation="nearest", alpha=0.65)
+            self._mark_sinks(ax, eval_layout.sink_positions)
+            ax.set_title(f"Epoch {epochs[idx]}", fontsize=10)
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+        for idx in range(num_epochs, num_row_groups * max_cols):
+            row = idx // max_cols
+            col = idx % max_cols
+            axes[row][col].axis("off")
+
+        fig.suptitle(f"Territory evolution over time (eval seed={eval_seed})", fontsize=13)
+        fig.tight_layout()
+        Path(viz_prefix).parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(f"{viz_prefix}_evolution.png", dpi=150)
+        plt.close(fig)
+
     def _plot_sink_bars(
         self, axis, teacher_values, learned_values, *, title: str, ylabel: str
     ) -> None:

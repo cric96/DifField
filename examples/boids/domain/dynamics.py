@@ -102,7 +102,7 @@ def step_boids_dynamics(
         return torch.nan_to_num(clipped_vel, nan=0.0, posinf=0.0, neginf=0.0)
 
     with ctx.round():
-        vel = rep("vel", velocities, step_velocity_update)
+        vel = rep(velocities, step_velocity_update, name="vel")
 
     new_pos = pos_t + dt * vel
     new_pos, vel_bounced = bounce_in_box(new_pos, vel)
@@ -169,8 +169,8 @@ def rollout_with_dynamic_topology(
             scenario.update_positions(
                 scenario.positions.detach(), refresh_topology=False
             )
-            detached_vel = ctx._ctx.state.get_or_init("vel", init_vel).detach()
-            ctx._ctx.state.update("vel", detached_vel)
+            detached_vel = ctx._ctx.state.get_or_init(init_vel, name="vel").detach()
+            ctx._ctx.state.update(detached_vel, name="vel")
 
         scenario.sync_context(ctx._ctx)
         pos_t = scenario.positions
@@ -196,12 +196,12 @@ def rollout_with_dynamic_topology(
             return resolved_clipped
 
         with ctx.round():
-            vel = rep("vel", init_vel, rollout_velocity_update)
+            vel = rep(init_vel, rollout_velocity_update, name="vel")
 
         new_pos = pos_t + dt * vel
         new_pos, vel_bounced = bounce_in_box(new_pos, vel)
         scenario.update_positions(new_pos, refresh_topology=True)
-        ctx._ctx.state.update("vel", vel_bounced)
+        ctx._ctx.state.update(vel_bounced, name="vel")
 
         positions_seq.append(scenario.positions)
         velocities_seq.append(vel_bounced)

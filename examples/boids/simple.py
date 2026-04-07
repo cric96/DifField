@@ -138,7 +138,6 @@ def main() -> None:
         pos_t = scenario.positions
         with ctx.round():
             vel = rep(
-                "vel",
                 velocities0,
                 lambda prev: aggregate_boids_velocity(
                     prev,
@@ -151,11 +150,12 @@ def main() -> None:
                     damping=args.damping,
                     max_speed=args.speed,
                 ),
+                name="vel",
             )
         new_pos = pos_t + args.dt * vel
         new_pos, vel = bounce_in_box(new_pos, vel)
         scenario.update_positions(new_pos, refresh_topology=True)
-        ctx._ctx.state.update("vel", vel)
+        ctx._ctx.state.update(vel, name="vel")
         if step in record_rounds:
             positions_by_round[step] = scenario.positions.detach().cpu().clone()
             edge_index_by_round[step] = scenario.edge_index.detach().cpu().clone()

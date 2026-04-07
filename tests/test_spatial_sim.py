@@ -166,9 +166,9 @@ class TestSpatialScenarioTopology:
 
         def program(_runtime):
             return rep(
-                "dist",
                 float("inf"),
                 lambda d: mux(source, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                name="dist",
             )
 
         output, _ = engine.run(

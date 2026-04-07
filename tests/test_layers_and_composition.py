@@ -29,7 +29,7 @@ class TestLayersInDSL:
 
     def test_rep_layer_in_dsl(self, line_ctx):
         n = line_ctx.num_nodes
-        rep_layer = RepLayer("counter", 0.0, lambda s: s + 1)
+        rep_layer = RepLayer(0.0, lambda s: s + 1, name="counter")
         results = []
         for _ in range(3):
             with line_ctx.round():
@@ -286,8 +286,8 @@ class TestLocalAggregateBranchNbr:
         with line_ctx.round():
             branch(
                 cond1,
-                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 5.0),
-                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 1.0),
+                lambda: rep(torch.zeros(n), lambda s: s + 5.0, name="reset_rep"),
+                lambda: rep(torch.zeros(n), lambda s: s + 1.0, name="reset_rep"),
                 branch_name="switch_test",
                 reset_states={"reset_rep": 0.0},
             )
@@ -295,8 +295,8 @@ class TestLocalAggregateBranchNbr:
         with line_ctx.round():
             result = branch(
                 cond2,
-                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 5.0),
-                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 1.0),
+                lambda: rep(torch.zeros(n), lambda s: s + 5.0, name="reset_rep"),
+                lambda: rep(torch.zeros(n), lambda s: s + 1.0, name="reset_rep"),
                 branch_name="switch_test",
                 reset_states={"reset_rep": 0.0},
             )

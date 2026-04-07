@@ -5,9 +5,10 @@ from __future__ import annotations
 import torch.nn as nn
 from torch import Tensor
 
-from ..constants import CONDITION_THRESHOLD, DEFAULT_TAU_BRANCH
+from ..constants import DEFAULT_TAU_BRANCH
 from ..core import RoundContext, resolve_context, sub_context
-from ..functional import mask_edges_for_partition, soft_where
+from ..core.mode import get_default_mode
+from ..functional import field_where, mask_edges_for_partition
 
 
 class BranchLayer(nn.Module):
@@ -19,8 +20,8 @@ class BranchLayer(nn.Module):
         false_branch: nn.Module,
         branch_name: str = "branch",
         reset_states: dict[str, float | Tensor] | None = None,
-        mode: str = "hard",
-        tau: float = DEFAULT_TAU_BRANCH,
+        mode: str | None = None,
+        tau: float | None = None,
     ) -> None:
         super().__init__()
         self.true_branch = true_branch
@@ -39,6 +40,9 @@ class BranchLayer(nn.Module):
         if self.reset_states:
             ctx.state.reset_states_for_nodes(switched, self.reset_states)
 
+        effective_mode = self.mode if self.mode is not None else get_default_mode()
+        effective_tau = self.tau if self.tau is not None else DEFAULT_TAU_BRANCH
+
         edge_index_true, edge_weight_true, message_weight_true = (
             mask_edges_for_partition(
                 ctx.edge_index,
@@ -46,8 +50,8 @@ class BranchLayer(nn.Module):
                 partition=True,
                 edge_weight=ctx.edge_weight,
                 message_weight=ctx.message_weight,
-                mode=self.mode,
-                tau=self.tau,
+                mode=effective_mode,
+                tau=effective_tau,
             )
         )
         edge_index_false, edge_weight_false, message_weight_false = (
@@ -57,8 +61,8 @@ class BranchLayer(nn.Module):
                 partition=False,
                 edge_weight=ctx.edge_weight,
                 message_weight=ctx.message_weight,
-                mode=self.mode,
-                tau=self.tau,
+                mode=effective_mode,
+                tau=effective_tau,
             )
         )
 
@@ -82,32 +86,33 @@ class BranchLayer(nn.Module):
             state_after_true = states_after_true.get(key)
             state_after_false = states_after_false.get(key)
             if state_after_true is not None and state_after_false is not None:
-                cond_float = cond.float()
-                if cond_float.dim() < state_after_true.dim():
-                    cond_float = cond_float.unsqueeze(-1)
                 ctx.state.update(
-                    key,
-                    soft_where(
-                        cond_float >= CONDITION_THRESHOLD,
-                        state_after_true,
-                        state_after_false,
-                    ),
+                    field_where(cond, state_after_true, state_after_false, mode=effective_mode, tau=effective_tau),
+                    name=key,
                 )
             elif state_after_true is not None:
-                ctx.state.update(key, state_after_true)
+                ctx.state.update(state_after_true, name=key)
             else:
-                ctx.state.update(key, state_after_false)
+                ctx.state.update(state_after_false, name=key)
 
-        return soft_where(cond, out_true, out_false)
+        return field_where(cond, out_true, out_false, mode=effective_mode, tau=effective_tau)
 
 
 class MuxLayer(nn.Module):
     """Pointwise conditional: evaluate both branches, then select per node."""
 
-    def __init__(self, true_branch: nn.Module, false_branch: nn.Module) -> None:
+    def __init__(
+        self,
+        true_branch: nn.Module,
+        false_branch: nn.Module,
+        mode: str | None = None,
+        tau: float | None = None,
+    ) -> None:
         super().__init__()
         self.true_branch = true_branch
         self.false_branch = false_branch
+        self.mode = mode
+        self.tau = tau
 
     def forward(
         self, x: Tensor, cond: Tensor, ctx: RoundContext | None = None
@@ -116,4 +121,6 @@ class MuxLayer(nn.Module):
         ctx = resolve_context(ctx)
         out_true = self.true_branch(x, ctx)
         out_false = self.false_branch(x, ctx)
-        return soft_where(cond, out_true, out_false)
+        effective_mode = self.mode if self.mode is not None else get_default_mode()
+        effective_tau = self.tau if self.tau is not None else DEFAULT_TAU_BRANCH
+        return field_where(cond, out_true, out_false, mode=effective_mode, tau=effective_tau)

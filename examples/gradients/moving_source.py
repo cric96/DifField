@@ -73,7 +73,7 @@ def main():
 
     def program(runtime):
         source_field = runtime.signals["source"]
-        return rep("dist", float("inf"), lambda dist_old: mux(source_field, field.of(0.0), nbr(dist_old + weight, aggr="min")))
+        return rep(float("inf"), lambda dist_old: mux(source_field, field.of(0.0), nbr(dist_old + weight, aggr="min")), name="dist")
 
     output, runtime = engine.run(
         rounds=args.rounds,

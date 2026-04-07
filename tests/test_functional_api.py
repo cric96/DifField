@@ -7,7 +7,7 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from autofield import mask_edges, mask_edges_for_partition, scatter_aggr, soft_where
+from autofield import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
 from autofield.functional import scatter_min_by_first
 
 
@@ -116,27 +116,58 @@ class TestScatterAggr:
         assert torch.allclose(out, expected, atol=1e-4)
 
 
-class TestSoftWhere:
-    def test_basic(self):
+class TestFieldWhere:
+    def test_basic_hard(self):
         cond = torch.tensor([1.0, 0.0, 1.0])
         x = torch.tensor([10.0, 20.0, 30.0])
         y = torch.tensor([100.0, 200.0, 300.0])
-        result = soft_where(cond, x, y)
+        result = field_where(cond, x, y, mode="hard")
         assert torch.allclose(result, torch.tensor([10.0, 200.0, 30.0]))
 
-    def test_boolean_cond(self):
+    def test_boolean_cond_hard(self):
         cond = torch.tensor([True, False])
         x = torch.tensor([1.0, 2.0])
         y = torch.tensor([3.0, 4.0])
-        result = soft_where(cond, x, y)
+        result = field_where(cond, x, y, mode="hard")
         assert torch.allclose(result, torch.tensor([1.0, 4.0]))
 
     def test_avoids_nan_from_inactive_infinite_branch(self):
         cond = torch.tensor([1.0, 0.0])
         x = torch.tensor([5.0, float("inf")])
         y = torch.tensor([float("inf"), 7.0])
-        result = soft_where(cond, x, y)
+        result = field_where(cond, x, y, mode="hard")
         assert torch.allclose(result, torch.tensor([5.0, 7.0]))
+
+    def test_soft_mode_interpolates(self):
+        cond = torch.tensor([1.0, 0.0, 0.5])
+        x = torch.tensor([10.0, 20.0, 30.0])
+        y = torch.tensor([100.0, 200.0, 300.0])
+        result = field_where(cond, x, y, mode="soft", tau=100.0)
+        assert torch.allclose(result[0], torch.tensor(10.0), atol=0.01)
+        assert torch.allclose(result[1], torch.tensor(200.0), atol=0.01)
+        assert torch.allclose(result[2], torch.tensor(165.0), atol=1.0)
+
+    def test_soft_mode_gradient_wrt_cond(self):
+        cond = torch.tensor([0.6], requires_grad=True)
+        x = torch.tensor([10.0])
+        y = torch.tensor([0.0])
+        result = field_where(cond, x, y, mode="soft", tau=10.0)
+        result.backward()
+        assert cond.grad is not None
+        assert cond.grad.abs().item() > 0.0
+
+    def test_default_mode_uses_global(self):
+        from autofield import get_default_mode, set_default_mode, with_mode
+        assert get_default_mode() == "hard"
+        cond = torch.tensor([0.5])
+        x = torch.tensor([1.0])
+        y = torch.tensor([2.0])
+        result = field_where(cond, x, y)
+        assert torch.allclose(result, torch.tensor([1.0]))
+
+        with with_mode("soft"):
+            assert get_default_mode() == "soft"
+        assert get_default_mode() == "hard"
 
 
 class TestMaskEdges:
