@@ -52,28 +52,36 @@ The program converges to a **hop-distance field** — every node holds its minim
 
 AutoField is organized in five conceptual layers:
 
-```
-┌─────────────────────────────────────────────────┐
-│              Simulation Layer                    │
-│  Scenario → Engine → Events → Recording          │
-├─────────────────────────────────────────────────┤
-│              DSL Primitives                      │
-│  rep · nbr · branch · mux · gradient · collect   │
-├─────────────────────────────────────────────────┤
-│         PyTorch nn.Module Layers                 │
-│  RepLayer · NbrLayer · BranchLayer · MuxLayer    │
-├─────────────────────────────────────────────────┤
-│            Functional Utilities                  │
-│  scatter_aggr · soft_where · masking · folding   │
-├─────────────────────────────────────────────────┤
-│              Core Runtime                        │
-│  AggregateContext · DeviceContext · StateManager │
-└─────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph DSL["DSL Primitives"]
+        direction LR
+        DSL_API["rep · nbr · branch · mux · gradient · broadcast"]
+    end
+
+    subgraph Layers["Differentiable Layers"]
+        direction LR
+        LAYERS_API["RepLayer · NbrLayer · BranchLayer · MuxLayer"]
+    end
+
+    subgraph Core["Core Runtime"]
+        direction LR
+        CORE_API["AggregateContext · RoundContext · StateManager"]
+    end
+
+    subgraph Sim["Simulation Layer"]
+        direction LR
+        SIM_API["SimulationEngine · Scenario · EventSchedule · Recorder"]
+    end
+
+    User["User Program"] --> DSL
+    DSL -->|"instantiates"| Layers
+    Layers -->|"uses"| Core
+    Sim -->|"orchestrates"| Core
+    Sim -->|"returns"| User
 ```
 
-Each layer builds on the one below it. The **Core Runtime** manages graph topology and per-node state; **Layers** wrap operations as `nn.Module`s; **DSL Primitives** provide the user-facing API; **Functional** offers low-level differentiable helpers; and the **Simulation Layer** orchestrates multi-round executions with events and recording.
-
-See [docs/architecture.md](docs/architecture.md) for detailed UML diagrams and conceptual models.
+Each layer builds on the one below it. The **Core Runtime** manages graph topology and per-node state; **Layers** wrap operations as differentiable `nn.Module`s; **DSL Primitives** provide the user-facing API; and the **Simulation Layer** orchestrates multi-round executions with events, dynamic topologies, and recording.
 
 ---
 
@@ -85,7 +93,7 @@ The DSL provides composable field operators that run on every node of the graph 
 
 | Primitive | Description |
 |-----------|-------------|
-| `rep(name, init, fn)` | Per-node recurrent state — evolves over rounds |
+| `rep(init, fn)` | Per-node recurrent state — evolves over rounds |
 | `nbr(expr, aggr)` | Neighborhood aggregation — sends messages along edges |
 | `branch(cond, if_true, if_false)` | Domain restriction with communication isolation |
 | `mux(cond, if_true, if_false)` | Pointwise conditional selection (no topology change) |
