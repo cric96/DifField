@@ -26,22 +26,31 @@ class RepLayer(nn.Module):
         self.init_value = init_value
         register_callable(self, "update_fn", update_fn, "_update_fn")
 
+        try:
+            target = (
+                self.update_fn.forward
+                if isinstance(self.update_fn, nn.Module)
+                else self.update_fn
+            )
+            signature = inspect.signature(target)
+            self._num_positional_params = len(
+                [
+                    param
+                    for param in signature.parameters.values()
+                    if param.default is inspect.Parameter.empty
+                ]
+            )
+        except (ValueError, TypeError):
+            self._num_positional_params = 3
+
     def forward(self, x: Tensor, ctx: RoundContext | None = None) -> Tensor:
         """Run one step of the recurrence."""
         ctx = resolve_context(ctx)
         state = ctx.state.get_or_init(self.name, self.init_value)
-        try:
-            target = self.update_fn.forward if isinstance(self.update_fn, nn.Module) else self.update_fn
-            signature = inspect.signature(target)
-            num_positional_params = len(
-                [param for param in signature.parameters.values() if param.default is inspect.Parameter.empty]
-            )
-        except (ValueError, TypeError):
-            num_positional_params = 3
 
-        if num_positional_params <= 1:
+        if self._num_positional_params <= 1:
             new_state = self.update_fn(state)
-        elif num_positional_params == 2:
+        elif self._num_positional_params == 2:
             new_state = self.update_fn(state, x)
         else:
             new_state = self.update_fn(state, x, ctx)

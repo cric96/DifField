@@ -9,7 +9,7 @@ import torch.nn as nn
 from torch import Tensor
 
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
-from ..core import RoundContext, current_context, pop_context, push_context
+from ..core import RoundContext, current_context, with_context
 from ..functional import soft_where
 from .neighbor import NeighborExpr
 
@@ -23,12 +23,9 @@ class _LambdaModule(nn.Module):
 
     def forward(self, x: Tensor, ctx: RoundContext | None = None) -> Tensor:
         if ctx is not None:
-            push_context(ctx)
-        try:
-            return self._fn()
-        finally:
-            if ctx is not None:
-                pop_context()
+            with with_context(ctx):
+                return self._fn()
+        return self._fn()
 
 
 def rep(name: str, init: float | Tensor, fn: Callable[[Tensor], Tensor]) -> Tensor:
@@ -52,7 +49,9 @@ def nbr(
     r"""Neighborhood message passing."""
     from ..layers import NbrLayer
 
-    return NbrLayer(aggr=aggr, mode=mode, tau=tau, fill_value=fill_value, include_self=include_self)(
+    return NbrLayer(
+        aggr=aggr, mode=mode, tau=tau, fill_value=fill_value, include_self=include_self
+    )(
         expr,
         edge_index=edge_index,
         edge_weight=edge_weight,
@@ -73,7 +72,9 @@ def branch(
     from ..layers import BranchLayer
 
     true_mod = _LambdaModule(if_true) if not isinstance(if_true, nn.Module) else if_true
-    false_mod = _LambdaModule(if_false) if not isinstance(if_false, nn.Module) else if_false
+    false_mod = (
+        _LambdaModule(if_false) if not isinstance(if_false, nn.Module) else if_false
+    )
     return BranchLayer(
         true_mod,
         false_mod,
@@ -98,13 +99,17 @@ def mux(
 def const(value: float) -> Tensor:
     """Broadcast a scalar to all nodes in the current context."""
     ctx = current_context()
-    return torch.full((ctx.num_nodes,), value, dtype=torch.float32, device=ctx.edge_index.device)
+    return torch.full(
+        (ctx.num_nodes,), value, dtype=torch.float32, device=ctx.edge_index.device
+    )
 
 
 def mid() -> Tensor:
     """Return tensor of node IDs [0, 1, ..., N-1] as float."""
     ctx = current_context()
-    return torch.arange(ctx.num_nodes, dtype=torch.float32, device=ctx.edge_index.device)
+    return torch.arange(
+        ctx.num_nodes, dtype=torch.float32, device=ctx.edge_index.device
+    )
 
 
 class field:

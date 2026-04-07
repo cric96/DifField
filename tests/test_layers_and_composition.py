@@ -194,3 +194,125 @@ class TestComposition:
         assert torch.allclose(results_x[2], torch.tensor([3.0, 3.0, 3.0, 3.0]))
         assert torch.allclose(results_y[2], torch.tensor([6.0, 6.0, 12.0, 12.0]))
         assert torch.allclose(results_z[2], torch.tensor([19.0, 38.0, 40.0, 26.0]))
+
+
+class TestLocalAggregateBranchNbr:
+    def test_nbr_inside_branch_ignores_cross_partition_neighbors(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
+        x = torch.tensor([10.0, 20.0, 30.0, 40.0])
+        cond = torch.tensor([True, True, False, False])
+
+        with line_ctx.round():
+            result = branch(
+                cond,
+                lambda: nbr(x, aggr="sum"),
+                lambda: nbr(x, aggr="max"),
+                branch_name="isolation_test",
+            )
+
+        assert torch.allclose(result, torch.tensor([20.0, 10.0, 40.0, 30.0]))
+
+    def test_rep_with_nbr_in_branch_isolates_accumulation(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
+        cond = torch.tensor([True, True, False, False])
+
+        results = []
+        for _ in range(3):
+            with line_ctx.round():
+                val = branch(
+                    cond,
+                    lambda: rep(
+                        "t", torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0
+                    ),
+                    lambda: rep(
+                        "f", torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0
+                    ),
+                    branch_name="rep_nbr_iso",
+                )
+            results.append(val.clone())
+
+        assert torch.allclose(results[0], torch.tensor([1.0, 1.0, 10.0, 10.0]))
+        assert torch.allclose(results[1], torch.tensor([2.0, 2.0, 20.0, 20.0]))
+        assert torch.allclose(results[2], torch.tensor([3.0, 3.0, 30.0, 30.0]))
+
+    def test_full_local_aggregate_round_pattern(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
+        cond = torch.tensor([True, True, False, False])
+        local_input = torch.tensor([1.0, 2.0, 3.0, 4.0])
+
+        results = []
+        for _ in range(3):
+            with line_ctx.round():
+                val = rep(
+                    "agg_state",
+                    torch.zeros(n),
+                    lambda s: branch(
+                        cond,
+                        lambda: nbr(s, aggr="sum") + local_input,
+                        lambda: (
+                            nbr(s, aggr="max", fill_value=float("-inf"))
+                            + local_input * 2
+                        ),
+                        branch_name="local_round",
+                    ),
+                )
+            results.append(val.clone())
+
+        assert torch.allclose(results[0], torch.tensor([1.0, 2.0, 6.0, 8.0]))
+        assert torch.allclose(results[1], torch.tensor([3.0, 3.0, 14.0, 14.0]))
+        assert torch.allclose(results[2], torch.tensor([4.0, 5.0, 20.0, 22.0]))
+
+    def test_soft_branch_nbr_approximates_hard_isolation(self, line_topology):
+        edge_index, n = line_topology
+        x = torch.tensor([10.0, 20.0, 30.0, 40.0])
+        cond = torch.tensor([True, True, False, False])
+
+        hard_ctx = AggregateContext(edge_index, n)
+        with hard_ctx.round():
+            hard = branch(
+                cond,
+                lambda: nbr(x, aggr="sum"),
+                lambda: nbr(x, aggr="max"),
+                branch_name="soft_vs_hard",
+                mode="hard",
+            )
+
+        soft_ctx = AggregateContext(edge_index, n)
+        with soft_ctx.round():
+            soft = branch(
+                cond,
+                lambda: nbr(x, aggr="sum"),
+                lambda: nbr(x, aggr="max"),
+                branch_name="soft_vs_hard",
+                mode="soft",
+                tau=0.05,
+            )
+
+        assert soft.shape == hard.shape
+        assert torch.isfinite(soft).all()
+        assert (soft - hard).abs().max() < 25.0
+
+    def test_branch_state_reset_on_partition_switch(self, line_ctx):
+        n = line_ctx._ctx.num_nodes
+        cond1 = torch.tensor([True, True, False, False])
+        cond2 = torch.tensor([True, False, False, False])
+
+        with line_ctx.round():
+            branch(
+                cond1,
+                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 5.0),
+                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 1.0),
+                branch_name="switch_test",
+                reset_states={"reset_rep": 0.0},
+            )
+
+        with line_ctx.round():
+            result = branch(
+                cond2,
+                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 5.0),
+                lambda: rep("reset_rep", torch.zeros(n), lambda s: s + 1.0),
+                branch_name="switch_test",
+                reset_states={"reset_rep": 0.0},
+            )
+
+        assert torch.allclose(result, torch.tensor([10.0, 1.0, 2.0, 2.0]))

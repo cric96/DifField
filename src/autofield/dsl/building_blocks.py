@@ -14,12 +14,11 @@ from .helpers import (
     broadcast_like,
     edge_sources_targets,
     ensure_field,
-    hard_parent_ids,
     hard_parent_ids_with_edge_cost,
     pack_cast_state,
     require_scalar_field,
+    resolve_edge_cost,
     scale_messages,
-    soft_parent_weights,
     soft_parent_weights_with_edge_cost,
     unpack_cast_state,
     validate_cast_mode,
@@ -71,21 +70,10 @@ def gradient_cast(
     init_state = pack_cast_state(field.inf(), center_field)
     source_state = pack_cast_state(field.zeros(), center_field)
 
-    def edge_cost_for_cast(ctx: RoundContext) -> Tensor:
-        if weight is None:
-            if ctx.edge_weight is not None:
-                return ctx.edge_weight
-            return torch.ones(ctx.edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32)
-        if isinstance(weight, NeighborExpr):
-            return weight.evaluate(ctx=ctx, edge_index=ctx.edge_index, edge_weight=ctx.edge_weight)
-        src, _ = edge_sources_targets(ctx.edge_index)
-        field_value = ensure_field(weight, ctx)
-        return field_value[src]
-
     def update(state: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
         old_distance, old_payload = unpack_cast_state(state, payload_shape)
         src, tgt = edge_sources_targets(ctx.edge_index)
-        edge_cost = edge_cost_for_cast(ctx)
+        edge_cost = resolve_edge_cost(weight, ctx)
         messages = pack_cast_state(
             old_distance[src] + edge_cost,
             accumulation(old_payload[src]),
@@ -103,9 +91,10 @@ def gradient_cast(
     state = rep(f"_gc_{name}", init_state, update)
     return unpack_cast_state(state, payload_shape)[1]
 
+
 def broadcast(
-    mask: Tensor, 
-    value: Tensor, 
+    mask: Tensor,
+    value: Tensor,
     name: str = "bc_cc",
     weight: float | Tensor | NeighborExpr | None = None,
 ) -> Tensor:
@@ -139,22 +128,13 @@ def collect_cast(
     local_field = ensure_field(local)
     null_field = broadcast_like(null, local_field)
 
-    def edge_cost_for_collect(ctx: RoundContext) -> Tensor:
-        if weight is None:
-            if ctx.edge_weight is not None:
-                return ctx.edge_weight
-            return torch.ones(ctx.edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32)
-        if isinstance(weight, NeighborExpr):
-            return weight.evaluate(ctx=ctx, edge_index=ctx.edge_index, edge_weight=ctx.edge_weight)
-        src, _ = edge_sources_targets(ctx.edge_index)
-        field_value = ensure_field(weight, ctx)
-        return field_value[src]
-
     def update(collected: Tensor, _x: Tensor, ctx: RoundContext) -> Tensor:
         src, tgt = edge_sources_targets(ctx.edge_index)
-        edge_cost = edge_cost_for_collect(ctx)
+        edge_cost = resolve_edge_cost(weight, ctx)
         if mode == "hard":
-            parent_ids = hard_parent_ids_with_edge_cost(potential_field, edge_cost=edge_cost, ctx=ctx)
+            parent_ids = hard_parent_ids_with_edge_cost(
+                potential_field, edge_cost=edge_cost, ctx=ctx
+            )
             keep = parent_ids[src] == tgt
             child_values = scatter_binary_fold(
                 collected[src[keep]],
@@ -164,7 +144,9 @@ def collect_cast(
                 null_field,
             )
         else:
-            parent_weight = soft_parent_weights_with_edge_cost(potential_field, tau, edge_cost=edge_cost, ctx=ctx)
+            parent_weight = soft_parent_weights_with_edge_cost(
+                potential_field, tau, edge_cost=edge_cost, ctx=ctx
+            )
             child_values = scatter_binary_fold(
                 scale_messages(collected[src], parent_weight),
                 tgt,

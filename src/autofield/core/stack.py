@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import threading
-from typing import TYPE_CHECKING
+from contextlib import contextmanager
+from typing import TYPE_CHECKING, Generator
 
 if TYPE_CHECKING:
     from .context import RoundContext
@@ -38,3 +39,13 @@ def current_context() -> RoundContext:
 
 def resolve_context(ctx: RoundContext | None) -> RoundContext:
     return ctx if ctx is not None else current_context()
+
+
+@contextmanager
+def with_context(ctx: RoundContext) -> Generator[RoundContext, None, None]:
+    """Context manager to safely push and pop a RoundContext."""
+    push_context(ctx)
+    try:
+        yield ctx
+    finally:
+        pop_context()

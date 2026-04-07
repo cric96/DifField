@@ -49,14 +49,18 @@ class StateManager:
         cond_bool = cond.bool() if cond.dtype != torch.bool else cond
         if branch_name not in self._branch_prev:
             self._branch_prev[branch_name] = cond_bool.clone()
-            return torch.zeros(self.num_nodes, dtype=torch.bool, device=cond_bool.device)
+            return torch.zeros(
+                self.num_nodes, dtype=torch.bool, device=cond_bool.device
+            )
 
         prev = self._branch_prev[branch_name]
         switched = prev != cond_bool
         self._branch_prev[branch_name] = cond_bool.clone()
         return switched
 
-    def reset_states_for_nodes(self, mask: Tensor, init_map: dict[str, Tensor | float]) -> None:
+    def reset_states_for_nodes(
+        self, mask: Tensor, init_map: dict[str, Tensor | float]
+    ) -> None:
         """Reset rep states for nodes indicated by *mask*."""
         if not mask.any():
             return
@@ -68,7 +72,11 @@ class StateManager:
             current_state = self._states[name]
             broadcast_mask = mask.unsqueeze(-1) if current_state.dim() > 1 else mask
             if isinstance(init_val, Tensor):
-                reset_val = init_val.expand_as(current_state) if init_val.dim() == 0 else init_val
+                reset_val = (
+                    init_val.expand_as(current_state)
+                    if init_val.dim() == 0
+                    else init_val
+                )
             else:
                 reset_val = torch.full_like(current_state, init_val)
             self._states[name] = torch.where(broadcast_mask, reset_val, current_state)
@@ -77,3 +85,19 @@ class StateManager:
         """Clear all states and branch tracking."""
         self._states.clear()
         self._branch_prev.clear()
+
+    def snapshot(self) -> dict[str, Tensor]:
+        """Return a deep copy of all current states."""
+        return {key: value.clone() for key, value in self._states.items()}
+
+    def restore(self, snapshot: dict[str, Tensor]) -> None:
+        """Restore states from a snapshot."""
+        self._states = {key: value.clone() for key, value in snapshot.items()}
+
+    def get_state(self, name: str) -> Tensor | None:
+        """Get a specific state by name, returning None if not found."""
+        return self._states.get(name)
+
+    def keys(self) -> list[str]:
+        """Return a list of all state keys."""
+        return list(self._states.keys())

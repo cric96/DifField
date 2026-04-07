@@ -2,18 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 from torch import Tensor
 from torch_geometric.nn import MessagePassing
 
-from ..constants import DEFAULT_TAU_SOFT_AGGR, FILL_VALUE_DEFAULT, FILL_VALUE_MAX, FILL_VALUE_MIN
+from ..constants import (
+    DEFAULT_TAU_SOFT_AGGR,
+    FILL_VALUE_DEFAULT,
+    FILL_VALUE_MAX,
+    FILL_VALUE_MIN,
+)
 from ..core import RoundContext, resolve_context
 from ..functional import scatter_aggr
 from ..dsl.helpers import edge_sources_targets, scale_messages
 from .common import register_callable
+
+if TYPE_CHECKING:
+    from ..dsl.neighbor import NeighborExpr
 
 
 class _PyGNbrMessagePassing(MessagePassing):
@@ -100,8 +108,10 @@ class NbrLayer(nn.Module):
         if fill_value is None:
             if isinstance(aggr, str):
                 self.fill_value = (
-                    FILL_VALUE_MIN if aggr == "min"
-                    else FILL_VALUE_MAX if aggr == "max"
+                    FILL_VALUE_MIN
+                    if aggr == "min"
+                    else FILL_VALUE_MAX
+                    if aggr == "max"
                     else FILL_VALUE_DEFAULT
                 )
             else:
@@ -130,14 +140,18 @@ class NbrLayer(nn.Module):
         from ..dsl.neighbor import NeighborExpr
 
         if isinstance(x, NeighborExpr) and effective_tag is not None:
-            raise ValueError("Tagged nbr is not supported for edge-wise neighbor expressions")
+            raise ValueError(
+                "Tagged nbr is not supported for edge-wise neighbor expressions"
+            )
 
         if effective_tag is not None:
             ctx.exports[effective_tag] = x
 
         src = x
-        if effective_tag is not None and effective_tag in ctx._neighbor_message_overrides:
-            src = ctx._neighbor_message_overrides[effective_tag]
+        if effective_tag is not None:
+            override = ctx.get_message_override(effective_tag)
+            if override is not None:
+                src = override
 
         edge_idx = edge_index if edge_index is not None else ctx.edge_index
         message_weight = edge_weight if edge_weight is not None else ctx.message_weight
@@ -187,13 +201,17 @@ class NbrLayer(nn.Module):
         keep_mask = source_index != target_index
         kept_edge_idx = edge_idx[:, keep_mask]
         kept_target_index = target_index[keep_mask]
-        kept_message_weight = message_weight[keep_mask] if message_weight is not None else None
+        kept_message_weight = (
+            message_weight[keep_mask] if message_weight is not None else None
+        )
 
         if isinstance(src, NeighborExpr):
             messages = src.evaluate(
                 ctx=ctx,
                 edge_index=kept_edge_idx,
-                edge_weight=ctx.edge_weight[keep_mask] if ctx.edge_weight is not None else None,
+                edge_weight=ctx.edge_weight[keep_mask]
+                if ctx.edge_weight is not None
+                else None,
             )
             if kept_message_weight is not None:
                 messages = scale_messages(messages, kept_message_weight)
@@ -208,7 +226,9 @@ class NbrLayer(nn.Module):
         if include_self is True:
             self_messages = self._self_messages(src, ctx)
             messages = torch.cat((messages, self_messages), dim=0)
-            self_targets = torch.arange(ctx.num_nodes, device=target_index.device, dtype=target_index.dtype)
+            self_targets = torch.arange(
+                ctx.num_nodes, device=target_index.device, dtype=target_index.dtype
+            )
             kept_target_index = torch.cat((kept_target_index, self_targets), dim=0)
 
         return messages, kept_target_index
@@ -217,21 +237,29 @@ class NbrLayer(nn.Module):
         from ..dsl.neighbor import NeighborExpr
 
         if isinstance(src, NeighborExpr):
-            self_index = torch.arange(ctx.num_nodes, device=ctx.edge_index.device, dtype=torch.long)
+            self_index = torch.arange(
+                ctx.num_nodes, device=ctx.edge_index.device, dtype=torch.long
+            )
             self_edge_index = torch.stack((self_index, self_index), dim=0)
             self_edge_weight = torch.zeros(
                 ctx.num_nodes,
                 device=ctx.edge_index.device,
-                dtype=ctx.edge_weight.dtype if ctx.edge_weight is not None else torch.float32,
+                dtype=ctx.edge_weight.dtype
+                if ctx.edge_weight is not None
+                else torch.float32,
             )
-            return src.evaluate(ctx=ctx, edge_index=self_edge_index, edge_weight=self_edge_weight)
+            return src.evaluate(
+                ctx=ctx, edge_index=self_edge_index, edge_weight=self_edge_weight
+            )
 
         self_messages = src
         if self.transform_fn is not None:
             self_messages = self.transform_fn(self_messages)
         return self_messages
 
-    def _aggregate_messages(self, messages: Tensor, target_index: Tensor, num_nodes: int) -> Tensor:
+    def _aggregate_messages(
+        self, messages: Tensor, target_index: Tensor, num_nodes: int
+    ) -> Tensor:
         return scatter_aggr(
             messages,
             target_index,

@@ -14,11 +14,17 @@ from .state import StateManager
 class RoundContext:
     """Holds the graph topology and per-round execution state."""
 
-    def __init__(self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None) -> None:
+    def __init__(
+        self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None
+    ) -> None:
         self.edge_index = edge_index
-        self.edge_weight = edge_weight if edge_weight is not None else torch.ones(
-            edge_index.shape[1],
-            device=edge_index.device,
+        self.edge_weight = (
+            edge_weight
+            if edge_weight is not None
+            else torch.ones(
+                edge_index.shape[1],
+                device=edge_index.device,
+            )
         )
         self.message_weight: Tensor | None = None
         self.num_nodes = num_nodes
@@ -43,6 +49,14 @@ class RoundContext:
         self.exports.clear()
         self._neighbor_message_overrides.clear()
         self.message_weight = None
+
+    def get_message_override(self, tag: str) -> Tensor | None:
+        """Get the message override for a specific tag."""
+        return self._neighbor_message_overrides.get(tag)
+
+    def set_message_override(self, tag: str, value: Tensor) -> None:
+        """Set a message override for a specific tag."""
+        self._neighbor_message_overrides[tag] = value
 
 
 def sub_context(

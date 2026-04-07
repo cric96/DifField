@@ -8,7 +8,7 @@ from torch import Tensor
 
 from ..pyg_backend import Data
 from .context import RoundContext
-from .stack import pop_context, push_context
+from .stack import with_context
 
 
 class AggregateContext:
@@ -27,23 +27,24 @@ class AggregateContext:
             data_edge_weight = edge_weight
             if data_edge_weight is None and hasattr(data, "edge_attr"):
                 data_edge_weight = data.edge_attr
-            self._ctx = RoundContext(data.edge_index, int(data.num_nodes), edge_weight=data_edge_weight)
+            self._ctx = RoundContext(
+                data.edge_index, int(data.num_nodes), edge_weight=data_edge_weight
+            )
             self._ctx.data = data
             return
 
         if num_nodes is None:
-            raise ValueError("num_nodes is required when constructing AggregateContext from edge_index")
+            raise ValueError(
+                "num_nodes is required when constructing AggregateContext from edge_index"
+            )
         self._ctx = RoundContext(edge_index, num_nodes, edge_weight=edge_weight)
 
     @contextmanager
     def round(self):
         """Execute one round of the aggregate program."""
-        push_context(self._ctx)
-        try:
+        with with_context(self._ctx):
             with self._ctx.round():
                 yield self._ctx
-        finally:
-            pop_context()
 
     def reset(self) -> None:
         self._ctx.reset()
