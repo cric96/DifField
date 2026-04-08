@@ -17,6 +17,11 @@ from autofield import (
     mux,
     nbr,
     rep,
+    minhood,
+    maxhood,
+    sumhood,
+    avghood,
+    hood,
 )
 from autofield.dsl import field
 from autofield.utils import get_device, get_grid_distances
@@ -43,8 +48,8 @@ class TestSimulationFramework:
         def program(runtime):
             src = runtime.signals["source"]
             return rep(
-                float("inf"),
-                lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                field.inf(),
+                lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
                 name="dist",
             )
 
@@ -73,8 +78,8 @@ class TestSimulationFramework:
         def program(rt):
             src = rt.signals["source"]
             return rep(
-                float("inf"),
-                lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                field.inf(),
+                lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
                 name="dist",
             )
 
@@ -125,8 +130,8 @@ class TestSnapshotRecorder:
         )
 
         def program(_runtime):
-            counter = rep(0.0, lambda s: s + 1, name="counter")
-            return nbr(counter, aggr="sum", tag="counter_msg")
+            counter = rep(field.zeros(), lambda s: s + 1, name="counter")
+            return sumhood(nbr(counter, tag="counter_msg"))
 
         output, _ = engine.run(rounds=1, program=program, signals={}, recorder=recorder)
         record = recorder.records[0]

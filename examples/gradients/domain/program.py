@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-from autofield import mux, nbr, rep, SimulationEngine
+from autofield import hood, mux, nbr, rep, SimulationEngine
 from autofield.dsl import field
 
 try:
@@ -31,9 +31,9 @@ def run_gradient_program(
 
     def program(_runtime):
         return rep(
-            float("inf"),
+            field.inf(),
             lambda dist_old: mux(
-                source, field.of(0.0), nbr(dist_old + weight, aggr=aggr)
+                source, field.of(0.0), hood(nbr(dist_old + weight), aggr=aggr)
             ),
         )
 

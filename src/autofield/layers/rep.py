@@ -17,7 +17,7 @@ class RepLayer(nn.Module):
 
     def __init__(
         self,
-        init_value: float | Tensor,
+        init_value: Tensor,
         update_fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | nn.Module,
         *,
         name: str,

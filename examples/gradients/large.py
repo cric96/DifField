@@ -27,7 +27,7 @@ try:
 except ImportError:
     from gradients.domain.program import auto_rounds, run_gradient_program
 
-from autofield import GridScenario, SimulationEngine, mux, nbr, rep, nbr_range
+from autofield import GridScenario, SimulationEngine, mux, nbr, rep, nbr_range, minhood
 from autofield.dsl import field
 from autofield.utils import get_device
 
@@ -80,9 +80,9 @@ def run_large_gradient(args, scenario, source, device: torch.device):
 
     def program(_runtime):
         return rep(
-            float("inf"),
+            field.inf(),
             lambda dist_old: mux(
-                source, field.of(0.0), nbr(dist_old + weight, aggr="min")
+                source, field.of(0.0), minhood(nbr(dist_old + weight))
             ),
             name="dist",
         )

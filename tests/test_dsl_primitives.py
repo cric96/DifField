@@ -16,6 +16,10 @@ from autofield import (
     nbr,
     nbr_range,
     rep,
+    hood,
+    minhood,
+    maxhood,
+    sumhood,
 )
 from autofield.dsl import field
 from autofield.utils import make_grid_graph
@@ -26,7 +30,7 @@ class TestRep:
         results = []
         for _ in range(5):
             with line_ctx.round():
-                val = rep(0.0, lambda s: s + 1)
+                val = rep(field.zeros(), lambda s: s + 1)
             results.append(val[0].item())
         assert results == [1.0, 2.0, 3.0, 4.0, 5.0]
 
@@ -47,9 +51,7 @@ class TestRep:
                     torch.zeros(n),
                     lambda outer_s: rep(
                         torch.zeros(n),
-                        lambda inner_s: (
-                            nbr(outer_s, aggr="sum") + nbr(inner_s, aggr="sum") + 1.0
-                        ),
+                        lambda inner_s: sumhood(nbr(outer_s)) + sumhood(nbr(inner_s)) + 1.0,
                     ),
                 )
             results.append(val.clone())
@@ -63,7 +65,7 @@ class TestRep:
         ctx = AggregateContext(edge_index, n)
         for _ in range(3):
             with ctx.round():
-                val = rep(0.0, lambda s: s + 1)
+                val = rep(field.zeros(), lambda s: s + 1)
         assert torch.allclose(val, torch.tensor([3.0, 3.0, 3.0, 3.0]))
 
     def test_rep_empty_topology(self, empty_topology):
@@ -71,7 +73,7 @@ class TestRep:
         ctx = AggregateContext(edge_index, n)
         for _ in range(3):
             with ctx.round():
-                val = rep(0.0, lambda s: s + 1)
+                val = rep(field.zeros(), lambda s: s + 1)
         assert val.shape == (0,)
 
 
@@ -79,13 +81,13 @@ class TestNbr:
     def test_sum_triangle(self, triangle_ctx):
         x = torch.tensor([1.0, 2.0, 3.0])
         with triangle_ctx.round():
-            m = nbr(x, aggr="sum")
+            m = sumhood(nbr(x))
         assert torch.allclose(m, torch.tensor([5.0, 4.0, 3.0]))
 
     def test_min_triangle(self, triangle_ctx):
         x = torch.tensor([10.0, 2.0, 5.0])
         with triangle_ctx.round():
-            m = nbr(x, aggr="min")
+            m = minhood(nbr(x))
         assert torch.allclose(m, torch.tensor([2.0, 5.0, 2.0]))
 
     def test_ignores_context_edge_weight_by_default(self, triangle_topology):
@@ -95,16 +97,24 @@ class TestNbr:
         x = torch.tensor([1.0, 2.0, 3.0])
 
         with ctx.round():
-            m = nbr(x, aggr="sum")
+            m = sumhood(nbr(x))
 
         assert torch.allclose(m, torch.tensor([5.0, 4.0, 3.0]))
 
     def test_explicit_edge_weight_still_scales_messages(self, triangle_ctx):
         x = torch.tensor([1.0, 2.0, 3.0])
+        # message_weight is now an edge-level tensor.
+        # We can test multiplication inside hood by evaluating it explicitly
+        # or just test that an explicit nbr() multiplication works.
+        # Let's test multiplying a node field by another edge-level scalar.
         message_weight = torch.tensor([2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+        from autofield.dsl.neighbor import NeighborExpr
+
+        # Manually create an edge-wise expression for the weight
+        weight_expr = NeighborExpr(lambda ctx, ei, ew: message_weight)
 
         with triangle_ctx.round():
-            m = nbr(x, aggr="sum", edge_weight=message_weight)
+            m = hood(nbr(x) * weight_expr, aggr="sum")
 
         assert torch.allclose(m, torch.tensor([27.0, 17.0, 14.0]))
 
@@ -117,9 +127,9 @@ class TestNbr:
         for _ in range(4):
             with ctx.round():
                 dist = rep(
-                    float("inf"),
+                    field.inf(),
                     lambda dist_old: mux(
-                        source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")
+                        source, field.of(0.0), minhood(nbr(dist_old) + nbr_range())
                     ),
                     name="weighted_dist",
                 )
@@ -130,7 +140,7 @@ class TestNbr:
         x = torch.tensor([1.0, 2.0, 3.0])
 
         with triangle_ctx.round() as round_ctx:
-            _ = nbr(x, aggr="sum", tag="scores")
+            _ = sumhood(nbr(x, tag="scores"))
 
         assert torch.allclose(round_ctx.exports["scores"], x)
 
@@ -146,18 +156,18 @@ class TestNbr:
         x = torch.tensor([1.0, 2.0, 3.0])
 
         with ctx.round():
-            no_self = nbr(x, aggr="sum", include_self=False)
+            no_self = hood(nbr(x), aggr="sum", include_self=False)
         with ctx.round():
-            with_self = nbr(x, aggr="sum", include_self=True)
+            with_self = hood(nbr(x), aggr="sum", include_self=True)
 
         assert torch.allclose(no_self, torch.tensor([2.0, 4.0, 2.0]))
         assert torch.allclose(with_self, torch.tensor([3.0, 6.0, 5.0]))
 
     def test_include_self_works_for_neighbor_expr(self, line_ctx):
         with line_ctx.round():
-            no_self = nbr(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=False)
+            no_self = hood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=False)
         with line_ctx.round():
-            with_self = nbr(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=True)
+            with_self = hood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=True)
 
         assert torch.allclose(no_self, torch.tensor([1.0, 2.0, 2.0, 1.0]))
         assert torch.allclose(with_self, torch.tensor([2.0, 3.0, 3.0, 2.0]))
@@ -167,7 +177,7 @@ class TestNbr:
         ctx = AggregateContext(edge_index, n)
         x = torch.tensor([1.0, 2.0, 3.0, 4.0])
         with ctx.round():
-            m = nbr(x, aggr="sum")
+            m = sumhood(nbr(x))
         assert torch.allclose(m, torch.tensor([0.0, 0.0, 0.0, 0.0]))
 
 
@@ -179,8 +189,8 @@ class TestBranch:
         with line_ctx.round():
             result = branch(
                 cond,
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="sum"),
+                lambda: sumhood(nbr(x)),
+                lambda: sumhood(nbr(x)),
             )
         assert torch.allclose(result, torch.tensor([2.0, 1.0, 20.0, 10.0]))
 
@@ -191,8 +201,8 @@ class TestBranch:
         with line_ctx.round():
             result = branch(
                 cond,
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="min"),
+                lambda: sumhood(nbr(x)),
+                lambda: minhood(nbr(x)),
             )
         assert torch.allclose(result, torch.tensor([2.0, 1.0, 10.0, 30.0]))
 
@@ -201,9 +211,9 @@ class TestBranch:
         with line_ctx.round():
             branch(
                 cond1,
-                lambda: rep(0.0, lambda s: s + 1, name="val"),
-                lambda: rep(0.0, lambda s: s + 1, name="val"),
-                reset_states={"val": 0.0},
+                lambda: rep(field.zeros(), lambda s: s + 1, name="val"),
+                lambda: rep(field.zeros(), lambda s: s + 1, name="val"),
+                reset_states={"val": field.zeros()},
             )
         assert torch.allclose(
             line_ctx.state.get_state(name="val"), torch.tensor([1.0, 1.0, 1.0, 1.0])
@@ -213,9 +223,9 @@ class TestBranch:
         with line_ctx.round():
             branch(
                 cond2,
-                lambda: rep(0.0, lambda s: s + 1, name="val"),
-                lambda: rep(0.0, lambda s: s + 1, name="val"),
-                reset_states={"val": 0.0},
+                lambda: rep(field.zeros(), lambda s: s + 1, name="val"),
+                lambda: rep(field.zeros(), lambda s: s + 1, name="val"),
+                reset_states={"val": field.zeros()},
             )
         assert torch.allclose(
             line_ctx.state.get_state(name="val"), torch.tensor([2.0, 2.0, 2.0, 1.0])
@@ -231,10 +241,14 @@ class TestBranch:
                 val = branch(
                     cond,
                     lambda: rep(
-                        torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0, name="true_val"
+                        torch.zeros(n),
+                        lambda s: sumhood(nbr(s)) + 1.0,
+                        name="true_val",
                     ),
                     lambda: rep(
-                        torch.zeros(n), lambda s: nbr(s, aggr="max") + 10.0, name="false_val"
+                        torch.zeros(n),
+                        lambda s: maxhood(nbr(s)) + 10.0,
+                        name="false_val",
                     ),
                 )
             results.append(val.clone())
@@ -252,8 +266,8 @@ class TestMux:
         with line_ctx.round():
             result = mux(
                 cond.float(),
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="sum"),
+                lambda: sumhood(nbr(x)),
+                lambda: sumhood(nbr(x)),
             )
         assert torch.allclose(result, torch.tensor([2.0, 11.0, 22.0, 10.0]))
 
@@ -282,8 +296,8 @@ class TestGradient:
         for _ in range(rows + cols):
             with ctx.round():
                 d = rep(
-                    float("inf"),
-                    lambda dist: mux(source, torch.zeros(n), nbr(dist + w, aggr="min")),
+                    field.inf(),
+                    lambda dist: mux(source, torch.zeros(n), minhood(nbr(dist) + w)),
                 )
 
         expected = torch.zeros(n)
@@ -305,8 +319,8 @@ class TestGradient:
         for _ in range(6):
             with ctx.round():
                 d = rep(
-                    float("inf"),
-                    lambda dist: mux(source, torch.zeros(n), nbr(dist + w, aggr="min")),
+                    field.inf(),
+                    lambda dist: mux(source, torch.zeros(n), minhood(nbr(dist) + w)),
                 )
 
         loss = d[d.isfinite()].sum()
@@ -337,9 +351,9 @@ class TestGradient:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    float("inf"),
+                    field.inf(),
                     lambda dist_old: mux(
-                        source, field.of(0.0), nbr(dist_old + nbr_range(), aggr="min")
+                        source, field.of(0.0), minhood(nbr(dist_old) + nbr_range())
                     ),
                 )
 
@@ -365,8 +379,8 @@ class TestGradient:
                     lambda outer_s: rep(
                         torch.zeros(n),
                         lambda inner_s: (
-                            nbr(outer_s * w1, aggr="sum")
-                            + nbr(inner_s * w2, aggr="sum")
+                            sumhood(nbr(outer_s) * w1)
+                            + sumhood(nbr(inner_s) * w2)
                             + 1.0
                         ),
                     ),
@@ -426,8 +440,8 @@ class TestField:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    float("inf"),
-                    lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")),
+                    field.inf(),
+                    lambda dist: mux(source, torch.zeros(n), minhood(nbr(dist) + w)),
                 )
         assert torch.allclose(d, torch.tensor([0.0, 1.0, 2.0]))
 
@@ -447,7 +461,7 @@ class TestAutoNaming:
         results = []
         for _ in range(3):
             with line_ctx.round():
-                val = rep(0.0, lambda s: s + 1)
+                val = rep(field.zeros(), lambda s: s + 1)
             results.append(val[0].item())
         assert results == [1.0, 2.0, 3.0]
 
@@ -460,8 +474,8 @@ class TestAutoNaming:
             with line_ctx.round():
                 val = branch(
                     cond,
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0),
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0),
+                    lambda: rep(torch.zeros(n), lambda s: sumhood(nbr(s)) + 1.0),
+                    lambda: rep(torch.zeros(n), lambda s: sumhood(nbr(s)) + 10.0),
                 )
             results.append(val.clone())
 
@@ -480,8 +494,8 @@ class TestAutoNaming:
     def test_two_nbr_same_level_different_tags(self, triangle_ctx):
         x = torch.tensor([1.0, 2.0, 3.0])
         with triangle_ctx.round() as round_ctx:
-            a = nbr(x, aggr="sum")
-            b = nbr(x, aggr="max")
+            a = sumhood(nbr(x))
+            b = maxhood(nbr(x))
         assert torch.allclose(a, torch.tensor([5.0, 4.0, 3.0]))
         assert torch.allclose(b, torch.tensor([3.0, 3.0, 2.0]))
         tags = list(round_ctx.exports.keys())
@@ -491,6 +505,6 @@ class TestAutoNaming:
     def test_explicit_name_overrides_auto(self, line_ctx):
         n = line_ctx.num_nodes
         with line_ctx.round():
-            rep(0.0, lambda s: s + 1, name="my_state")
+            rep(field.zeros(), lambda s: s + 1, name="my_state")
         assert line_ctx.get_state(name="my_state") is not None
         assert torch.allclose(line_ctx.get_state(name="my_state"), torch.ones(n))

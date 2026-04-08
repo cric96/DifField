@@ -21,23 +21,15 @@ class StateManager:
             return first_state.device
         return self.device
 
-    def get_or_init(self, init_val: Tensor | float, *, name: str) -> Tensor:
+    def get_or_init(self, init_val: Tensor, *, name: str) -> Tensor:
         """Retrieve existing state or initialize it."""
         if name not in self._states:
             target_device = self._infer_device()
-            if isinstance(init_val, Tensor):
-                if init_val.shape[0] != self.num_nodes:
-                    raise ValueError(
-                        f"Expected first dimension {self.num_nodes}, got {tuple(init_val.shape)}",
-                    )
-                self._states[name] = init_val.clone().to(target_device)
-            else:
-                self._states[name] = torch.full(
-                    (self.num_nodes,),
-                    init_val,
-                    dtype=torch.float32,
-                    device=target_device,
+            if init_val.shape[0] != self.num_nodes:
+                raise ValueError(
+                    f"Expected first dimension {self.num_nodes}, got {tuple(init_val.shape)}",
                 )
+            self._states[name] = init_val.clone().to(target_device)
         return self._states[name]
 
     def update(self, new_val: Tensor, *, name: str) -> None:
@@ -58,9 +50,7 @@ class StateManager:
         self._branch_prev[branch_name] = cond_bool.clone()
         return switched
 
-    def reset_states_for_nodes(
-        self, mask: Tensor, init_map: dict[str, Tensor | float]
-    ) -> None:
+    def reset_states_for_nodes(self, mask: Tensor, init_map: dict[str, Tensor]) -> None:
         """Reset rep states for nodes indicated by *mask*."""
         if not mask.any():
             return
@@ -71,14 +61,9 @@ class StateManager:
 
             current_state = self._states[name]
             broadcast_mask = mask.unsqueeze(-1) if current_state.dim() > 1 else mask
-            if isinstance(init_val, Tensor):
-                reset_val = (
-                    init_val.expand_as(current_state)
-                    if init_val.dim() == 0
-                    else init_val
-                )
-            else:
-                reset_val = torch.full_like(current_state, init_val)
+            reset_val = (
+                init_val.expand_as(current_state) if init_val.dim() == 0 else init_val
+            )
             self._states[name] = torch.where(broadcast_mask, reset_val, current_state)
 
     def reset(self) -> None:

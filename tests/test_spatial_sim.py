@@ -17,6 +17,10 @@ from autofield import (
     nbr,
     normalize_vectors,
     rep,
+    minhood,
+    maxhood,
+    sumhood,
+    avghood,
 )
 from autofield.dsl import field
 
@@ -166,8 +170,8 @@ class TestSpatialScenarioTopology:
 
         def program(_runtime):
             return rep(
-                float("inf"),
-                lambda d: mux(source, field.of(0.0), nbr(d + 1.0, aggr="min")),
+                field.inf(),
+                lambda d: mux(source, field.of(0.0), minhood(nbr(d + 1.0))),
                 name="dist",
             )
 

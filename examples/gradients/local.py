@@ -12,7 +12,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from autofield import DeviceContext, GridScenario, SimulationEngine, gradient
+from autofield import DeviceContext, GridScenario, SimulationEngine, gradient, nbr
 from autofield.utils import get_device
 
 
@@ -20,11 +20,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Local vs Global Gradient AC")
     parser.add_argument("--rows", type=int, default=5, help="Grid rows")
     parser.add_argument("--cols", type=int, default=5, help="Grid cols")
-    parser.add_argument("--device-row", type=int, default=2, help="Row of local device to simulate")
-    parser.add_argument("--device-col", type=int, default=2, help="Column of local device to simulate")
+    parser.add_argument(
+        "--device-row", type=int, default=2, help="Row of local device to simulate"
+    )
+    parser.add_argument(
+        "--device-col", type=int, default=2, help="Column of local device to simulate"
+    )
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     return parser.parse_args()
+
+
 def neighbors_of(node, edge_index):
     mask = (edge_index[1] == node) & (edge_index[0] != node)
     return sorted(edge_index[0, mask].tolist())
@@ -42,7 +50,7 @@ def run_global(scenario, source_global, weight, rounds):
     global_states = []
 
     def program(_runtime):
-        return gradient(source_global, weight, name="dist")
+        return gradient(source_global, nbr(weight), name="dist")
 
     runtime = engine.init_runtime(signals={"source": source_global})
     for _ in range(rounds):
@@ -56,26 +64,38 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
     neighbor_ids = neighbors_of(device_id, edge_index)
     device = DeviceContext(num_neighbors=len(neighbor_ids))
     source_local = device.local_field(own=source_global[device_id].item(), nbr=0.0)
-    local_weight = float(weight.item()) if isinstance(weight, torch.Tensor) else float(weight)
+    local_weight = torch.full_like(source_local, float(weight.item()))
 
-    print(f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ===")
+    print(
+        f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ==="
+    )
 
     for round_idx in range(rounds):
         if round_idx == 0:
             neighbor_exports = None
         else:
-            neighbor_exports = {"_grad_dist": [global_states[round_idx - 1][node].item() for node in neighbor_ids]}
+            neighbor_exports = {
+                "_grad_dist": [
+                    global_states[round_idx - 1][node].item() for node in neighbor_ids
+                ]
+            }
 
         with device.round(neighbor_exports=neighbor_exports):
-            d_local = gradient(source_local, local_weight, name="dist")
+            d_local = gradient(source_local, nbr(local_weight), name="dist")
 
         local_value = device.result(d_local).item()
         global_value = global_states[round_idx][device_id].item()
-        same = abs(local_value - global_value) < 1e-6 or (local_value == global_value == float("inf"))
+        same = abs(local_value - global_value) < 1e-6 or (
+            local_value == global_value == float("inf")
+        )
         tag = "ok" if same else "MISMATCH"
         local_str = f"{local_value:6.2f}" if local_value != float("inf") else "   inf"
-        global_str = f"{global_value:6.2f}" if global_value != float("inf") else "   inf"
-        print(f"  Round {round_idx + 1:2d}: local={local_str}  global={global_str}  [{tag}]")
+        global_str = (
+            f"{global_value:6.2f}" if global_value != float("inf") else "   inf"
+        )
+        print(
+            f"  Round {round_idx + 1:2d}: local={local_str}  global={global_str}  [{tag}]"
+        )
 
     return device_id, device.result(d_local).item()
 
@@ -94,9 +114,13 @@ def main():
     print("Distance field:")
     print(output.detach().cpu().view(args.rows, args.cols).numpy())
 
-    device_id, final = run_local(args, scenario.edge_index, source_global, global_states, weight, rounds)
+    device_id, final = run_local(
+        args, scenario.edge_index, source_global, global_states, weight, rounds
+    )
     expected = args.device_row + args.device_col
-    print(f"\nFinal: device {device_id} distance = {final:.1f}  (expected: {expected}.0)")
+    print(
+        f"\nFinal: device {device_id} distance = {final:.1f}  (expected: {expected}.0)"
+    )
 
 
 if __name__ == "__main__":

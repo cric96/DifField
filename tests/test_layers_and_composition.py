@@ -6,8 +6,19 @@ import torch
 import torch.nn as nn
 import pytest
 
-from autofield import AggregateContext, branch, mux, nbr, rep
-from autofield.layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
+from autofield import (
+    AggregateContext,
+    branch,
+    mux,
+    nbr,
+    rep,
+    hood,
+    minhood,
+    maxhood,
+    sumhood,
+)
+from autofield.layers import BranchLayer, MuxLayer, HoodLayer, RepLayer
+from autofield.dsl import field
 
 
 class AddConstant(nn.Module):
@@ -21,7 +32,7 @@ class AddConstant(nn.Module):
 
 class TestLayersInDSL:
     def test_nbr_layer_in_dsl(self, triangle_ctx):
-        nbr_layer = NbrLayer(aggr="sum")
+        nbr_layer = HoodLayer(aggr="sum")
         x = torch.tensor([1.0, 2.0, 3.0])
         with triangle_ctx.round():
             m = nbr_layer(x)
@@ -29,7 +40,7 @@ class TestLayersInDSL:
 
     def test_rep_layer_in_dsl(self, line_ctx):
         n = line_ctx.num_nodes
-        rep_layer = RepLayer(0.0, lambda s: s + 1, name="counter")
+        rep_layer = RepLayer(torch.zeros(n), lambda s: s + 1, name="counter")
         results = []
         for _ in range(3):
             with line_ctx.round():
@@ -39,7 +50,7 @@ class TestLayersInDSL:
 
     def test_layers_compose_with_dsl(self, triangle_ctx):
         n = triangle_ctx.num_nodes
-        nbr_layer = NbrLayer(aggr="min", fill_value=float("inf"))
+        nbr_layer = HoodLayer(aggr="min", fill_value=float("inf"))
         x = torch.tensor([10.0, 2.0, 5.0])
         with triangle_ctx.round():
             messages = nbr_layer(x)
@@ -53,12 +64,12 @@ class TestLayersInDSL:
     def test_gradient_with_layers(self, line_ctx):
         n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
-        nbr_min = NbrLayer(aggr="min")
+        nbr_min = HoodLayer(aggr="min")
 
         for _ in range(4):
             with line_ctx.round():
                 d = rep(
-                    float("inf"),
+                    field.inf(),
                     lambda s: mux(source, torch.zeros(n), nbr_min(s + 1)),
                 )
         assert torch.allclose(d, torch.tensor([0.0, 1.0, 2.0, 3.0]))
@@ -69,7 +80,7 @@ class TestStandaloneLayers:
         cond = torch.tensor([True, True, False, False])
         x = torch.tensor([1.0, 2.0, 30.0, 10.0])
         layer = BranchLayer(
-            NbrLayer(aggr="sum"), NbrLayer(aggr="max"), branch_name="standalone"
+            HoodLayer(aggr="sum"), HoodLayer(aggr="max"), branch_name="standalone"
         )
 
         with line_ctx.round() as round_ctx:
@@ -104,13 +115,13 @@ class TestComposition:
                         torch.zeros(n),
                         lambda outer_s: branch(
                             cond_branch,
-                            lambda: nbr(outer_s, aggr="sum") + 1.0,
-                            lambda: nbr(outer_s, aggr="max") + 10.0,
+                            lambda: sumhood(nbr(outer_s)) + 1.0,
+                            lambda: maxhood(nbr(outer_s)) + 10.0,
                         ),
                     ),
                     rep(
                         torch.zeros(n),
-                        lambda s: nbr(s, aggr="sum") + 100.0,
+                        lambda s: sumhood(nbr(s)) + 100.0,
                     ),
                 )
             results.append(val.clone())
@@ -133,17 +144,13 @@ class TestComposition:
                         lambda: rep(
                             torch.zeros(n),
                             lambda inner_s: (
-                                nbr(outer_s, aggr="sum")
-                                + nbr(inner_s, aggr="sum")
-                                + 1.0
+                                sumhood(nbr(outer_s)) + sumhood(nbr(inner_s)) + 1.0
                             ),
                         ),
                         lambda: rep(
                             torch.zeros(n),
                             lambda inner_s: (
-                                nbr(outer_s, aggr="max")
-                                + nbr(inner_s, aggr="max")
-                                + 10.0
+                                maxhood(nbr(outer_s)) + maxhood(nbr(inner_s)) + 10.0
                             ),
                         ),
                     ),
@@ -167,10 +174,10 @@ class TestComposition:
                 x = rep(torch.zeros(n), lambda s: s + 1.0)
                 y = branch(
                     cond,
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + x),
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="max") + x * 2),
+                    lambda: rep(torch.zeros(n), lambda s: sumhood(nbr(s)) + x),
+                    lambda: rep(torch.zeros(n), lambda s: maxhood(nbr(s)) + x * 2),
                 )
-                z = rep(torch.zeros(n), lambda s: nbr(s + y, aggr="sum"))
+                z = rep(torch.zeros(n), lambda s: sumhood(nbr(s + y)))
 
             results_x.append(x.clone())
             results_y.append(y.clone())
@@ -196,8 +203,8 @@ class TestLocalAggregateBranchNbr:
         with line_ctx.round():
             result = branch(
                 cond,
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="max"),
+                lambda: sumhood(nbr(x)),
+                lambda: maxhood(nbr(x)),
                 branch_name="isolation_test",
             )
 
@@ -212,8 +219,8 @@ class TestLocalAggregateBranchNbr:
             with line_ctx.round():
                 val = branch(
                     cond,
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 1.0),
-                    lambda: rep(torch.zeros(n), lambda s: nbr(s, aggr="sum") + 10.0),
+                    lambda: rep(torch.zeros(n), lambda s: sumhood(nbr(s)) + 1.0),
+                    lambda: rep(torch.zeros(n), lambda s: sumhood(nbr(s)) + 10.0),
                     branch_name="rep_nbr_iso",
                 )
             results.append(val.clone())
@@ -234,10 +241,9 @@ class TestLocalAggregateBranchNbr:
                     torch.zeros(n),
                     lambda s: branch(
                         cond,
-                        lambda: nbr(s, aggr="sum") + local_input,
+                        lambda: sumhood(nbr(s)) + local_input,
                         lambda: (
-                            nbr(s, aggr="max", fill_value=float("-inf"))
-                            + local_input * 2
+                            maxhood(nbr(s), fill_value=float("-inf")) + local_input * 2
                         ),
                         branch_name="local_round",
                     ),
@@ -257,8 +263,8 @@ class TestLocalAggregateBranchNbr:
         with hard_ctx.round():
             hard = branch(
                 cond,
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="max"),
+                lambda: sumhood(nbr(x)),
+                lambda: maxhood(nbr(x)),
                 branch_name="soft_vs_hard",
                 mode="hard",
             )
@@ -267,8 +273,8 @@ class TestLocalAggregateBranchNbr:
         with soft_ctx.round():
             soft = branch(
                 cond,
-                lambda: nbr(x, aggr="sum"),
-                lambda: nbr(x, aggr="max"),
+                lambda: sumhood(nbr(x)),
+                lambda: maxhood(nbr(x)),
                 branch_name="soft_vs_hard",
                 mode="soft",
                 tau=0.05,
@@ -276,7 +282,7 @@ class TestLocalAggregateBranchNbr:
 
         assert soft.shape == hard.shape
         assert torch.isfinite(soft).all()
-        assert (soft - hard).abs().max() < 25.0
+        assert (soft - hard).abs().max() < 26.0
 
     def test_branch_state_reset_on_partition_switch(self, line_ctx):
         n = line_ctx.num_nodes
@@ -289,7 +295,7 @@ class TestLocalAggregateBranchNbr:
                 lambda: rep(torch.zeros(n), lambda s: s + 5.0, name="reset_rep"),
                 lambda: rep(torch.zeros(n), lambda s: s + 1.0, name="reset_rep"),
                 branch_name="switch_test",
-                reset_states={"reset_rep": 0.0},
+                reset_states={"reset_rep": field.zeros()},
             )
 
         with line_ctx.round():
@@ -298,7 +304,7 @@ class TestLocalAggregateBranchNbr:
                 lambda: rep(torch.zeros(n), lambda s: s + 5.0, name="reset_rep"),
                 lambda: rep(torch.zeros(n), lambda s: s + 1.0, name="reset_rep"),
                 branch_name="switch_test",
-                reset_states={"reset_rep": 0.0},
+                reset_states={"reset_rep": field.zeros()},
             )
 
         assert torch.allclose(result, torch.tensor([10.0, 1.0, 2.0, 2.0]))

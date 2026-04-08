@@ -1,9 +1,36 @@
 """autofield — aggregate computing and differentiable field calculus."""
 
-from .core import AggregateContext, DeviceContext, RoundContext, StateManager, get_default_mode, set_default_mode, with_mode
-from .dsl import branch, broadcast, collect_cast, const, field, gradient, gradient_cast, mid, mux, nbr, nbr_range, nbrRange, rep
+from .core import (
+    AggregateContext,
+    DeviceContext,
+    RoundContext,
+    StateManager,
+    get_default_mode,
+    set_default_mode,
+    with_mode,
+)
+from .dsl import (
+    branch,
+    broadcast,
+    collect_cast,
+    const,
+    field,
+    gradient,
+    gradient_cast,
+    mid,
+    mux,
+    nbr,
+    nbr_range,
+    rep,
+    hood,
+    minhood,
+    maxhood,
+    sumhood,
+    avghood,
+    as_nbr_expr,
+)
 from .functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from .layers import BranchLayer, MuxLayer, NbrLayer, RepLayer
+from .layers import BranchLayer, HoodLayer, MuxLayer, RepLayer
 from .pyg_backend import HAS_PYG
 from .sim import (
     EventSchedule,
@@ -33,8 +60,13 @@ __all__ = [
     "DeviceContext",
     "rep",
     "nbr",
+    "hood",
+    "minhood",
+    "maxhood",
+    "sumhood",
+    "avghood",
+    "as_nbr_expr",
     "nbr_range",
-    "nbrRange",
     "branch",
     "broadcast",
     "gradient_cast",
@@ -46,7 +78,7 @@ __all__ = [
     "mid",
     # Layers (nn.Module)
     "RepLayer",
-    "NbrLayer",
+    "HoodLayer",
     "BranchLayer",
     "MuxLayer",
     # Functional

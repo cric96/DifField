@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable
 
 import torch
-from autofield import bounce_in_box, limit_speed, nbr, rep
+from autofield import avghood, bounce_in_box, limit_speed, nbr, rep
 from autofield.dsl import AggregateContext
 
 from .geometry import hard_separation_force
@@ -29,8 +29,8 @@ def reference_boids_velocity_step(
     max_speed: float | torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute pre-clipped and clipped velocity for the standard boids model."""
-    neigh_vel = nbr(vel, aggr="mean")
-    neigh_pos = nbr(pos, aggr="mean")
+    neigh_vel = avghood(nbr(vel))
+    neigh_pos = avghood(nbr(pos))
     align_force = neigh_vel - vel
     cohesion_force = neigh_pos - pos
     sep_force = hard_separation_force(pos, sep)

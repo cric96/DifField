@@ -17,7 +17,7 @@ class RoundContext:
     def __init__(
         self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None
     ) -> None:
-        self.edge_index = edge_index
+        self.edge_index = edge_index # shape [2, num_edges]
         self.edge_weight = (
             edge_weight
             if edge_weight is not None

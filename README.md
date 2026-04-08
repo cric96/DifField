@@ -30,7 +30,7 @@ bash install-rocm-7.2.sh
 Build a distance field from a source node on a 10×10 grid:
 
 ```python
-from autofield import GridScenario, SimulationEngine, rep, nbr, mux
+from autofield import GridScenario, SimulationEngine, rep, nbr, mux, minhood
 from autofield.dsl import field
 
 scenario = GridScenario(10, 10, connectivity=4)
@@ -39,7 +39,11 @@ source = scenario.marker(0, 0)  # source at top-left
 
 def program(runtime):
     src = runtime.signals["source"]
-    return rep("dist", float("inf"), lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")))
+    return rep(
+        field.inf(),
+        lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+        name="dist",
+    )
 
 output, runtime = engine.run(rounds=40, program=program, signals={"source": source})
 ```
@@ -61,7 +65,7 @@ flowchart TB
 
     subgraph Layers["Differentiable Layers"]
         direction LR
-        LAYERS_API["RepLayer · NbrLayer · BranchLayer · MuxLayer"]
+        LAYERS_API["RepLayer · HoodLayer · BranchLayer · MuxLayer"]
     end
 
     subgraph Core["Core Runtime"]
@@ -93,8 +97,9 @@ The DSL provides composable field operators that run on every node of the graph 
 
 | Primitive | Description |
 |-----------|-------------|
-| `rep(init, fn)` | Per-node recurrent state — evolves over rounds |
-| `nbr(expr, aggr)` | Neighborhood aggregation — sends messages along edges |
+| `rep(init, fn, name=...)` | Per-node recurrent state — evolves over rounds |
+| `nbr(value)` | Build edge-wise neighbor messages from a node field |
+| `hood(expr, aggr)` | Aggregate a `NeighborExpr` into a node field |
 | `branch(cond, if_true, if_false)` | Domain restriction with communication isolation |
 | `mux(cond, if_true, if_false)` | Pointwise conditional selection (no topology change) |
 
@@ -102,10 +107,10 @@ The DSL provides composable field operators that run on every node of the graph 
 
 | Primitive | Description |
 |-----------|-------------|
-| `gradient(source)` | Minimum-cost distance field from source nodes |
-| `gradient_cast(source, center, accumulation)` | Propagate payloads along gradient paths |
-| `broadcast(mask, value)` | Spread a value from root nodes through the network |
-| `collect_cast(potential, local, null, accumulation)` | Collect payloads toward potential minima |
+| `gradient(source, weight=None)` | Minimum-cost distance field from source nodes |
+| `gradient_cast(source, center, accumulation, weight=None)` | Propagate payloads along gradient paths |
+| `broadcast(mask, value, weight=None)` | Spread a value from root nodes through the network |
+| `collect_cast(potential, local, null, accumulation, weight=None)` | Collect payloads toward potential minima |
 
 ### Field Helpers
 
@@ -117,6 +122,8 @@ field.zeros()     # zero field
 field.ones()      # one field
 field.inf()       # infinity field
 ```
+
+`Field` inputs are always explicit tensors, typically built with `field.of(...)`, `field.zeros()`, `field.inf()`, or scenario helpers. Neighborhood aggregation always works on `NeighborExpr`, so write `minhood(nbr(x))`, `sumhood(nbr(x) * w)`, or `hood(nbr(x) + nbr_range(), aggr="min")`.
 
 ---
 
@@ -136,7 +143,7 @@ The simulation layer provides reusable components for running aggregate programs
 ```python
 from autofield import (
     GridScenario, SimulationEngine, EventSchedule, ScheduledEvent,
-    SnapshotRecorder, rep, nbr, mux,
+    SnapshotRecorder, rep, nbr, mux, minhood,
 )
 from autofield.dsl import field
 
@@ -156,7 +163,11 @@ recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_r
 
 def program(runtime):
     src = runtime.signals["source"]
-    return rep("dist", float("inf"), lambda d: mux(src, field.of(0.0), nbr(d + 1.0, aggr="min")))
+    return rep(
+        field.inf(),
+        lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+        name="dist",
+    )
 
 output, runtime = engine.run(
     rounds=40,
@@ -184,6 +195,8 @@ dist = gradient(source, name="dist")
 
 The convenience operator `gradient(source)` uses the range sensor by default, keeping hop-based programs explicit while allowing geometric graphs to use distances coherent with node positions.
 
+When you provide a custom edge cost to `gradient`, `gradient_cast`, `broadcast`, or `collect_cast`, pass it as a neighborhood expression such as `nbr(weight_field)` or `nbr_range()`.
+
 ---
 
 ## Testing
@@ -197,4 +210,3 @@ uv run pytest
 ## Further Reading
 
 - [Architecture & Design](docs/architecture.md) — UML diagrams and conceptual model
-

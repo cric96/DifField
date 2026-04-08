@@ -63,12 +63,16 @@ def _auto_name(kind: str, **kwargs: object) -> str:
 
 
 def rep(
-    init: float | Tensor,
+    init: Tensor,
     fn: Callable[[Tensor], Tensor],
     *,
     name: str | None = None,
 ) -> Tensor:
     r"""Temporal evolution (per-node recurrent state).
+
+    ``init`` is a node field tensor. Use ``field.of(...)``, ``field.zeros()``,
+    ``field.inf()``, scenario helpers, or any tensor with first dimension equal
+    to the number of nodes.
 
     Can be called as ``rep(init, fn)`` for auto-naming or
     ``rep(init, fn, name="my_name")`` for explicit naming.
@@ -80,39 +84,43 @@ def rep(
     return RepLayer(init, fn, name=resolved_name)(torch.empty(0))
 
 
-def nbr(
-    expr: Tensor | NeighborExpr,
-    aggr: str | Callable = "sum",
+def hood(
+    expr: NeighborExpr,
+    aggr: str | Callable | nn.Module = "sum",
+    include_self: bool | None = None,
     mode: str | None = None,
     tau: float | None = None,
     fill_value: float | None = None,
-    edge_index: Tensor | None = None,
-    edge_weight: Tensor | None = None,
     tag: str | None = None,
-    include_self: bool | None = None,
 ) -> Tensor:
-    r"""Neighborhood message passing.
+    r"""Gather neighbours and fold edge-wise messages into a node field.
 
-    When *tag* is omitted, a deterministic identifier is derived from the
-    caller's source location so that the same ``nbr()`` call always maps to
-    the same export/override slot.
+    The input must be a :class:`NeighborExpr`, typically built with :func:`nbr`
+    and optionally combined with arithmetic or :func:`nbr_range`.
+
+    When a tag is present, the source field is exported in the context and can
+    be overridden by runtime message overrides.
     """
-    from ..layers import NbrLayer
+    from ..layers import HoodLayer
+    from ..core import current_context
 
+    ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
 
-    if tag is None and not isinstance(expr, NeighborExpr):
-        tag = _auto_name("n", aggr=aggr)
+    # Use provided tag or auto-generate one
+    if tag is not None:
+        expr.tag = tag
+    elif expr.tag is None:
+        expr.tag = _auto_name("h", aggr=aggr)
 
-    return NbrLayer(
-        aggr=aggr, mode=effective_mode, tau=effective_tau, fill_value=fill_value, include_self=include_self
-    )(
-        expr,
-        edge_index=edge_index,
-        edge_weight=edge_weight,
-        tag=tag,
-    )
+    return HoodLayer(
+        aggr=aggr,
+        mode=effective_mode,
+        tau=effective_tau,
+        fill_value=fill_value,
+        include_self=include_self,
+    )(expr, ctx=ctx, tag=expr.tag)
 
 
 def branch(
@@ -120,11 +128,17 @@ def branch(
     if_true: Callable[[], Tensor],
     if_false: Callable[[], Tensor],
     branch_name: str = "branch",
-    reset_states: dict[str, float | Tensor] | None = None,
+    reset_states: dict[str, Tensor] | None = None,
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Domain restriction with communication isolation and state reset."""
+    r"""Domain restriction with edge partitioning and optional state reset.
+
+    Communication is restricted by masking edges per branch. Branch evaluations
+    share the same underlying state manager and are coordinated via
+    snapshot/restore semantics before merging. ``reset_states`` values must be
+    node field tensors.
+    """
     from ..layers import BranchLayer
 
     effective_mode = mode if mode is not None else get_default_mode()
@@ -158,7 +172,7 @@ def mux(
 
 
 def const(value: float) -> Tensor:
-    """Broadcast a scalar to all nodes in the current context."""
+    """Build a constant node field by broadcasting a scalar in the current context."""
     ctx = current_context()
     return torch.full(
         (ctx.num_nodes,), value, dtype=torch.float32, device=ctx.edge_index.device
@@ -174,7 +188,7 @@ def mid() -> Tensor:
 
 
 class field:
-    """Context-aware field constructors."""
+    """Context-aware constructors for node field tensors."""
 
     @staticmethod
     def of(value: float) -> Tensor:

@@ -3,6 +3,7 @@
 import torch
 
 from autofield import AggregateContext, collect_cast, gradient_cast, nbr_range
+from autofield.dsl import field
 from conftest import assert_finite_gradients
 
 
@@ -14,7 +15,7 @@ class TestGradientCast:
         for _ in range(4):
             with line_ctx.round():
                 output = gradient_cast(
-                    source, 0.0, lambda value: value + 1.0, name="hop_count"
+                    source, field.zeros(), lambda value: value + 1.0, name="hop_count"
                 )
 
         assert torch.allclose(output, torch.tensor([0.0, 1.0, 2.0, 3.0]))
@@ -40,7 +41,7 @@ class TestGradientCast:
         for _ in range(4):
             with line_ctx.round():
                 output = gradient_cast(
-                    source, 0.0, lambda value: value + step, name="backprop"
+                    source, field.zeros(), lambda value: value + step, name="backprop"
                 )
 
         loss = output.sum()
@@ -57,7 +58,7 @@ class TestGradientCast:
         for _ in range(4):
             with hard_ctx.round():
                 hard = gradient_cast(
-                    source, 0.0, lambda value: value + 1.0, name="hard"
+                    source, field.zeros(), lambda value: value + 1.0, name="hard"
                 )
 
         soft_ctx = AggregateContext(edge_index, n)
@@ -65,7 +66,7 @@ class TestGradientCast:
             with soft_ctx.round():
                 soft = gradient_cast(
                     source,
-                    0.0,
+                    field.zeros(),
                     lambda value: value + 1.0,
                     name="soft",
                     mode="soft",
@@ -104,7 +105,11 @@ class TestCollectCast:
         for _ in range(4):
             with line_ctx.round():
                 output = collect_cast(
-                    potential, local, 0.0, lambda acc, value: acc + value, name="sizes"
+                    potential,
+                    local,
+                    field.zeros(),
+                    lambda acc, value: acc + value,
+                    name="sizes",
                 )
 
         assert torch.allclose(output, torch.tensor([4.0, 3.0, 2.0, 1.0]))
@@ -117,7 +122,11 @@ class TestCollectCast:
         for _ in range(4):
             with line_ctx.round():
                 output = collect_cast(
-                    potential, local, 0.0, lambda acc, value: acc + value, name="roots"
+                    potential,
+                    local,
+                    field.zeros(),
+                    lambda acc, value: acc + value,
+                    name="roots",
                 )
 
         assert torch.allclose(output, torch.ones(n))
@@ -132,7 +141,7 @@ class TestCollectCast:
                 output = collect_cast(
                     potential,
                     local,
-                    0.0,
+                    field.zeros(),
                     lambda acc, value: acc + value,
                     name="local_grad",
                 )
@@ -152,7 +161,7 @@ class TestCollectCast:
                 output = collect_cast(
                     potential,
                     local,
-                    0.0,
+                    field.zeros(),
                     lambda acc, value: acc + value,
                     name="soft_potential",
                     mode="soft",
@@ -177,7 +186,7 @@ class TestCollectCast:
                 output = collect_cast(
                     potential,
                     local,
-                    0.0,
+                    field.zeros(),
                     torch.add,
                     name="weighted_sizes",
                 )

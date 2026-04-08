@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import torch
-from autofield import SpatialScenario, mux, nbr, rep
+from autofield import SpatialScenario, mux, nbr, rep, minhood
 from autofield.dsl import AggregateContext, field
 from ..domain.moving_logic import MAX_DIST
 
@@ -47,9 +47,9 @@ def render_moving_gradient_evolution(
         scenario.sync_context(ctx._ctx)
         with ctx.round():
             dist = rep(
-                MAX_DIST,
+                field.of(MAX_DIST),
                 lambda dist_old: mux(
-                    source, field.of(0.0), nbr(dist_old + model.w, aggr="min")
+                    source, field.of(0.0), minhood(nbr(dist_old + model.w))
                 ),
                 name="dist",
             )

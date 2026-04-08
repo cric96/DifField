@@ -7,7 +7,19 @@ from typing import Any
 import pytest
 import torch
 
-from autofield import AggregateContext, branch, gradient, mux, nbr, nbr_range, rep
+from autofield import (
+    AggregateContext,
+    branch,
+    gradient,
+    mux,
+    nbr,
+    nbr_range,
+    rep,
+    minhood,
+    maxhood,
+    sumhood,
+    avghood,
+)
 from autofield.dsl import DeviceContext, field
 
 
@@ -70,8 +82,8 @@ class TestDeviceContextBasic:
         for _ in range(4):
             with ctx.round():
                 d = rep(
-                    float("inf"),
-                    lambda dist: mux(source, field.of(0.0), nbr(dist + w, aggr="min")),
+                    field.inf(),
+                    lambda dist: mux(source, field.of(0.0), minhood(nbr(dist + w))),
                     name="dist",
                 )
             global_states.append(d.detach().clone())
@@ -87,10 +99,8 @@ class TestDeviceContextBasic:
             )
             with device.round(neighbor_exports=neighbor_exports):
                 d_local = rep(
-                    float("inf"),
-                    lambda dist: mux(
-                        source_local, field.of(0.0), nbr(dist + w, aggr="min")
-                    ),
+                    field.inf(),
+                    lambda dist: mux(source_local, field.of(0.0), minhood(nbr(dist + w))),
                     name="dist",
                 )
 
@@ -106,10 +116,8 @@ class TestDeviceContextBasic:
         for _ in range(3):
             with device.round():
                 d = rep(
-                    float("inf"),
-                    lambda dist: mux(
-                        source_local, field.of(0.0), nbr(dist + w, aggr="min")
-                    ),
+                    field.inf(),
+                    lambda dist: mux(source_local, field.of(0.0), minhood(nbr(dist + w))),
                     name="dist",
                 )
         assert device.result(d).item() == 0.0
@@ -118,7 +126,7 @@ class TestDeviceContextBasic:
         device = DeviceContext(num_neighbors=2)
 
         with device.round(neighbor_ranges=[1.5, 2.5]):
-            ranges = nbr(nbr_range(), aggr="sum")
+            ranges = sumhood(nbr_range())
 
         assert abs(device.result(ranges).item() - 4.0) < 1e-6
 
@@ -166,12 +174,12 @@ class TestDeviceContextBranching:
                     cond,
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + 1.0,
+                        lambda s: sumhood(nbr(s)) + 1.0,
                         name="state",
                     ),
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="max") + 10.0,
+                        lambda s: maxhood(nbr(s)) + 10.0,
                         name="state",
                     ),
                 )
@@ -216,11 +224,11 @@ class TestDeviceContextBranching:
                     cond,
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + outer,
+                        lambda s: sumhood(nbr(s)) + outer,
                     ),
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="max") + outer * 10,
+                        lambda s: maxhood(nbr(s)) + outer * 10,
                     ),
                 )
             return dev.result(outer).item(), dev.result(inner_val).item()
@@ -251,12 +259,12 @@ class TestDeviceContextBranching:
                     cond,
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + 1.0,
+                        lambda s: sumhood(nbr(s)) + 1.0,
                         name="state",
                     ),
                     lambda: rep(
                         dev.local_field(1000.0),
-                        lambda s: nbr(s, aggr="sum") + 10.0,
+                        lambda s: sumhood(nbr(s)) + 10.0,
                         name="state",
                     ),
                 )
@@ -286,12 +294,12 @@ class TestDeviceContextBranching:
                     cond,
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + 1.0,
+                        lambda s: sumhood(nbr(s)) + 1.0,
                         name="state",
                     ),
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="max") + 100.0,
+                        lambda s: maxhood(nbr(s)) + 100.0,
                         name="state",
                     ),
                 )
@@ -330,7 +338,7 @@ class TestDeviceContextMultipleAssignments:
                 x = rep(dev.local_field(0.0), lambda s: s + 1.0, name="x")
                 y = mux(
                     src,
-                    rep(dev.local_field(0.0), lambda s: nbr(s + x, aggr="sum"), name="y"),
+                    rep(dev.local_field(0.0), lambda s: sumhood(nbr(s + x)), name="y"),
                     dev.local_field(100.0),
                 )
                 cond = x > 1.5
@@ -384,7 +392,7 @@ class TestDeviceContextMultipleAssignments:
                     src,
                     rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + x,
+                        lambda s: sumhood(nbr(s)) + x,
                         name="y",
                     ),
                     dev.local_field(100.0),
@@ -422,7 +430,7 @@ class TestDeviceContextAutoNamed:
             with dev.round(neighbor_exports=exports):
                 val = rep(
                     dev.local_field(0.0),
-                    lambda s: nbr(s, aggr="sum") + 1.0,
+                    lambda s: sumhood(nbr(s)) + 1.0,
                     name="counter",
                 )
             return dev.result(val).item()
@@ -454,7 +462,7 @@ class TestDeviceContextAutoNamed:
                     lambda s: s + 1.0,
                     name="x",
                 )
-                aggregated = nbr(x, aggr="sum")
+                aggregated = sumhood(nbr(x))
             return dev.result(x).item(), dev.result(aggregated).item()
 
         xa1, agg_a1 = run_sum(dev_a, None)
@@ -484,12 +492,12 @@ class TestDeviceContextAutoNamed:
                     cond,
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + 1.0,
+                        lambda s: sumhood(nbr(s)) + 1.0,
                         name="branch_state",
                     ),
                     lambda: rep(
                         dev.local_field(0.0),
-                        lambda s: nbr(s, aggr="sum") + 10.0,
+                        lambda s: sumhood(nbr(s)) + 10.0,
                         name="branch_state",
                     ),
                 )
@@ -522,7 +530,7 @@ class TestDeviceContextAutoNamed:
                     lambda s: s + 1.0,
                     name="val",
                 )
-                min_nbr = nbr(x, aggr="min")
+                min_nbr = minhood(nbr(x))
             return dev.result(x).item(), dev.result(min_nbr).item()
 
         xa1, min_a1 = run_min(dev_a, None)
@@ -545,7 +553,7 @@ class TestDeviceContextEdgeCases:
         expr = device.local_field(own=10.0, nbr=[10.0, 10.0])
 
         with device.round(neighbor_messages={"chan": [2.0, 3.0]}):
-            result = nbr(expr, aggr="sum", tag="chan")
+            result = sumhood(nbr(expr), tag="chan")
 
         assert device.result(result).item() == 5.0
 
@@ -554,9 +562,9 @@ class TestDeviceContextEdgeCases:
         expr = device.local_field(own=4.0, nbr=[2.0])
 
         with device.round():
-            without_self = nbr(expr, aggr="sum", include_self=False)
+            without_self = sumhood(nbr(expr), include_self=False)
         with device.round():
-            with_self = nbr(expr, aggr="sum", include_self=True)
+            with_self = sumhood(nbr(expr), include_self=True)
 
         assert device.result(without_self).item() == 2.0
         assert device.result(with_self).item() == 6.0
@@ -572,12 +580,12 @@ class TestDeviceContextEdgeCases:
                     cond,
                     lambda: rep(
                         dev.local_field(1.0),
-                        lambda s: nbr(s, aggr="sum") * 0.0 + 1.0,
+                        lambda s: sumhood(nbr(s)) * 0.0 + 1.0,
                         name="scaled",
                     ),
                     lambda: rep(
                         dev.local_field(10000.0),
-                        lambda s: nbr(s, aggr="sum") * 0.0 + 10000.0,
+                        lambda s: sumhood(nbr(s)) * 0.0 + 10000.0,
                         name="scaled",
                     ),
                 )
@@ -598,12 +606,12 @@ class TestDeviceContextEdgeCases:
                     cond_false,
                     lambda: rep(
                         dev.local_field(1.0),
-                        lambda s: nbr(s, aggr="sum") * 0.0 + 1.0,
+                        lambda s: sumhood(nbr(s)) * 0.0 + 1.0,
                         name="scaled",
                     ),
                     lambda: rep(
                         dev.local_field(10000.0),
-                        lambda s: nbr(s, aggr="sum") * 0.0 + 10000.0,
+                        lambda s: sumhood(nbr(s)) * 0.0 + 10000.0,
                         name="scaled",
                     ),
                 )
@@ -626,12 +634,12 @@ class TestDeviceContextEdgeCases:
                     cond,
                     lambda: rep(
                         dev.local_field(1.0),
-                        lambda s: nbr(s, aggr="sum") + 0.0,
+                        lambda s: sumhood(nbr(s)) + 0.0,
                         name="val",
                     ),
                     lambda: rep(
                         dev.local_field(100.0),
-                        lambda s: nbr(s, aggr="sum") + 0.0,
+                        lambda s: sumhood(nbr(s)) + 0.0,
                         name="val",
                     ),
                 )

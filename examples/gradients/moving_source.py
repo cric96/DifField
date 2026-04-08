@@ -14,7 +14,17 @@ sys.path.insert(0, str(ROOT / "examples"))
 import torch
 from autofield.utils import get_device
 
-from autofield import EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder, mux, nbr, rep
+from autofield import (
+    EventSchedule,
+    GridScenario,
+    ScheduledEvent,
+    SimulationEngine,
+    SnapshotRecorder,
+    mux,
+    nbr,
+    rep,
+    minhood,
+)
 from autofield.dsl import field
 from shared.plotting import save_grid_simulation_gif
 
@@ -26,8 +36,12 @@ def parse_args():
     parser.add_argument("--rounds", type=int, default=40, help="Simulation rounds")
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
     parser.add_argument("--hop", type=float, default=1.0, help="Hop cost")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
-    parser.add_argument("--viz-prefix", type=str, default="generated/gradient_moving_source")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
+    parser.add_argument(
+        "--viz-prefix", type=str, default="generated/gradient_moving_source"
+    )
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
@@ -57,7 +71,11 @@ def main():
     source = make_source(scenario, 0, 0)
     schedule = EventSchedule(
         [
-            ScheduledEvent(round_idx=args.rounds // 3, callback=move_source_event(args.rows // 2, args.cols // 2), name="move_to_center"),
+            ScheduledEvent(
+                round_idx=args.rounds // 3,
+                callback=move_source_event(args.rows // 2, args.cols // 2),
+                name="move_to_center",
+            ),
             ScheduledEvent(
                 round_idx=(2 * args.rounds) // 3,
                 callback=move_source_event(args.rows - 1, args.cols - 1),
@@ -68,12 +86,20 @@ def main():
 
     record_steps = {0, args.rounds // 3, (2 * args.rounds) // 3, args.rounds - 1}
     record_rounds = None if not args.no_gif else record_steps
-    recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds=record_rounds)
+    recorder = SnapshotRecorder(
+        state_fields=["dist"], capture_output=True, record_rounds=record_rounds
+    )
     weight = torch.tensor(args.hop, device=device)
 
     def program(runtime):
         source_field = runtime.signals["source"]
-        return rep(float("inf"), lambda dist_old: mux(source_field, field.of(0.0), nbr(dist_old + weight, aggr="min")), name="dist")
+        return rep(
+            field.inf(),
+            lambda dist_old: mux(
+                source_field, field.of(0.0), minhood(nbr(dist_old + weight))
+            ),
+            name="dist",
+        )
 
     output, runtime = engine.run(
         rounds=args.rounds,

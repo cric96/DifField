@@ -12,6 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 from autofield.utils import get_device
+
 sys.path.insert(0, str(ROOT / "examples"))
 
 from autofield import (
@@ -27,9 +28,14 @@ from autofield import (
     mux,
     nbr,
     rep,
+    minhood,
 )
 from autofield.dsl import field
-from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
+from shared.plotting import (
+    export_moving_gif,
+    plot_moving_snapshots,
+    plot_node_trajectories,
+)
 
 
 def parse_args():
@@ -53,10 +59,16 @@ def parse_args():
     parser.add_argument("--gif-fps", type=int, default=8)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
-    parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links in visual outputs")
+    parser.add_argument(
+        "--hide-links",
+        action="store_true",
+        help="Do not draw graph links in visual outputs",
+    )
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     return parser.parse_args()
 
 
@@ -68,8 +80,12 @@ def simple_step(runtime, dt: float) -> None:
     runtime.metadata["velocities"] = velocities * runtime.metadata["damping"]
     scenario.update_positions(positions, refresh_topology=True)
     if runtime.round_idx in runtime.metadata["record_rounds"]:
-        runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().cpu().clone()
-        runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().cpu().clone()
+        runtime.metadata["positions_by_round"][runtime.round_idx] = (
+            scenario.positions.detach().cpu().clone()
+        )
+        runtime.metadata["edge_index_by_round"][runtime.round_idx] = (
+            scenario.edge_index.detach().cpu().clone()
+        )
 
 
 def boids_step(runtime, dt: float) -> None:
@@ -96,8 +112,12 @@ def boids_step(runtime, dt: float) -> None:
     runtime.metadata["velocities"] = new_vel
     scenario.update_positions(new_pos, refresh_topology=True)
     if runtime.round_idx in runtime.metadata["record_rounds"]:
-        runtime.metadata["positions_by_round"][runtime.round_idx] = scenario.positions.detach().cpu().clone()
-        runtime.metadata["edge_index_by_round"][runtime.round_idx] = scenario.edge_index.detach().cpu().clone()
+        runtime.metadata["positions_by_round"][runtime.round_idx] = (
+            scenario.positions.detach().cpu().clone()
+        )
+        runtime.metadata["edge_index_by_round"][runtime.round_idx] = (
+            scenario.edge_index.detach().cpu().clone()
+        )
 
 
 def movement_event(motion: str, dt: float):
@@ -116,10 +136,12 @@ def main():
     torch.manual_seed(args.seed)
 
     positions = torch.rand(args.num_nodes, 2, device=device)
-    velocities = (torch.rand(args.num_nodes, 2, device=device) * 2.0 - 1.0)
+    velocities = torch.rand(args.num_nodes, 2, device=device) * 2.0 - 1.0
     velocities = normalize_vectors(velocities) * args.speed
 
-    scenario = SpatialScenario(positions=positions, edge_radius=args.radius, device=device)
+    scenario = SpatialScenario(
+        positions=positions, edge_radius=args.radius, device=device
+    )
     engine = SimulationEngine.from_scenario(scenario)
 
     source = scenario.marker(args.source)
@@ -127,17 +149,29 @@ def main():
 
     schedule = EventSchedule(
         [
-            ScheduledEvent(round_idx=round_idx, callback=movement_event(args.motion, args.dt), name=f"move_{round_idx}")
+            ScheduledEvent(
+                round_idx=round_idx,
+                callback=movement_event(args.motion, args.dt),
+                name=f"move_{round_idx}",
+            )
             for round_idx in range(args.rounds)
         ]
     )
 
-    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {args.rounds - 1}
-    recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds=record_rounds)
+    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {
+        args.rounds - 1
+    }
+    recorder = SnapshotRecorder(
+        state_fields=["dist"], capture_output=True, record_rounds=record_rounds
+    )
 
     def program(runtime):
         src = source.to(runtime.scenario.device)
-        return rep(float("inf"), lambda dist_old: mux(src, field.of(0.0), nbr(dist_old + weight, aggr="min")), name="dist")
+        return rep(
+            field.inf(),
+            lambda dist_old: mux(src, field.of(0.0), minhood(nbr(dist_old + weight))),
+            name="dist",
+        )
 
     output, runtime = engine.run(
         rounds=args.rounds,
@@ -161,11 +195,17 @@ def main():
     )
 
     center = torch.tensor([0.5, 0.5], device=runtime.scenario.device)
-    closest_idx = torch.argmin(torch.norm(runtime.scenario.positions - center, dim=1)).item()
+    closest_idx = torch.argmin(
+        torch.norm(runtime.scenario.positions - center, dim=1)
+    ).item()
 
     print("=== Moving Nodes Gradient ===")
-    print(f"motion={args.motion} nodes={args.num_nodes} rounds={args.rounds} radius={args.radius}")
-    print(f"source={args.source} center-nearest-node={closest_idx} dist={output[closest_idx].item():.3f}")
+    print(
+        f"motion={args.motion} nodes={args.num_nodes} rounds={args.rounds} radius={args.radius}"
+    )
+    print(
+        f"source={args.source} center-nearest-node={closest_idx} dist={output[closest_idx].item():.3f}"
+    )
     print(f"final_edges={runtime.scenario.edge_index.shape[1]}")
     print("recorded rounds:", sorted(recorder.records.keys()))
 
@@ -177,7 +217,10 @@ def main():
             for round_idx, payload in recorder.records.items()
             if "output" in payload
         }
-        positions_over_time = [positions_by_round[round_idx] for round_idx in sorted(positions_by_round.keys())]
+        positions_over_time = [
+            positions_by_round[round_idx]
+            for round_idx in sorted(positions_by_round.keys())
+        ]
 
         plot_moving_snapshots(
             positions_by_round=positions_by_round,

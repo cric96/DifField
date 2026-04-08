@@ -19,7 +19,7 @@ class BranchLayer(nn.Module):
         true_branch: nn.Module,
         false_branch: nn.Module,
         branch_name: str = "branch",
-        reset_states: dict[str, float | Tensor] | None = None,
+        reset_states: dict[str, Tensor] | None = None,
         mode: str | None = None,
         tau: float | None = None,
     ) -> None:
@@ -87,7 +87,13 @@ class BranchLayer(nn.Module):
             state_after_false = states_after_false.get(key)
             if state_after_true is not None and state_after_false is not None:
                 ctx.state.update(
-                    field_where(cond, state_after_true, state_after_false, mode=effective_mode, tau=effective_tau),
+                    field_where(
+                        cond,
+                        state_after_true,
+                        state_after_false,
+                        mode=effective_mode,
+                        tau=effective_tau,
+                    ),
                     name=key,
                 )
             elif state_after_true is not None:
@@ -95,7 +101,9 @@ class BranchLayer(nn.Module):
             else:
                 ctx.state.update(state_after_false, name=key)
 
-        return field_where(cond, out_true, out_false, mode=effective_mode, tau=effective_tau)
+        return field_where(
+            cond, out_true, out_false, mode=effective_mode, tau=effective_tau
+        )
 
 
 class MuxLayer(nn.Module):
@@ -123,4 +131,6 @@ class MuxLayer(nn.Module):
         out_false = self.false_branch(x, ctx)
         effective_mode = self.mode if self.mode is not None else get_default_mode()
         effective_tau = self.tau if self.tau is not None else DEFAULT_TAU_BRANCH
-        return field_where(cond, out_true, out_false, mode=effective_mode, tau=effective_tau)
+        return field_where(
+            cond, out_true, out_false, mode=effective_mode, tau=effective_tau
+        )

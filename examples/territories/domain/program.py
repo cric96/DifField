@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 import torch
 from autofield import collect_cast, gradient, gradient_cast, nbr_range, SimulationEngine
+from autofield.dsl import field
 from .layout import TerritoryLayout, TerritoryOutputs
 
 if TYPE_CHECKING:
@@ -28,7 +29,7 @@ def territory_program(
     name_prefix: str = "territories",
 ) -> torch.Tensor:
     """Core aggregate program for territory potential and load collection."""
-    correction = 0.0 if local_correction is None else local_correction
+    correction = field.zeros() if local_correction is None else local_correction
     step_cost = range_weight * nbr_range() + risk_weight * layout.risk + correction
     tau = assignment_tau.clamp_min(1e-3)
 
@@ -56,7 +57,7 @@ def territory_program(
     collected_load = collect_cast(
         potential,
         layout.demand,
-        0.0,
+        field.zeros(),
         torch.add,
         weight=step_cost,
         name=f"{name_prefix}_load",
@@ -67,7 +68,7 @@ def territory_program(
     collected_risk = collect_cast(
         potential,
         layout.demand * layout.risk,
-        0.0,
+        field.zeros(),
         torch.add,
         weight=step_cost,
         name=f"{name_prefix}_risk",

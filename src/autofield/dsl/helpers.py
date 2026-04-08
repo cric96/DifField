@@ -14,44 +14,35 @@ from ..core import RoundContext, resolve_context
 from ..functional import scatter_aggr, scatter_min_by_first
 
 
-def ensure_field(value: float | Tensor, ctx: RoundContext | None = None) -> Tensor:
+def ensure_field(value: Tensor, ctx: RoundContext | None = None) -> Tensor:
     """Normalize scalars and tensors to a node field in *ctx*."""
     ctx = resolve_context(ctx)
-    if isinstance(value, Tensor):
-        tensor = value.to(ctx.edge_index.device)
-        if tensor.dim() == 0:
-            return tensor.expand(ctx.num_nodes)
-        if tensor.shape[0] != ctx.num_nodes:
-            raise ValueError(
-                f"Expected first dimension {ctx.num_nodes}, got {tuple(tensor.shape)}",
-            )
+    tensor = value.to(ctx.edge_index.device)
+    if tensor.dim() == 0:
+        return tensor.expand(ctx.num_nodes)
+    if tensor.shape[0] != ctx.num_nodes:
+        raise ValueError(
+            f"Expected first dimension {ctx.num_nodes}, got {tuple(tensor.shape)}",
+        )
+    return tensor
+
+
+def broadcast_like(value: Tensor, template: Tensor) -> Tensor:
+    """Broadcast *value* to match the shape of *template*."""
+    tensor = value.to(device=template.device, dtype=template.dtype)
+    if tensor.dim() == 0:
+        return tensor.expand_as(template)
+    if tensor.shape == template.shape:
         return tensor
-    return torch.full(
-        (ctx.num_nodes,),
-        float(value),
-        dtype=torch.float32,
-        device=ctx.edge_index.device,
+    if tensor.shape == template.shape[1:]:
+        return tensor.unsqueeze(0).expand_as(template)
+    raise ValueError(
+        f"Cannot broadcast shape {tuple(tensor.shape)} to {tuple(template.shape)}",
     )
 
 
-def broadcast_like(value: float | Tensor, template: Tensor) -> Tensor:
-    """Broadcast *value* to match the shape of *template*."""
-    if isinstance(value, Tensor):
-        tensor = value.to(device=template.device, dtype=template.dtype)
-        if tensor.dim() == 0:
-            return tensor.expand_as(template)
-        if tensor.shape == template.shape:
-            return tensor
-        if tensor.shape == template.shape[1:]:
-            return tensor.unsqueeze(0).expand_as(template)
-        raise ValueError(
-            f"Cannot broadcast shape {tuple(tensor.shape)} to {tuple(template.shape)}",
-        )
-    return torch.full_like(template, float(value))
-
-
 def require_scalar_field(
-    value: float | Tensor, *, name: str, ctx: RoundContext | None = None
+    value: Tensor, *, name: str, ctx: RoundContext | None = None
 ) -> Tensor:
     """Require *value* to normalize to a scalar node field."""
     field_value = ensure_field(value, ctx)
@@ -88,8 +79,7 @@ def validate_cast_mode(mode: str) -> None:
 
 
 def resolve_edge_cost(
-    weight: float | Tensor | "NeighborExpr" | None,
-    ctx: RoundContext,
+    weight: Tensor | "NeighborExpr" | None, ctx: RoundContext
 ) -> Tensor:
     """Resolve an edge cost tensor from various input types."""
     from .neighbor import NeighborExpr

@@ -24,20 +24,25 @@ from .helpers import (
     unpack_cast_state,
     validate_cast_mode,
 )
-from .neighbor import NeighborExpr, nbr_range
-from .primitives import field, mux, nbr, rep
+from .neighbor import NeighborExpr, nbr, nbr_range
+from .primitives import field, mux, rep
+from .hoods import minhood
 
 
 def gradient(
-    source: float | Tensor,
-    weight: float | Tensor | NeighborExpr | None = None,
+    source: Tensor,
+    weight: NeighborExpr | None = None,
     *,
     name: str = "gradient",
     mode: str | None = None,
     tau: float | None = None,
     fill_value: float = float("inf"),
 ) -> Tensor:
-    r"""Compute a minimum-cost gradient / distance field from source nodes."""
+    r"""Compute a minimum-cost distance field from scalar source nodes.
+
+    ``source`` is a scalar node field. ``weight`` is an optional edge-wise
+    :class:`NeighborExpr`; when omitted, :func:`nbr_range` is used.
+    """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
     validate_cast_mode(effective_mode)
@@ -45,27 +50,36 @@ def gradient(
     step = nbr_range() if weight is None else weight
 
     return rep(
-        fill_value,
+        field.of(fill_value),
         lambda dist: mux(
             source_field,
             field.of(0.0),
-            nbr(dist + step, aggr="min", mode=effective_mode, tau=effective_tau, fill_value=fill_value),
+            minhood(
+                nbr(dist) + step,
+                mode=effective_mode,
+                tau=effective_tau,
+                fill_value=fill_value,
+            ),
         ),
         name=f"_grad_{name}",
     )
 
 
 def gradient_cast(
-    source: float | Tensor,
-    center: float | Tensor,
+    source: Tensor,
+    center: Tensor,
     accumulation: Callable[[Tensor], Tensor],
     *,
-    weight: float | Tensor | NeighborExpr | None = None,
+    weight: NeighborExpr | None = None,
     name: str = "gradient_cast",
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Propagate payloads outward along a minimum-potential gradient."""
+    r"""Propagate payloads outward along a minimum-potential gradient.
+
+    ``source`` is a scalar node field, ``center`` is a node field payload, and
+    ``weight`` is an optional edge-wise :class:`NeighborExpr`.
+    """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
     validate_cast_mode(effective_mode)
@@ -102,11 +116,15 @@ def broadcast(
     value: Tensor,
     *,
     name: str = "bc_cc",
-    weight: float | Tensor | NeighborExpr | None = None,
+    weight: NeighborExpr | None = None,
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Propagate a value from root nodes to the rest of the network via collect_cast."""
+    r"""Propagate a node field from root nodes through the network.
+
+    ``mask`` marks roots, ``value`` is the payload field, and ``weight`` is an
+    optional edge-wise :class:`NeighborExpr`.
+    """
     cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
@@ -122,17 +140,21 @@ def broadcast(
 
 
 def collect_cast(
-    potential: float | Tensor,
-    local: float | Tensor,
-    null: float | Tensor,
+    potential: Tensor,
+    local: Tensor,
+    null: Tensor,
     accumulation: Callable[[Tensor, Tensor], Tensor],
     *,
-    weight: float | Tensor | NeighborExpr | None = None,
+    weight: NeighborExpr | None = None,
     name: str = "collect_cast",
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Collect payloads from children toward local minima of a potential field."""
+    r"""Collect payloads from children toward local minima of a potential field.
+
+    ``potential`` is a scalar node field, ``local`` and ``null`` are payload
+    fields, and ``weight`` is an optional edge-wise :class:`NeighborExpr`.
+    """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
     validate_cast_mode(effective_mode)

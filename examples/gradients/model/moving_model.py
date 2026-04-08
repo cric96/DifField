@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 import torch.nn as nn
-from autofield import SpatialScenario, mux, nbr, rep
+from autofield import SpatialScenario, mux, nbr, rep, minhood
 from autofield.dsl import AggregateContext, field
 from ..domain.moving_logic import MAX_DIST
 
@@ -79,9 +79,9 @@ class LearnableMovingGradient(nn.Module):
             scenario.sync_context(ctx._ctx)
             with ctx.round():
                 dist = rep(
-                    MAX_DIST,
+                    field.of(MAX_DIST),
                     lambda dist_old: mux(
-                        source, field.of(0.0), nbr(dist_old + self.w, aggr="min")
+                        source, field.of(0.0), minhood(nbr(dist_old + self.w))
                     ),
                     name="dist",
                 )

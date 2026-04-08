@@ -13,13 +13,18 @@ sys.path.insert(0, str(ROOT / "src"))
 import torch
 
 from autofield import GridScenario, SimulationEngine, collect_cast, gradient_cast
+from autofield.dsl import field
 from autofield.utils import get_device
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Collect-cast example on a line")
-    parser.add_argument("--length", type=int, default=8, help="Number of nodes in the line")
-    parser.add_argument("--rounds", type=int, default=0, help="Compute rounds (0 = auto)")
+    parser.add_argument(
+        "--length", type=int, default=8, help="Number of nodes in the line"
+    )
+    parser.add_argument(
+        "--rounds", type=int, default=0, help="Compute rounds (0 = auto)"
+    )
     parser.add_argument(
         "--payload-mode",
         type=str,
@@ -28,7 +33,9 @@ def parse_args():
         help="Local payloads to collect toward the root",
     )
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     return parser.parse_args()
 
 
@@ -63,11 +70,16 @@ def main():
     engine = SimulationEngine.from_scenario(scenario)
 
     def program(_runtime):
-        potential = gradient_cast(source, 0.0, lambda value: value + 1.0, name="potential")
+        potential = gradient_cast(
+            source,
+            field.zeros(),
+            lambda value: value + 1.0,
+            name="potential",
+        )
         collected = collect_cast(
             potential,
             local,
-            0.0,
+            field.zeros(),
             lambda acc, value: acc + value,
             name="mass",
         )
@@ -87,7 +99,9 @@ def main():
     torch.set_printoptions(precision=2, sci_mode=False)
     print("=== Collect-cast example ===")
     print(f"Device: {device}")
-    print(f"Nodes: {scenario.num_nodes}  Rounds: {rounds}  Payload mode: {args.payload_mode}")
+    print(
+        f"Nodes: {scenario.num_nodes}  Rounds: {rounds}  Payload mode: {args.payload_mode}"
+    )
     print("Potential field:")
     print(potential.detach().cpu())
     print("Collected field:")

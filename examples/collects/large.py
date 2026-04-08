@@ -19,18 +19,31 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import SnapshotRecorder, SpatialScenario, SimulationEngine, collect_cast, gradient
+from autofield import (
+    SnapshotRecorder,
+    SpatialScenario,
+    SimulationEngine,
+    collect_cast,
+    gradient,
+)
+from autofield.dsl import field
 from autofield.utils import get_device
 from shared.plotting import save_grid_simulation_gif, to_grid
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Large-scale collect OR on spatial layouts")
+    parser = argparse.ArgumentParser(
+        description="Large-scale collect OR on spatial layouts"
+    )
     parser.add_argument("--rows", type=int, default=40, help="Visual layout rows")
     parser.add_argument("--cols", type=int, default=40, help="Visual layout cols")
-    parser.add_argument("--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)")
+    parser.add_argument(
+        "--rounds", type=int, default=0, help="Number of compute rounds (0 = auto)"
+    )
     parser.add_argument("--seed", type=int, default=7, help="Random seed")
-    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
+    parser.add_argument(
+        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
+    )
     parser.add_argument(
         "--topology",
         type=str,
@@ -38,7 +51,12 @@ def parse_args():
         choices=["radius", "knn", "full"],
         help="Spatial topology used by the aggregate program",
     )
-    parser.add_argument("--k-neighbors", type=int, default=8, help="Neighbors per node when --topology knn")
+    parser.add_argument(
+        "--k-neighbors",
+        type=int,
+        default=8,
+        help="Neighbors per node when --topology knn",
+    )
     parser.add_argument(
         "--edge-radius",
         type=float,
@@ -94,7 +112,9 @@ def topology_label(args) -> str:
     return f"radius (r={effective_edge_radius(args):.3f})"
 
 
-def build_scenario(args, positions: torch.Tensor, device: torch.device) -> SpatialScenario:
+def build_scenario(
+    args, positions: torch.Tensor, device: torch.device
+) -> SpatialScenario:
     kwargs = {
         "positions": positions,
         "self_loops": False,
@@ -120,9 +140,15 @@ def build_example(args, device: torch.device):
     source[source_idx] = 1.0
 
     center_row, center_col, radius = central_region_spec(args.rows, args.cols)
-    row_coords = torch.arange(args.rows, device=device, dtype=torch.float32).unsqueeze(1)
-    col_coords = torch.arange(args.cols, device=device, dtype=torch.float32).unsqueeze(0)
-    data_grid = (row_coords - center_row).square() + (col_coords - center_col).square() <= radius * radius
+    row_coords = torch.arange(args.rows, device=device, dtype=torch.float32).unsqueeze(
+        1
+    )
+    col_coords = torch.arange(args.cols, device=device, dtype=torch.float32).unsqueeze(
+        0
+    )
+    data_grid = (row_coords - center_row).square() + (
+        col_coords - center_col
+    ).square() <= radius * radius
     data = data_grid.reshape(-1)
 
     metadata = {
@@ -142,14 +168,18 @@ def build_example(args, device: torch.device):
 def run_collect_example(args, scenario, source, data):
     engine = SimulationEngine.from_scenario(scenario)
     rounds = auto_rounds(args)
-    recorder = SnapshotRecorder(capture_output=True) if (not args.no_viz or not args.no_gif) else None
+    recorder = (
+        SnapshotRecorder(capture_output=True)
+        if (not args.no_viz or not args.no_gif)
+        else None
+    )
 
     def program(runtime):
         potential = gradient(runtime.signals["source"], name="spatial_potential")
         collect_or = collect_cast(
             potential,
             runtime.signals["data"],
-            False,
+            field.of(False),
             torch.logical_or,
             name="collect_or",
             mode="hard",
@@ -176,11 +206,19 @@ def run_collect_example(args, scenario, source, data):
 def cumulative_collect_cone(snapshots: dict[int, torch.Tensor]) -> torch.Tensor | None:
     if not snapshots:
         return None
-    history = torch.stack([snapshot[:, 1].float() for _, snapshot in sorted(snapshots.items())], dim=0)
+    history = torch.stack(
+        [snapshot[:, 1].float() for _, snapshot in sorted(snapshots.items())], dim=0
+    )
     return history.mean(dim=0)
 
 
-def plot_results(final_output: torch.Tensor, snapshots: dict[int, torch.Tensor], data: torch.Tensor, metadata: dict[str, int], args) -> None:
+def plot_results(
+    final_output: torch.Tensor,
+    snapshots: dict[int, torch.Tensor],
+    data: torch.Tensor,
+    metadata: dict[str, int],
+    args,
+) -> None:
     if plt is None or args.no_viz:
         return
 
@@ -193,20 +231,54 @@ def plot_results(final_output: torch.Tensor, snapshots: dict[int, torch.Tensor],
     source_row = metadata["source_row"]
     source_col = metadata["source_col"]
     finite_potential = potential[torch.isfinite(potential)]
-    potential_vmax = float(finite_potential.max().item()) if finite_potential.numel() > 0 else 1.0
+    potential_vmax = (
+        float(finite_potential.max().item()) if finite_potential.numel() > 0 else 1.0
+    )
 
     fig, axes = plt.subplots(1, 4, figsize=(20, 5.2))
 
     panels = [
-        (to_grid(data_cpu, args.rows, args.cols, replace_inf=False), "Central data region", "cividis", 0.0, 1.0),
-        (to_grid(potential, args.rows, args.cols), "Potential = spatial gradient(source)", "magma", 0.0, potential_vmax),
-        (to_grid(collected, args.rows, args.cols, replace_inf=False), "Hard collect OR", "viridis", 0.0, 1.0),
-        (to_grid(cone_field, args.rows, args.cols, replace_inf=False), "Aggregate cone = mean(round-wise collect)", "inferno", 0.0, 1.0),
+        (
+            to_grid(data_cpu, args.rows, args.cols, replace_inf=False),
+            "Central data region",
+            "cividis",
+            0.0,
+            1.0,
+        ),
+        (
+            to_grid(potential, args.rows, args.cols),
+            "Potential = spatial gradient(source)",
+            "magma",
+            0.0,
+            potential_vmax,
+        ),
+        (
+            to_grid(collected, args.rows, args.cols, replace_inf=False),
+            "Hard collect OR",
+            "viridis",
+            0.0,
+            1.0,
+        ),
+        (
+            to_grid(cone_field, args.rows, args.cols, replace_inf=False),
+            "Aggregate cone = mean(round-wise collect)",
+            "inferno",
+            0.0,
+            1.0,
+        ),
     ]
 
     for ax, (grid, title, cmap, vmin, vmax) in zip(axes, panels):
         im = ax.imshow(grid, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
-        ax.plot(source_col, source_row, marker="*", markersize=14, color="red", markeredgecolor="white", markeredgewidth=1.0)
+        ax.plot(
+            source_col,
+            source_row,
+            marker="*",
+            markersize=14,
+            color="red",
+            markeredgecolor="white",
+            markeredgewidth=1.0,
+        )
         ax.set_title(title)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -251,7 +323,9 @@ def main():
     device = get_device(args.device)
 
     scenario, source, data, metadata = build_example(args, device)
-    output, snapshots, rounds, elapsed = run_collect_example(args, scenario, source, data)
+    output, snapshots, rounds, elapsed = run_collect_example(
+        args, scenario, source, data
+    )
 
     potential = output[:, 0]
     collected = output[:, 1] > 0.5
@@ -269,7 +343,9 @@ def main():
         f"Layout: {args.rows}x{args.cols}  Topology: {metadata['topology_label']}  "
         f"Nodes: {scenario.num_nodes}  Edges: {scenario.edge_index.shape[1]}"
     )
-    print(f"Rounds: {rounds}  Compute time: {elapsed:.3f}s  Source: ({metadata['source_row']}, {metadata['source_col']})")
+    print(
+        f"Rounds: {rounds}  Compute time: {elapsed:.3f}s  Source: ({metadata['source_row']}, {metadata['source_col']})"
+    )
     print(
         "Central true region: "
         f"circle centered at ({center_region['center_row']:.1f}, {center_region['center_col']:.1f}) "
