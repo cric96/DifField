@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class _PyGMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper with built-in and custom aggregation paths."""
 
-    def __init__(self, owner: "HoodLayer") -> None:
+    def __init__(self, owner: "FoldhoodLayer") -> None:
         use_builtin = (
             isinstance(owner.aggr, str)
             and owner.mode == "hard"
@@ -77,7 +77,7 @@ class _PyGMessagePassing(MessagePassing):
         )
 
 
-class HoodLayer(nn.Module):
+class FoldhoodLayer(nn.Module):
     r"""Gather neighbours and fold into a single field.
 
     ``m_i = ⊕_{j∈N(i)} msg_{j→i}`` where *msg* comes from a

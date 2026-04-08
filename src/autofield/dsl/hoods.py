@@ -6,7 +6,7 @@ import torch.nn as nn
 from typing import Callable
 from torch import Tensor
 
-from .primitives import hood
+from .primitives import foldhood
 from .neighbor import NeighborExpr
 
 __all__ = [
@@ -26,7 +26,7 @@ def minhood(
     tag: str | None = None,
 ) -> Tensor:
     """Aggregate a ``NeighborExpr`` with minimum reduction."""
-    return hood(
+    return foldhood(
         expr,
         aggr="min",
         include_self=include_self,
@@ -46,7 +46,7 @@ def maxhood(
     tag: str | None = None,
 ) -> Tensor:
     """Aggregate a ``NeighborExpr`` with maximum reduction."""
-    return hood(
+    return foldhood(
         expr,
         aggr="max",
         include_self=include_self,
@@ -66,7 +66,7 @@ def sumhood(
     tag: str | None = None,
 ) -> Tensor:
     """Aggregate a ``NeighborExpr`` with sum reduction."""
-    return hood(
+    return foldhood(
         expr,
         aggr="sum",
         include_self=include_self,
@@ -86,7 +86,7 @@ def avghood(
     tag: str | None = None,
 ) -> Tensor:
     """Aggregate a ``NeighborExpr`` with mean reduction."""
-    return hood(
+    return foldhood(
         expr,
         aggr="mean",
         include_self=include_self,

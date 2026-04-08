@@ -22,7 +22,7 @@ from .dsl import (
     nbr,
     nbr_range,
     rep,
-    hood,
+    foldhood,
     minhood,
     maxhood,
     sumhood,
@@ -30,7 +30,7 @@ from .dsl import (
     as_nbr_expr,
 )
 from .functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from .layers import BranchLayer, HoodLayer, MuxLayer, RepLayer
+from .layers import BranchLayer, FoldhoodLayer, MuxLayer, RepLayer
 from .pyg_backend import HAS_PYG
 from .sim import (
     EventSchedule,
@@ -60,7 +60,7 @@ __all__ = [
     "DeviceContext",
     "rep",
     "nbr",
-    "hood",
+    "foldhood",
     "minhood",
     "maxhood",
     "sumhood",
@@ -78,7 +78,7 @@ __all__ = [
     "mid",
     # Layers (nn.Module)
     "RepLayer",
-    "HoodLayer",
+    "FoldhoodLayer",
     "BranchLayer",
     "MuxLayer",
     # Functional

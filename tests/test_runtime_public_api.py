@@ -21,7 +21,7 @@ from autofield import (
     maxhood,
     sumhood,
     avghood,
-    hood,
+    foldhood,
 )
 from autofield.dsl import field
 from autofield.utils import get_device, get_grid_distances

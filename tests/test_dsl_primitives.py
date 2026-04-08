@@ -16,7 +16,7 @@ from autofield import (
     nbr,
     nbr_range,
     rep,
-    hood,
+    foldhood,
     minhood,
     maxhood,
     sumhood,
@@ -114,7 +114,7 @@ class TestNbr:
         weight_expr = NeighborExpr(lambda ctx, ei, ew: message_weight)
 
         with triangle_ctx.round():
-            m = hood(nbr(x) * weight_expr, aggr="sum")
+            m = foldhood(nbr(x) * weight_expr, aggr="sum")
 
         assert torch.allclose(m, torch.tensor([27.0, 17.0, 14.0]))
 
@@ -156,18 +156,18 @@ class TestNbr:
         x = torch.tensor([1.0, 2.0, 3.0])
 
         with ctx.round():
-            no_self = hood(nbr(x), aggr="sum", include_self=False)
+            no_self = foldhood(nbr(x), aggr="sum", include_self=False)
         with ctx.round():
-            with_self = hood(nbr(x), aggr="sum", include_self=True)
+            with_self = foldhood(nbr(x), aggr="sum", include_self=True)
 
         assert torch.allclose(no_self, torch.tensor([2.0, 4.0, 2.0]))
         assert torch.allclose(with_self, torch.tensor([3.0, 6.0, 5.0]))
 
     def test_include_self_works_for_neighbor_expr(self, line_ctx):
         with line_ctx.round():
-            no_self = hood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=False)
+            no_self = foldhood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=False)
         with line_ctx.round():
-            with_self = hood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=True)
+            with_self = foldhood(nbr_range() * 0.0 + 1.0, aggr="sum", include_self=True)
 
         assert torch.allclose(no_self, torch.tensor([1.0, 2.0, 2.0, 1.0]))
         assert torch.allclose(with_self, torch.tensor([2.0, 3.0, 3.0, 2.0]))

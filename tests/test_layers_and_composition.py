@@ -12,12 +12,12 @@ from autofield import (
     mux,
     nbr,
     rep,
-    hood,
+    foldhood,
     minhood,
     maxhood,
     sumhood,
 )
-from autofield.layers import BranchLayer, MuxLayer, HoodLayer, RepLayer
+from autofield.layers import BranchLayer, MuxLayer, FoldhoodLayer, RepLayer
 from autofield.dsl import field
 
 
@@ -32,7 +32,7 @@ class AddConstant(nn.Module):
 
 class TestLayersInDSL:
     def test_nbr_layer_in_dsl(self, triangle_ctx):
-        nbr_layer = HoodLayer(aggr="sum")
+        nbr_layer = FoldhoodLayer(aggr="sum")
         x = torch.tensor([1.0, 2.0, 3.0])
         with triangle_ctx.round():
             m = nbr_layer(x)
@@ -50,7 +50,7 @@ class TestLayersInDSL:
 
     def test_layers_compose_with_dsl(self, triangle_ctx):
         n = triangle_ctx.num_nodes
-        nbr_layer = HoodLayer(aggr="min", fill_value=float("inf"))
+        nbr_layer = FoldhoodLayer(aggr="min", fill_value=float("inf"))
         x = torch.tensor([10.0, 2.0, 5.0])
         with triangle_ctx.round():
             messages = nbr_layer(x)
@@ -64,7 +64,7 @@ class TestLayersInDSL:
     def test_gradient_with_layers(self, line_ctx):
         n = line_ctx.num_nodes
         source = torch.tensor([1.0, 0.0, 0.0, 0.0])
-        nbr_min = HoodLayer(aggr="min")
+        nbr_min = FoldhoodLayer(aggr="min")
 
         for _ in range(4):
             with line_ctx.round():
@@ -80,7 +80,7 @@ class TestStandaloneLayers:
         cond = torch.tensor([True, True, False, False])
         x = torch.tensor([1.0, 2.0, 30.0, 10.0])
         layer = BranchLayer(
-            HoodLayer(aggr="sum"), HoodLayer(aggr="max"), branch_name="standalone"
+            FoldhoodLayer(aggr="sum"), FoldhoodLayer(aggr="max"), branch_name="standalone"
         )
 
         with line_ctx.round() as round_ctx:

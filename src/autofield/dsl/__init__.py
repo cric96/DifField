@@ -5,7 +5,7 @@ from torch import Tensor
 from ..core import AggregateContext, DeviceContext
 from .building_blocks import broadcast, collect_cast, gradient, gradient_cast
 from .neighbor import NeighborExpr, as_nbr_expr, nbr, nbr_range
-from .primitives import branch, const, field, hood, mid, mux, rep
+from .primitives import branch, const, field, foldhood, mid, mux, rep
 from .hoods import minhood, maxhood, sumhood, avghood
 
 Field = Tensor
@@ -17,7 +17,7 @@ __all__ = [
     "Field",
     "rep",
     "nbr",
-    "hood",
+    "foldhood",
     "minhood",
     "maxhood",
     "sumhood",

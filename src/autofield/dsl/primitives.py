@@ -84,7 +84,7 @@ def rep(
     return RepLayer(init, fn, name=resolved_name)(torch.empty(0))
 
 
-def hood(
+def foldhood(
     expr: NeighborExpr,
     aggr: str | Callable | nn.Module = "sum",
     include_self: bool | None = None,
@@ -93,7 +93,7 @@ def hood(
     fill_value: float | None = None,
     tag: str | None = None,
 ) -> Tensor:
-    r"""Gather neighbours and fold edge-wise messages into a node field.
+    r"""Gather neighbours and fold edge-wise messages into a field.
 
     The input must be a :class:`NeighborExpr`, typically built with :func:`nbr`
     and optionally combined with arithmetic or :func:`nbr_range`.
@@ -101,7 +101,7 @@ def hood(
     When a tag is present, the source field is exported in the context and can
     be overridden by runtime message overrides.
     """
-    from ..layers import HoodLayer
+    from ..layers import FoldhoodLayer
     from ..core import current_context
 
     ctx = current_context()
@@ -114,7 +114,7 @@ def hood(
     elif expr.tag is None:
         expr.tag = _auto_name("h", aggr=aggr)
 
-    return HoodLayer(
+    return FoldhoodLayer(
         aggr=aggr,
         mode=effective_mode,
         tau=effective_tau,
