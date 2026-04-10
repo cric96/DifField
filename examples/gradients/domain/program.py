@@ -35,6 +35,7 @@ def run_gradient_program(
             lambda dist_old: mux(
                 source, field.of(0.0), foldhood(nbr(dist_old + weight), aggr=aggr)
             ),
+            name="dist",
         )
 
     output, _ = engine.run(
