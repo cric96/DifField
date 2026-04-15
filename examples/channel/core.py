@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from autofield import broadcast, mux, nbr, rep, minhood
+from autofield import broadcast, minhood, mux, nbr, nbr_range, rep
 from autofield.dsl import field
 
 CHANNEL_THRESHOLD = 0.5
@@ -20,18 +20,22 @@ def channel_body(
     tolerance: float,
     noise: torch.Tensor | None = None,
 ) -> torch.Tensor:
-    hop_noise = torch.zeros_like(source) if noise is None else noise
+    edge_noise = torch.zeros_like(source) if noise is None else noise
     dist_src = rep(
         field.inf(),
         lambda dist_old: mux(
-            source, field.of(0.0), minhood(nbr(dist_old + 1.0 + hop_noise))
+            source,
+            field.of(0.0),
+            minhood(nbr(dist_old) + nbr_range() + edge_noise),
         ),
         name="dist_src",
     )
     dist_dst = rep(
         field.inf(),
         lambda dist_old: mux(
-            dest, field.of(0.0), minhood(nbr(dist_old + 1.0 + hop_noise))
+            dest,
+            field.of(0.0),
+            minhood(nbr(dist_old) + nbr_range() + edge_noise),
         ),
         name="dist_dst",
     )
