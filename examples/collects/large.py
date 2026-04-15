@@ -136,8 +136,7 @@ def build_example(args, device: torch.device):
     source_col = 1 if args.cols > 1 else 0
     source_idx = source_row * args.cols + source_col
 
-    source = torch.zeros(scenario.num_nodes, dtype=torch.float32, device=device)
-    source[source_idx] = 1.0
+    source = scenario.marker(source_idx)
 
     center_row, center_col, radius = central_region_spec(args.rows, args.cols)
     row_coords = torch.arange(args.rows, device=device, dtype=torch.float32).unsqueeze(

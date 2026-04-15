@@ -135,10 +135,11 @@ class TestSnapshotRecorder:
 
         output, _ = engine.run(rounds=1, program=program, signals={}, recorder=recorder)
         record = recorder.records[0]
+        expected_counter = scenario.full(1.0)
 
         assert set(record) == {"counter", "counter_msg", "output"}
-        assert torch.allclose(record["counter"], torch.ones(scenario.num_nodes))
-        assert torch.allclose(record["counter_msg"], torch.ones(scenario.num_nodes))
+        assert torch.allclose(record["counter"], expected_counter)
+        assert torch.allclose(record["counter_msg"], expected_counter)
         assert torch.allclose(record["output"], output)
         assert recorder.timings[0] >= 0.0
 

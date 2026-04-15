@@ -205,3 +205,23 @@ class field:
     @staticmethod
     def inf() -> Tensor:
         return const(float("inf"))
+    
+    # TODO add description here
+    
+    @staticmethod
+    def with_overrides(field: Tensor, overrides: tuple[int, float]) -> Tensor:
+        for node_id, value in overrides:
+            field[node_id] = value
+        return field
+
+    @staticmethod
+    def from_values(
+        values: list[float] | Tensor,
+    ) -> Tensor:
+        ctx = current_context()
+        tensor = torch.as_tensor(values, dtype=torch.float32, device=ctx.edge_index.device)
+        if tensor.shape[0] != ctx.num_nodes:
+            raise ValueError(
+                f"Length of values ({tensor.shape[0]}) does not match number of nodes ({ctx.num_nodes})"
+            )
+        return tensor

@@ -1,0 +1,1 @@
+"""Aggregate-program test package."""

@@ -40,8 +40,7 @@ def neighbors_of(node, edge_index):
 
 def setup_data(args, device: torch.device):
     scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
-    source_global = torch.zeros(scenario.num_nodes, device=device)
-    source_global[0] = 1.0
+    source_global = scenario.marker(0, 0)
     return scenario, source_global
 
 
@@ -64,7 +63,7 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
     neighbor_ids = neighbors_of(device_id, edge_index)
     device = DeviceContext(num_neighbors=len(neighbor_ids))
     source_local = device.local_field(own=source_global[device_id].item(), nbr=0.0)
-    local_weight = torch.full_like(source_local, float(weight.item()))
+    local_weight = device.local_field(float(weight.item()), nbr=float(weight.item()))
 
     print(
         f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ==="

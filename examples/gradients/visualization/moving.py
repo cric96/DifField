@@ -34,10 +34,7 @@ def render_moving_gradient_evolution(
     ctx = AggregateContext(
         scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight
     )
-    source = torch.zeros(
-        positions.shape[0], dtype=torch.float32, device=positions.device
-    )
-    source[model.source_idx] = 1.0
+    source = scenario.marker(model.source_idx)
 
     pos_by_round = {}
     val_by_round = {}

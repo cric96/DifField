@@ -52,11 +52,9 @@ def parse_args():
 
 def build_large_data(args, device: torch.device):
     scenario = GridScenario(args.rows, args.cols, connectivity=4, device=device)
-    source = torch.zeros(scenario.num_nodes, dtype=torch.float32, device=device)
     center_r = args.rows // 2
     center_c = args.cols // 2
-    center_idx = center_r * args.cols + center_c
-    source[center_idx] = 1.0
+    source = scenario.marker(center_r, center_c)
     return scenario, source, center_r, center_c
 
 

@@ -158,6 +158,7 @@ class TestFieldWhere:
 
     def test_default_mode_uses_global(self):
         from autofield import get_default_mode, set_default_mode, with_mode
+
         assert get_default_mode() == "hard"
         cond = torch.tensor([0.5])
         x = torch.tensor([1.0])

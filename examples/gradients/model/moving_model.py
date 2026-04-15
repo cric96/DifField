@@ -69,10 +69,7 @@ class LearnableMovingGradient(nn.Module):
             scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight
         )
 
-        source = torch.zeros(
-            positions.shape[0], dtype=torch.float32, device=positions.device
-        )
-        source[self.source_idx] = 1.0
+        source = scenario.marker(self.source_idx)
 
         pred_seq = []
         for _ in range(rounds):

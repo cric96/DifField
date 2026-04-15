@@ -10,6 +10,10 @@ from autofield.dsl import field
 CHANNEL_THRESHOLD = 0.5
 
 
+def inf_field(num_nodes: int, device: torch.device | None = None) -> torch.Tensor:
+    return torch.full((num_nodes,), float("inf"), device=device)
+
+
 def channel_body(
     source: torch.Tensor,
     dest: torch.Tensor,
@@ -47,11 +51,13 @@ def build_snapshot_payloads(
 ) -> dict[int, dict[str, torch.Tensor]]:
     snapshots: dict[int, dict[str, torch.Tensor]] = {}
     for round_idx, payload in records.items():
-        dist_src = payload.get("dist_src", torch.full((num_nodes,), float("inf")))
-        dist_dst = payload.get("dist_dst", torch.full((num_nodes,), float("inf")))
+        default_device = payload["output"].device if "output" in payload else None
+        default_inf = inf_field(num_nodes, device=default_device)
+        dist_src = payload.get("dist_src", default_inf)
+        dist_dst = payload.get("dist_dst", default_inf)
         dist_sd_state = payload.get("_gc_dist_channel")
         if dist_sd_state is None:
-            dist_sd = torch.full((num_nodes,), float("inf"))
+            dist_sd = default_inf
         elif dist_sd_state.dim() > 1:
             dist_sd = dist_sd_state[:, 1]
         else:

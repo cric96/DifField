@@ -63,8 +63,7 @@ def main():
     scenario = GridScenario(1, args.length, connectivity=4, device=device)
     rounds = auto_rounds(args.length, args.rounds)
 
-    source = torch.zeros(scenario.num_nodes, dtype=torch.float32, device=device)
-    source[0] = 1.0
+    source = scenario.marker(0, 0)
     local = make_payload(scenario.num_nodes, args.payload_mode, device)
 
     engine = SimulationEngine.from_scenario(scenario)
