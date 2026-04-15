@@ -49,13 +49,12 @@ class BenchmarkConfig:
 class BenchmarkArtifacts:
     raw_csv: Path
     aggregated_csv: Path
-    fixed_k_growth_csv: Path
-    fixed_node_growth_csv: Path
     report_markdown: Path
     summary_json: Path
-    density_sweep_plot: Path | None
-    neighborhood_sweep_plot: Path | None
-    surface_plot: Path | None
+    runtime_matrix_plot: Path | None
+    scaling_trend_plot: Path | None
+    relative_scaling_plot: Path | None
+    heatmap_plot: Path | None
 
 
 def default_seeds(repetitions: int, start: int) -> list[int]:
@@ -288,6 +287,47 @@ def format_markdown_table(rows: list[dict[str, Any]], columns: list[tuple[str, s
     return "\n".join(lines) + "\n"
 
 
+def build_runtime_matrix(aggregated_rows: list[dict[str, Any]]) -> tuple[list[int], list[int], np.ndarray, np.ndarray]:
+    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
+    k_values = sorted({int(row["k_neighbors"]) for row in aggregated_rows})
+    matrix = np.full((len(node_counts), len(k_values)), np.nan, dtype=float)
+    std_matrix = np.full((len(node_counts), len(k_values)), np.nan, dtype=float)
+    node_to_row = {value: index for index, value in enumerate(node_counts)}
+    k_to_row = {value: index for index, value in enumerate(k_values)}
+    for row in aggregated_rows:
+        n_idx = node_to_row[int(row["num_nodes"])]
+        k_idx = k_to_row[int(row["k_neighbors"])]
+        matrix[n_idx][k_idx] = float(row["mean_time_seconds"])
+        std_matrix[n_idx][k_idx] = float(row.get("std_time_seconds", 0.0))
+    return node_counts, k_values, matrix, std_matrix
+
+
+def format_runtime_matrix_markdown(aggregated_rows: list[dict[str, Any]]) -> str:
+    node_counts, k_values, matrix, std_matrix = build_runtime_matrix(aggregated_rows)
+    headers = ["Nodes", *[f"k={value}" for value in k_values]]
+    separator = ["---" for _ in headers]
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(separator) + " |",
+    ]
+    for row_index, node_count in enumerate(node_counts):
+        values = [str(node_count)]
+        for col_index in range(len(k_values)):
+            m = matrix[row_index, col_index]
+            s = std_matrix[row_index, col_index]
+            if not math.isfinite(m):
+                values.append("nan")
+            else:
+                values.append(f"{m:.4f} ± {s:.4f}")
+        lines.append("| " + " | ".join(values) + " |")
+    return "\n".join(lines) + "\n"
+
+
+def print_runtime_matrix(title: str, aggregated_rows: list[dict[str, Any]]) -> None:
+    print(f"\n=== {title} ===")
+    print(format_runtime_matrix_markdown(aggregated_rows), end="")
+
+
 def write_rows_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
     if not rows:
@@ -299,59 +339,20 @@ def write_rows_csv(rows: list[dict[str, Any]], output_path: Path) -> None:
         writer.writerows(rows)
 
 
-def write_report_markdown(
-    aggregated_rows: list[dict[str, Any]],
-    fixed_k_growth: list[dict[str, Any]],
-    fixed_node_growth: list[dict[str, Any]],
-    output_path: Path,
-) -> None:
+def write_report_markdown(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    overview_rows = sorted(aggregated_rows, key=lambda row: (int(row["num_nodes"]), int(row["k_neighbors"])))
-    fixed_k_rows = sorted(fixed_k_growth, key=lambda row: (int(row["k_neighbors"]), int(row["num_nodes"])))
-    fixed_node_rows = sorted(fixed_node_growth, key=lambda row: (int(row["num_nodes"]), int(row["k_neighbors"])))
-
     text = "# Spatial Channel Scaling Benchmark\n\n"
-    text += "## Aggregated Runs\n\n"
-    text += format_markdown_table(
-        overview_rows,
-        [
-            ("num_nodes", "Nodes"),
-            ("k_neighbors", "k neighbors"),
-            ("mean_degree", "Mean degree"),
-            ("mean_time_seconds", "Mean time (s)"),
-            ("std_time_seconds", "Std (s)"),
-            ("success_rate", "Success rate"),
-        ],
-    )
-    text += "\n## Growth At Fixed k Neighbors\n\n"
-    text += format_markdown_table(
-        fixed_k_rows,
-        [
-            ("k_neighbors", "k neighbors"),
-            ("num_nodes", "Nodes"),
-            ("mean_degree", "Mean degree"),
-            ("mean_time_seconds", "Mean time (s)"),
-            ("time_ratio_vs_baseline", "Time ratio"),
-            ("percent_increase_vs_baseline", "% increase"),
-        ],
-    )
-    text += "\n## Growth At Fixed Node Count\n\n"
-    text += format_markdown_table(
-        fixed_node_rows,
-        [
-            ("num_nodes", "Nodes"),
-            ("k_neighbors", "k neighbors"),
-            ("mean_degree", "Mean degree"),
-            ("mean_time_seconds", "Mean time (s)"),
-            ("time_ratio_vs_baseline", "Time ratio"),
-            ("percent_increase_vs_baseline", "% increase"),
-        ],
+    text += "## Runtime Matrix\n\n"
+    text += format_runtime_matrix_markdown(aggregated_rows)
+    text += (
+        "\nI plot principali usano asse x logaritmico sui nodi e asse y lineare stretto sui tempi, "
+        "cosi si vede meglio che la crescita resta contenuta anche quando il numero di nodi aumenta molto.\n"
     )
     output_path.write_text(text, encoding="utf-8")
 
 
-def plot_density_sweep(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+def plot_scaling_trend(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
     if plt is None:
         return
 
@@ -362,93 +363,205 @@ def plot_density_sweep(aggregated_rows: list[dict[str, Any]], output_path: Path)
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.patch.set_facecolor("#fbf7ef")
     ax.set_facecolor("#fffdf8")
+    finite_times: list[float] = []
     for k_neighbors, rows in sorted(grouped.items()):
         ordered = sorted(rows, key=lambda row: int(row["num_nodes"]))
-        ax.plot(
-            [int(row["num_nodes"]) for row in ordered],
-            [float(row["mean_time_seconds"]) for row in ordered],
+        nodes = [int(row["num_nodes"]) for row in ordered]
+        times = [float(row["mean_time_seconds"]) for row in ordered]
+        stds = [float(row.get("std_time_seconds", 0.0)) for row in ordered]
+        finite_times.extend(time for time in times if math.isfinite(time))
+        line, = ax.plot(
+            nodes,
+            times,
             marker="o",
             linewidth=2.0,
             label=f"k={k_neighbors}",
         )
+        ax.fill_between(
+            nodes,
+            [m - s for m, s in zip(times, stds)],
+            [m + s for m, s in zip(times, stds)],
+            color=line.get_color(),
+            alpha=0.15,
+        )
 
-    ax.set_title("Scaling With More Nodes At Fixed k")
-    ax.set_xlabel("Number of nodes")
+    if finite_times:
+        ymin = min(finite_times)
+        ymax = max(finite_times)
+        pad = max((ymax - ymin) * 0.18, ymax * 0.03, 1e-6)
+        ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
+
+    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
+    if len(node_counts) >= 2:
+        ax.set_xscale("log", base=2)
+        ax.set_xticks(node_counts)
+        ax.set_xticklabels([str(value) for value in node_counts])
+
+    ax.set_title("Runtime vs Nodes")
+    ax.set_xlabel("Number of nodes (log2 scale)")
     ax.set_ylabel("Mean runtime (s)")
     ax.grid(alpha=0.25)
     ax.legend(frameon=True)
+    ax.text(
+        0.02,
+        0.98,
+        "Zoomed y-axis to highlight small runtime growth",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=9,
+        color="#5c5347",
+    )
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
     plt.close(fig)
 
 
-def plot_neighborhood_sweep(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+def plot_runtime_matrix_table(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+    if plt is None or not aggregated_rows:
+        return
+
+    node_counts, k_values, matrix, std_matrix = build_runtime_matrix(aggregated_rows)
+    headers = ["Nodes", *[f"k={value}" for value in k_values]]
+    cells = []
+    for row_index, node_count in enumerate(node_counts):
+        row_values = [str(node_count)]
+        for col_index in range(len(k_values)):
+            m = matrix[row_index, col_index]
+            s = std_matrix[row_index, col_index]
+            if not math.isfinite(m):
+                row_values.append("nan")
+            else:
+                row_values.append(f"{m:.4f}\n± {s:.4f}")
+        cells.append(row_values)
+
+    figure_height = max(3.0, 0.6 * (len(cells) + 2))
+    figure_width = max(8.0, 1.4 * len(headers) + 1.5)
+    fig, ax = plt.subplots(figsize=(figure_width, figure_height))
+    fig.patch.set_facecolor("#fbf7ef")
+    ax.set_facecolor("#fffdf8")
+    ax.axis("off")
+    table = ax.table(
+        cellText=cells,
+        colLabels=headers,
+        loc="center",
+        cellLoc="center",
+        colLoc="center",
+    )
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.0, 1.35)
+    for (row_idx, col_idx), cell in table.get_celld().items():
+        cell.set_edgecolor("#d8ccb8")
+        if row_idx == 0:
+            cell.set_facecolor("#ead9b6")
+            cell.set_text_props(weight="bold", color="#1f1b18")
+        else:
+            cell.set_facecolor("#fffdf8" if row_idx % 2 else "#f7f0e3")
+            cell.set_text_props(color="#2f2a24")
+
+    ax.set_title("Runtime Matrix: nodes x neighborhood", fontsize=14, pad=16)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=170, bbox_inches="tight")
+    plt.close(fig)
+
+
+def plot_relative_scaling(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
     if plt is None:
         return
 
     grouped: dict[int, list[dict[str, Any]]] = {}
     for row in aggregated_rows:
-        grouped.setdefault(int(row["num_nodes"]), []).append(row)
+        grouped.setdefault(int(row["k_neighbors"]), []).append(row)
 
     fig, ax = plt.subplots(figsize=(10, 6))
     fig.patch.set_facecolor("#fbf7ef")
     ax.set_facecolor("#fffdf8")
-    for num_nodes, rows in sorted(grouped.items()):
-        ordered = sorted(rows, key=lambda row: int(row["k_neighbors"]))
-        ax.plot(
-            [int(row["k_neighbors"]) for row in ordered],
-            [float(row["mean_time_seconds"]) for row in ordered],
+    all_ratios: list[float] = []
+    for k_neighbors, rows in sorted(grouped.items()):
+        ordered = sorted(rows, key=lambda row: int(row["num_nodes"]))
+        nodes = [int(row["num_nodes"]) for row in ordered]
+        times = [float(row["mean_time_seconds"]) for row in ordered]
+        stds = [float(row.get("std_time_seconds", 0.0)) for row in ordered]
+
+        baseline = times[0]
+        baseline_std = stds[0]
+
+        ratios = [t / baseline if baseline > 0 else 0.0 for t in times]
+        # Uncertainty propagation for ratio R = T/T0: sigma_R = R * sqrt((sigma_T/T)^2 + (sigma_T0/T0)^2)
+        ratio_stds = [
+            r * math.sqrt((s / t) ** 2 + (baseline_std / baseline) ** 2)
+            if t > 0 and baseline > 0
+            else 0.0
+            for r, t, s in zip(ratios, times, stds)
+        ]
+
+        all_ratios.extend(ratios)
+        line, = ax.plot(
+            nodes,
+            ratios,
             marker="o",
             linewidth=2.0,
-            label=f"nodes={num_nodes}",
+            label=f"k={k_neighbors}",
+        )
+        ax.fill_between(
+            nodes,
+            [r - rs for r, rs in zip(ratios, ratio_stds)],
+            [r + rs for r, rs in zip(ratios, ratio_stds)],
+            color=line.get_color(),
+            alpha=0.15,
         )
 
-    ax.set_title("Scaling With Denser k-NN Neighborhoods At Fixed Node Count")
-    ax.set_xlabel("k nearest neighbors")
-    ax.set_ylabel("Mean runtime (s)")
+    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
+    if len(node_counts) >= 2:
+        ax.set_xscale("log", base=2)
+        ax.set_xticks(node_counts)
+        ax.set_xticklabels([str(value) for value in node_counts])
+
+    if all_ratios:
+        ymin = min(all_ratios)
+        ymax = max(all_ratios)
+        pad = max((ymax - ymin) * 0.15, 0.05)
+        ax.set_ylim(max(0.9, ymin - pad), ymax + pad)
+
+    ax.set_title("Runtime Relative To Smallest Graph")
+    ax.set_xlabel("Number of nodes (log2 scale)")
+    ax.set_ylabel("Runtime / runtime at smallest node count")
     ax.grid(alpha=0.25)
     ax.legend(frameon=True)
+    ax.axhline(1.0, color="#8f8577", linestyle="--", linewidth=1.0)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
     plt.close(fig)
 
 
-def plot_surface(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
-    if plt is None:
+def plot_runtime_heatmap(aggregat, _std_matrixed_rows: list[dict[str, Any]], output_path: Path) -> None:
+    if plt is None or not aggregated_rows:
         return
 
-    valid_rows = [
-        row
-        for row in aggregated_rows
-        if math.isfinite(float(row["mean_time_seconds"])) and math.isfinite(float(row["mean_degree"]))
-    ]
-    if len(valid_rows) < 3:
-        return
+    node_counts, k_values, matrix = build_runtime_matrix(aggregated_rows)
 
-    node_values = np.array([int(row["num_nodes"]) for row in valid_rows], dtype=float)
-    degree_values = np.array([float(row["mean_degree"]) for row in valid_rows], dtype=float)
-    time_values = np.array([float(row["mean_time_seconds"]) for row in valid_rows], dtype=float)
-
-    fig = plt.figure(figsize=(11, 8))
+    masked = np.ma.masked_invalid(matrix.T)
+    fig, ax = plt.subplots(figsize=(9.5, 6.5))
     fig.patch.set_facecolor("#fbf7ef")
-    ax = fig.add_subplot(111, projection="3d")
-    surface = ax.plot_trisurf(
-        node_values,
-        degree_values,
-        time_values,
-        cmap="viridis",
-        linewidth=0.2,
-        antialiased=True,
-        alpha=0.9,
-    )
-    ax.scatter(node_values, degree_values, time_values, color="#1f1b18", s=18)
-    ax.set_title("Spatial Channel Runtime Surface")
+    ax.set_facecolor("#fffdf8")
+    image = ax.imshow(masked, cmap="YlGnBu", aspect="auto", interpolation="nearest")
+    ax.set_title("Mean Runtime Heatmap")
     ax.set_xlabel("Number of nodes")
-    ax.set_ylabel("Mean neighborhood degree")
-    ax.set_zlabel("Mean runtime (s)")
-    fig.colorbar(surface, shrink=0.7, pad=0.1, label="Mean runtime (s)")
+    ax.set_ylabel("k nearest neighbors")
+    ax.set_xticks(np.arange(len(node_counts)), labels=[str(value) for value in node_counts])
+    ax.set_yticks(np.arange(len(k_values)), labels=[str(value) for value in k_values])
+
+    for row_index, k_value in enumerate(k_values):
+        for col_index, node_count in enumerate(node_counts):
+            value = matrix[col_index, row_index]
+            label = "nan" if not math.isfinite(value) else f"{value:.3f}"
+            ax.text(col_index, row_index, label, ha="center", va="center", color="#1f1b18", fontsize=9)
+
+    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Mean runtime (s)")
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=170)
@@ -469,7 +582,16 @@ def maybe_warmup(config: BenchmarkConfig) -> None:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Benchmark scaling for the spatial channel example")
+    parser = argparse.ArgumentParser(
+        description="Benchmark scaling for the spatial channel example",
+        epilog=(
+            "Example:\n"
+            "  uv run python examples/channel/benchmark_scaling.py "
+            "--node-counts 1000,2000,4000,8000 --k-neighbors 4,8,12,16,24 "
+            "--repetitions 5 --rounds 300 --out-dir generated/results/channel_scaling_large"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("--node-counts", type=str, default="2000,4000,8000,16000")
     parser.add_argument("--k-neighbors", type=str, default="4,8,12,16")
     parser.add_argument("--rounds", type=int, default=1000)
@@ -544,36 +666,31 @@ def main() -> None:
 
     total_elapsed = time.perf_counter() - benchmark_start
     aggregated_rows = aggregate_rows(raw_rows)
-    fixed_k_growth = build_fixed_k_growth_rows(aggregated_rows)
-    fixed_node_growth = build_fixed_node_growth_rows(aggregated_rows)
-
     artifacts = BenchmarkArtifacts(
         raw_csv=out_dir / "raw_runs.csv",
         aggregated_csv=out_dir / "aggregated.csv",
-        fixed_k_growth_csv=out_dir / "growth_fixed_k.csv",
-        fixed_node_growth_csv=out_dir / "growth_fixed_nodes.csv",
         report_markdown=out_dir / "growth_report.md",
         summary_json=out_dir / "summary.json",
-        density_sweep_plot=None if args.skip_plots else out_dir / "density_sweep.png",
-        neighborhood_sweep_plot=None if args.skip_plots else out_dir / "neighborhood_sweep.png",
-        surface_plot=None if args.skip_plots else out_dir / "runtime_surface_3d.png",
+        runtime_matrix_plot=None if args.skip_plots else out_dir / "runtime_matrix.png",
+        scaling_trend_plot=None if args.skip_plots else out_dir / "scaling_trend.png",
+        relative_scaling_plot=None if args.skip_plots else out_dir / "relative_scaling.png",
+        heatmap_plot=None if args.skip_plots else out_dir / "runtime_heatmap.png",
     )
 
     write_rows_csv(raw_rows, artifacts.raw_csv)
     write_rows_csv(aggregated_rows, artifacts.aggregated_csv)
-    write_rows_csv(fixed_k_growth, artifacts.fixed_k_growth_csv)
-    write_rows_csv(fixed_node_growth, artifacts.fixed_node_growth_csv)
-    write_report_markdown(
-        aggregated_rows,
-        fixed_k_growth,
-        fixed_node_growth,
-        artifacts.report_markdown,
-    )
+    write_report_markdown(aggregated_rows, artifacts.report_markdown)
+
+    print_runtime_matrix("Runtime Matrix", aggregated_rows)
 
     if not args.skip_plots and plt is not None:
-        plot_density_sweep(aggregated_rows, artifacts.density_sweep_plot)
-        plot_neighborhood_sweep(aggregated_rows, artifacts.neighborhood_sweep_plot)
-        plot_surface(aggregated_rows, artifacts.surface_plot)
+        try:
+            plot_runtime_matrix_table(aggregated_rows, artifacts.runtime_matrix_plot)
+            plot_scaling_trend(aggregated_rows, artifacts.scaling_trend_plot)
+            plot_relative_scaling(aggregated_rows, artifacts.relative_scaling_plot)
+            plot_runtime_heatmap(aggregated_rows, artifacts.heatmap_plot)
+        except Exception as e:
+            print(f"Warning: failed to generate plots: {e}")
 
     summary_payload = {
         "configuration": {
@@ -597,10 +714,15 @@ def main() -> None:
 
     print(f"Saved raw runs to {artifacts.raw_csv}")
     print(f"Saved aggregates to {artifacts.aggregated_csv}")
-    print(f"Saved growth tables to {artifacts.fixed_k_growth_csv} and {artifacts.fixed_node_growth_csv}")
     print(f"Saved report to {artifacts.report_markdown}")
-    if artifacts.surface_plot is not None and plt is not None:
-        print(f"Saved plots to {artifacts.density_sweep_plot}, {artifacts.neighborhood_sweep_plot}, and {artifacts.surface_plot}")
+    if not args.skip_plots and plt is not None:
+        print(
+            "Saved plots to:\n"
+            f"  - {artifacts.runtime_matrix_plot}\n"
+            f"  - {artifacts.scaling_trend_plot}\n"
+            f"  - {artifacts.relative_scaling_plot}\n"
+            f"  - {artifacts.heatmap_plot}"
+        )
     print(f"Benchmark finished in {total_elapsed:.2f}s")
 
 
