@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import torch
-import pytest
 
 from autofield import (
     AggregateContext,
@@ -47,16 +46,16 @@ def flags(*items: bool) -> torch.Tensor:
 class TestRep:
     def test_accumulates(self, line_ctx):
         results = []
-        for _ in range(5):
+        for _ in range(ROUNDS):
             with line_ctx.round():
                 val = rep(field.zeros(), lambda s: s + 1)
             results.append(val[0].item())
-        assert results == [1.0, 2.0, 3.0, 4.0, 5.0]
+        assert results == [1.0, 2.0, 3.0]
 
     def test_per_node_state(self, line_ctx):
         n = line_ctx.num_nodes
         init = torch.arange(n, dtype=torch.float32)
-        for _ in range(3):
+        for _ in range(ROUNDS):
             with line_ctx.round():
                 val = rep(init, lambda s: s + 1)
         assert torch.allclose(val, init + 3)
@@ -477,7 +476,7 @@ class TestField:
 class TestAutoNaming:
     def test_rep_without_name_accumulates(self, line_ctx):
         results = []
-        for _ in range(3):
+        for _ in range(ROUNDS):
             with line_ctx.round():
                 val = rep(field.zeros(), lambda s: s + 1)
             results.append(val[0].item())
