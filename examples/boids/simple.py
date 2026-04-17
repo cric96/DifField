@@ -13,7 +13,7 @@ sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
 
-from autofield import SpatialScenario, bounce_in_box, rep
+from autofield import SpatialScenario, bounce_in_box, iterate
 from autofield.dsl import AggregateContext
 from autofield.utils import get_device
 
@@ -36,7 +36,7 @@ except ImportError:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pure aggregate boids (rep/nbr)")
+    parser = argparse.ArgumentParser(description="Pure aggregate boids (iterate/scatter)")
     parser.add_argument("--num-nodes", type=int, default=60)
     parser.add_argument("--rounds", type=int, default=80)
     parser.add_argument("--radius", type=float, default=0.23)
@@ -137,7 +137,7 @@ def main() -> None:
         scenario.sync_context(ctx._ctx)
         pos_t = scenario.positions
         with ctx.round():
-            vel = rep(
+            vel = iterate(
                 velocities0,
                 lambda prev: aggregate_boids_velocity(
                     prev,

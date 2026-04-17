@@ -22,7 +22,7 @@ gradient field (whose source is 0.0) be used directly as a mask.
 # ── Temperature defaults ────────────────────────────────────────────────
 
 DEFAULT_TAU_SOFT_AGGR: float = 1.0
-"""Default temperature τ for soft min/max aggregation in :class:`HoodLayer`.
+"""Default temperature τ for soft min/max aggregation in :class:`GatherLayer`.
 Lower τ → sharper (closer to hard min/max).
 """
 

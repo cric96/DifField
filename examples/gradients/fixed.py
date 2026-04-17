@@ -60,7 +60,7 @@ def plot_results(
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     im0 = axes[0].imshow(dist.detach().cpu().numpy(), cmap="viridis")
-    axes[0].set_title("Computed (rep + mux + nbr)")
+    axes[0].set_title("Computed (iterate + mux + scatter)")
     plt.colorbar(im0, ax=axes[0])
 
     im1 = axes[1].imshow(expected.detach().cpu().numpy(), cmap="viridis")

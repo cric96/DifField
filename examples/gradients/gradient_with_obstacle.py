@@ -22,10 +22,8 @@ except ImportError:
     mpatches = None
     plt = None
 
-from autofield import GridScenario, SimulationEngine, SnapshotRecorder, branch, foldhood, mux, nbr, rep
-from autofield.dsl import field
+from autofield import GridScenario, SimulationEngine, SnapshotRecorder, branch, gather, mux, scatter, iterate, gather_min
 from autofield.utils import get_device
-from autofield.dsl.hoods import minhood
 from shared.plotting import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers
 
 
@@ -72,12 +70,12 @@ def run_gradient_with_obstacle(
         obstacle_tensor_with_inf = mux(obstacle, field.inf(), field.of(1.0))
         return mux(
             ~obstacle,
-            rep(
+            iterate(
                 field.inf(),
                 lambda dist_old: mux(
                     source, 
                     field.of(0.0), 
-                    minhood(nbr(dist_old + weight_tensor * obstacle_tensor_with_inf))
+                    gather_min(scatter(dist_old + weight_tensor * obstacle_tensor_with_inf))
                 ),
                 name="dist"
             ),

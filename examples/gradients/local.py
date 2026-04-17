@@ -12,7 +12,7 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from autofield import DeviceContext, GridScenario, SimulationEngine, gradient, nbr
+from autofield import DeviceContext, GridScenario, SimulationEngine, gradient, scatter
 from autofield.utils import get_device
 
 
@@ -49,7 +49,7 @@ def run_global(scenario, source_global, weight, rounds):
     global_states = []
 
     def program(_runtime):
-        return gradient(source_global, nbr(weight), name="dist")
+        return gradient(source_global, scatter(weight), name="dist")
 
     runtime = engine.init_runtime(signals={"source": source_global})
     for _ in range(rounds):
@@ -62,8 +62,8 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
     device_id = args.device_row * args.cols + args.device_col
     neighbor_ids = neighbors_of(device_id, edge_index)
     device = DeviceContext(num_neighbors=len(neighbor_ids))
-    source_local = device.local_field(own=source_global[device_id].item(), nbr=0.0)
-    local_weight = device.local_field(float(weight.item()), nbr=float(weight.item()))
+    source_local = device.local_field(own=source_global[device_id].item(), scatter=0.0)
+    local_weight = device.local_field(float(weight.item()), scatter=float(weight.item()))
 
     print(
         f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ==="
@@ -80,7 +80,7 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
             }
 
         with device.round(neighbor_exports=neighbor_exports):
-            d_local = gradient(source_local, nbr(local_weight), name="dist")
+            d_local = gradient(source_local, scatter(local_weight), name="dist")
 
         local_value = device.result(d_local).item()
         global_value = global_states[round_idx][device_id].item()

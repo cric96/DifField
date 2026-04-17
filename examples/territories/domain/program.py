@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import torch
-from autofield import collect_cast, gradient, gradient_cast, nbr_range, SimulationEngine
+from autofield import collect_cast, gradient, gradient_cast, scatter_range, SimulationEngine
 from autofield.dsl import field
 from .layout import TerritoryLayout, TerritoryOutputs
 
@@ -30,7 +30,7 @@ def territory_program(
 ) -> torch.Tensor:
     """Core aggregate program for territory potential and load collection."""
     correction = field.zeros() if local_correction is None else local_correction
-    step_cost = range_weight * nbr_range() + risk_weight * layout.risk + correction
+    step_cost = range_weight * scatter_range() + risk_weight * layout.risk + correction
     tau = assignment_tau.clamp_min(1e-3)
 
     # 1. Distance potential to sinks

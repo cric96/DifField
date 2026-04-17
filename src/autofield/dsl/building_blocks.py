@@ -24,14 +24,14 @@ from .helpers import (
     unpack_cast_state,
     validate_cast_mode,
 )
-from .neighbor import NeighborExpr, nbr, nbr_range
-from .primitives import field, mux, rep
-from .hoods import minhood
+from .scattering import LinkField, scatter, scatter_range
+from .primitives import field, mux, iterate
+from .gathering import gather_min
 
 
 def gradient(
     source: Tensor,
-    weight: NeighborExpr | None = None,
+    weight: LinkField | None = None,
     *,
     name: str = "gradient",
     mode: str | None = None,
@@ -41,21 +41,21 @@ def gradient(
     r"""Compute a minimum-cost distance field from scalar source nodes.
 
     ``source`` is a scalar node field. ``weight`` is an optional edge-wise
-    :class:`NeighborExpr`; when omitted, :func:`nbr_range` is used.
+    :class:`LinkField`; when omitted, :func:`scatter_range` is used.
     """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
     validate_cast_mode(effective_mode)
     source_field = require_scalar_field(source, name="source")
-    step = nbr_range() if weight is None else weight
+    step = scatter_range() if weight is None else weight
 
-    return rep(
+    return iterate(
         field.of(fill_value),
         lambda dist: mux(
             source_field,
             field.of(0.0),
-            minhood(
-                nbr(dist) + step,
+            gather_min(
+                scatter(dist) + step,
                 mode=effective_mode,
                 tau=effective_tau,
                 fill_value=fill_value,
@@ -70,7 +70,7 @@ def gradient_cast(
     center: Tensor,
     accumulation: Callable[[Tensor], Tensor],
     *,
-    weight: NeighborExpr | None = None,
+    weight: LinkField | None = None,
     name: str = "gradient_cast",
     mode: str | None = None,
     tau: float | None = None,
@@ -78,7 +78,7 @@ def gradient_cast(
     r"""Propagate payloads outward along a minimum-potential gradient.
 
     ``source`` is a scalar node field, ``center`` is a node field payload, and
-    ``weight`` is an optional edge-wise :class:`NeighborExpr`.
+    ``weight`` is an optional edge-wise :class:`LinkField`.
     """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
@@ -107,7 +107,7 @@ def gradient_cast(
         )
         return torch.where(source_field.unsqueeze(-1) >= 0.5, source_state, propagated)
 
-    state = rep(init_state, update, name=f"_gc_{name}")
+    state = iterate(init_state, update, name=f"_gc_{name}")
     return unpack_cast_state(state, payload_shape)[1]
 
 
@@ -116,14 +116,14 @@ def broadcast(
     value: Tensor,
     *,
     name: str = "bc_cc",
-    weight: NeighborExpr | None = None,
+    weight: LinkField | None = None,
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
     r"""Propagate a node field from root nodes through the network.
 
     ``mask`` marks roots, ``value`` is the payload field, and ``weight`` is an
-    optional edge-wise :class:`NeighborExpr`.
+    optional edge-wise :class:`LinkField`.
     """
     cond = mask if mask.dtype == torch.bool else (mask <= BROADCAST_NEAR_ZERO)
     effective_mode = mode if mode is not None else get_default_mode()
@@ -145,7 +145,7 @@ def collect_cast(
     null: Tensor,
     accumulation: Callable[[Tensor, Tensor], Tensor],
     *,
-    weight: NeighborExpr | None = None,
+    weight: LinkField | None = None,
     name: str = "collect_cast",
     mode: str | None = None,
     tau: float | None = None,
@@ -153,7 +153,7 @@ def collect_cast(
     r"""Collect payloads from children toward local minima of a potential field.
 
     ``potential`` is a scalar node field, ``local`` and ``null`` are payload
-    fields, and ``weight`` is an optional edge-wise :class:`NeighborExpr`.
+    fields, and ``weight`` is an optional edge-wise :class:`LinkField`.
     """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
@@ -190,4 +190,4 @@ def collect_cast(
             )
         return accumulation(local_field, child_values)
 
-    return rep(local_field, update, name=f"_cc_{name}")
+    return iterate(local_field, update, name=f"_cc_{name}")

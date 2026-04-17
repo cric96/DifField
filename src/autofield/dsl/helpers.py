@@ -7,7 +7,7 @@ from torch import Tensor
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from .neighbor import NeighborExpr
+    from .scattering import LinkField
 
 from ..constants import DEFAULT_TAU_SOFT_AGGR, LOG_EPSILON
 from ..core import RoundContext, resolve_context
@@ -79,10 +79,10 @@ def validate_cast_mode(mode: str) -> None:
 
 
 def resolve_edge_cost(
-    weight: Tensor | "NeighborExpr" | None, ctx: RoundContext
+    weight: Tensor | "LinkField" | None, ctx: RoundContext
 ) -> Tensor:
     """Resolve an edge cost tensor from various input types."""
-    from .neighbor import NeighborExpr
+    from .scattering import LinkField
 
     if weight is None:
         if ctx.edge_weight is not None:
@@ -90,7 +90,7 @@ def resolve_edge_cost(
         return torch.ones(
             ctx.edge_index.shape[1], device=ctx.edge_index.device, dtype=torch.float32
         )
-    if isinstance(weight, NeighborExpr):
+    if isinstance(weight, LinkField):
         return weight.evaluate(
             ctx=ctx, edge_index=ctx.edge_index, edge_weight=ctx.edge_weight
         )

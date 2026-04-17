@@ -11,10 +11,10 @@ Tests are logically divided based on the type of code being verified. We use **p
 
 ## `tests/` Directory Structure
 
-1. `test_dsl_primitives.py`: Contains tests for aggregate computing primitives (`rep`, `nbr`, `branch`, `mux`). The tests verify branch isolation, message passing, and the differentiability of all execution paths.
+1. `test_dsl_primitives.py`: Contains tests for aggregate computing primitives (`iterate`, `scatter`, `branch`, `mux`). The tests verify branch isolation, message passing, and the differentiability of all execution paths.
 2. `test_device_context.py`: Contains unit tests for decentralized (node-centric) execution, verifying that single-device execution exactly reproduces the state calculated globally.
 3. `test_building_blocks.py`: Exercises and ensures the functionality of high-level DSL layers such as `gradient_cast` and `collect_cast`.
-4. `test_layers_and_composition.py`: Verifies the Object-Oriented API based on `nn.Module` (e.g., `NbrLayer`, `RepLayer`) and their correct interfacing with the functional DSL.
+4. `test_layers_and_composition.py`: Verifies the Object-Oriented API based on `nn.Module` (e.g., `GatherLayer`, `IterateLayer`) and their correct interfacing with the functional DSL.
 5. `test_functional_api.py`: Contains tests for the bare functional backend, such as PyG scatter operators and property-based testing on vectorized functions.
 6. `test_spatial_sim.py`: Specific to continuous spatial simulation domains (kinematics, boundaries, mask generators, boids, radius graphs).
 7. `test_runtime_public_api.py`: Tests the simulation engine, integration of timed event scheduling, and snapshot data archiving.

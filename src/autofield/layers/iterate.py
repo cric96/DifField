@@ -1,4 +1,4 @@
-"""Recurrent layer implementing the ``rep`` primitive."""
+"""Recurrent layer implementing the ``iterate`` primitive."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from ..core import RoundContext, resolve_context
 from .common import register_callable
 
 
-class RepLayer(nn.Module):
+class IterateLayer(nn.Module):
     r"""Temporal recurrence: ``s_i^(t) = update_fn(s_i^(t-1), x_i, ctx)``."""
 
     def __init__(

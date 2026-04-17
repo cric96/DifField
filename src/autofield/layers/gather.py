@@ -20,13 +20,13 @@ from ..functional import scatter_aggr
 from ..dsl.helpers import edge_sources_targets
 
 if TYPE_CHECKING:
-    from ..dsl.neighbor import NeighborExpr
+    from ..dsl.scattering import LinkField
 
 
 class _PyGMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper with built-in and custom aggregation paths."""
 
-    def __init__(self, owner: "FoldhoodLayer") -> None:
+    def __init__(self, owner: "GatherLayer") -> None:
         use_builtin = (
             isinstance(owner.aggr, str)
             and owner.mode == "hard"
@@ -77,11 +77,11 @@ class _PyGMessagePassing(MessagePassing):
         )
 
 
-class FoldhoodLayer(nn.Module):
+class GatherLayer(nn.Module):
     r"""Gather neighbours and fold into a single field.
 
     ``m_i = ⊕_{j∈N(i)} msg_{j→i}`` where *msg* comes from a
-    :class:`~autofield.dsl.neighbor.NeighborExpr` or a plain tensor.
+    :class:`~autofield.dsl.scattering.LinkField` or a plain tensor.
     """
 
     def __init__(
@@ -124,7 +124,7 @@ class FoldhoodLayer(nn.Module):
     # ------------------------------------------------------------------
     def forward(
         self,
-        x: Tensor | NeighborExpr,
+        x: Tensor | LinkField,
         ctx: RoundContext | None = None,
         edge_index: Tensor | None = None,
         tag: str | None = None,
@@ -132,14 +132,14 @@ class FoldhoodLayer(nn.Module):
         ctx = resolve_context(ctx)
         effective_tag = tag if tag is not None else getattr(x, "tag", None)
 
-        from ..dsl.neighbor import NeighborExpr
+        from ..dsl.scattering import LinkField
 
         if effective_tag is not None:
             # We can only export if we have a source field (i.e. not a complex expression)
             source_field = getattr(x, "source_field", None)
             if source_field is not None:
                 ctx.exports[effective_tag] = source_field
-            elif not isinstance(x, NeighborExpr):
+            elif not isinstance(x, LinkField):
                 ctx.exports[effective_tag] = x
 
         src = x
@@ -150,8 +150,12 @@ class FoldhoodLayer(nn.Module):
 
         edge_idx = edge_index if edge_index is not None else ctx.edge_index
 
-        # Fast path: plain tensor, include_self not set, simple aggr
-        if self.include_self is None and not isinstance(src, NeighborExpr):
+        # Fast path: plain tensor, include_self not set, simple aggr, AND no message weight
+        if (
+            self.include_self is None 
+            and not isinstance(src, LinkField) 
+            and ctx.message_weight is None
+        ):
             return self._mp(src, edge_idx, ctx.num_nodes)
 
         messages, target_index = self._build_messages(
@@ -166,26 +170,30 @@ class FoldhoodLayer(nn.Module):
     # ------------------------------------------------------------------
     def _build_messages(
         self,
-        src: Tensor | NeighborExpr,
+        src: Tensor | LinkField,
         *,
         ctx: RoundContext,
         edge_idx: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        from ..dsl.neighbor import NeighborExpr
+        from ..dsl.scattering import LinkField
+        from ..dsl.helpers import scale_messages
 
         source_index, target_index = edge_sources_targets(edge_idx)
         include_self = self.include_self
 
         if include_self is None:
-            if isinstance(src, NeighborExpr):
+            if isinstance(src, LinkField):
                 messages = src.evaluate(
                     ctx=ctx,
                     edge_index=edge_idx,
                     edge_weight=ctx.edge_weight,
                 )
-                return messages, target_index
-
-            messages = src[source_index]
+            else:
+                messages = src[source_index]
+            
+            if ctx.message_weight is not None:
+                messages = scale_messages(messages, ctx.message_weight)
+            
             return messages, target_index
 
         # Explicit include_self / exclude_self
@@ -193,7 +201,7 @@ class FoldhoodLayer(nn.Module):
         kept_edge_idx = edge_idx[:, keep_mask]
         kept_target_index = target_index[keep_mask]
 
-        if isinstance(src, NeighborExpr):
+        if isinstance(src, LinkField):
             messages = src.evaluate(
                 ctx=ctx,
                 edge_index=kept_edge_idx,
@@ -204,6 +212,9 @@ class FoldhoodLayer(nn.Module):
         else:
             kept_source_index = kept_edge_idx[0]
             messages = src[kept_source_index]
+        
+        if ctx.message_weight is not None:
+            messages = scale_messages(messages, ctx.message_weight[keep_mask])
 
         if include_self is True:
             self_messages = self._self_messages(src, ctx)
@@ -215,10 +226,10 @@ class FoldhoodLayer(nn.Module):
 
         return messages, kept_target_index
 
-    def _self_messages(self, src: Tensor | NeighborExpr, ctx: RoundContext) -> Tensor:
-        from ..dsl.neighbor import NeighborExpr
+    def _self_messages(self, src: Tensor | LinkField, ctx: RoundContext) -> Tensor:
+        from ..dsl.scattering import LinkField
 
-        if isinstance(src, NeighborExpr):
+        if isinstance(src, LinkField):
             self_index = torch.arange(
                 ctx.num_nodes, device=ctx.edge_index.device, dtype=torch.long
             )

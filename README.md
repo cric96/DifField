@@ -2,7 +2,7 @@
 
 **Differentiable Field Calculus for Graph-Based Learning and Simulation**
 
-AutoField is a PyTorch-based framework that brings **aggregate computing** and **field calculus** to differentiable programming. It lets you write spatial programs using high-level field operations — `rep`, `nbr`, `branch`, `gradient` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
+AutoField is a PyTorch-based framework that brings **aggregate computing** and **field calculus** to differentiable programming. It lets you write spatial programs using high-level field operations — `iterate`, `scatter`, `branch`, `gradient` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
 
 ![AutoField](docs/auto-field.png)
 
@@ -30,7 +30,7 @@ bash install-rocm-7.2.sh
 Build a distance field from a source node on a 10×10 grid:
 
 ```python
-from autofield import GridScenario, SimulationEngine, rep, nbr, mux, minhood
+from autofield import GridScenario, SimulationEngine, iterate, scatter, mux, gather_min
 from autofield.dsl import field
 
 scenario = GridScenario(10, 10, connectivity=4)
@@ -39,9 +39,9 @@ source = scenario.marker(0, 0)  # source at top-left
 
 def program(runtime):
     src = runtime.signals["source"]
-    return rep(
+    return iterate(
         field.inf(),
-        lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+        lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
         name="dist",
     )
 
@@ -60,12 +60,12 @@ AutoField is organized in five conceptual layers:
 flowchart TB
     subgraph DSL["DSL Primitives"]
         direction LR
-        DSL_API["rep · nbr · branch · mux · gradient · broadcast"]
+        DSL_API["iterate · scatter · branch · mux · gradient · broadcast"]
     end
 
     subgraph Layers["Differentiable Layers"]
         direction LR
-        LAYERS_API["RepLayer · HoodLayer · BranchLayer · MuxLayer"]
+        LAYERS_API["IterateLayer · GatherLayer · BranchLayer · MuxLayer"]
     end
 
     subgraph Core["Core Runtime"]
@@ -97,9 +97,9 @@ The DSL provides composable field operators that run on every node of the graph 
 
 | Primitive | Description |
 |-----------|-------------|
-| `rep(init, fn, name=...)` | Per-node recurrent state — evolves over rounds |
-| `nbr(value)` | Build edge-wise neighbor messages from a node field |
-| `hood(expr, aggr)` | Aggregate a `NeighborExpr` into a node field |
+| `iterate(init, fn, name=...)` | Per-node recurrent state — evolves over rounds |
+| `scatter(value)` | Build edge-wise neighbor messages from a node field |
+| `gather(expr, aggr)` | Aggregate a `LinkField` into a node field |
 | `branch(cond, if_true, if_false)` | Domain restriction with communication isolation |
 | `mux(cond, if_true, if_false)` | Pointwise conditional selection (no topology change) |
 
@@ -123,7 +123,7 @@ field.ones()      # one field
 field.inf()       # infinity field
 ```
 
-`Field` inputs are always explicit tensors, typically built with `field.of(...)`, `field.zeros()`, `field.inf()`, or scenario helpers. Neighborhood aggregation always works on `NeighborExpr`, so write `minhood(nbr(x))`, `sumhood(nbr(x) * w)`, or `hood(nbr(x) + nbr_range(), aggr="min")`.
+`Field` inputs are always explicit tensors, typically built with `field.of(...)`, `field.zeros()`, `field.inf()`, or scenario helpers. Neighborhood aggregation always works on `LinkField`, so write `gather_min(scatter(x))`, `gather_sum(scatter(x) * w)`, or `gather(scatter(x) + scatter_range(), aggr="min")`.
 
 ---
 
@@ -143,7 +143,7 @@ The simulation layer provides reusable components for running aggregate programs
 ```python
 from autofield import (
     GridScenario, SimulationEngine, EventSchedule, ScheduledEvent,
-    SnapshotRecorder, rep, nbr, mux, minhood,
+    SnapshotRecorder, iterate, scatter, mux, gather_min,
 )
 from autofield.dsl import field
 
@@ -163,9 +163,9 @@ recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_r
 
 def program(runtime):
     src = runtime.signals["source"]
-    return rep(
+    return iterate(
         field.inf(),
-        lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+        lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
         name="dist",
     )
 
@@ -195,7 +195,7 @@ dist = gradient(source, name="dist")
 
 The convenience operator `gradient(source)` uses the range sensor by default, keeping hop-based programs explicit while allowing geometric graphs to use distances coherent with node positions.
 
-When you provide a custom edge cost to `gradient`, `gradient_cast`, `broadcast`, or `collect_cast`, pass it as a neighborhood expression such as `nbr(weight_field)` or `nbr_range()`.
+When you provide a custom edge cost to `gradient`, `gradient_cast`, `broadcast`, or `collect_cast`, pass it as a neighborhood expression such as `scatter(weight_field)` or `scatter_range()`.
 
 ---
 

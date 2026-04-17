@@ -21,9 +21,9 @@ from autofield import (
     SimulationEngine,
     SnapshotRecorder,
     mux,
-    nbr,
-    rep,
-    minhood,
+    scatter,
+    iterate,
+    gather_min,
 )
 from autofield.dsl import field
 from shared.plotting import save_grid_simulation_gif
@@ -93,10 +93,10 @@ def main():
 
     def program(runtime):
         source_field = runtime.signals["source"]
-        return rep(
+        return iterate(
             field.inf(),
             lambda dist_old: mux(
-                source_field, field.of(0.0), minhood(nbr(dist_old + weight))
+                source_field, field.of(0.0), gather_min(scatter(dist_old + weight))
             ),
             name="dist",
         )

@@ -14,7 +14,7 @@ from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
 from ..core import RoundContext, current_context, with_context
 from ..core.mode import get_default_mode
 from ..functional import field_where
-from .neighbor import NeighborExpr
+from .scattering import LinkField
 
 
 class _LambdaModule(nn.Module):
@@ -35,7 +35,7 @@ def _auto_name(kind: str, **kwargs: object) -> str:
     """Generate a deterministic name from the caller's source location.
 
     Walks up the stack skipping frames that belong to autofield internals
-    (e.g. ``_LambdaModule.forward`` when ``rep`` is called inside a branch
+    (e.g. ``_LambdaModule.forward`` when ``iterate`` is called inside a branch
     lambda) so the name always reflects the user's source position.
 
     Additional keyword arguments (e.g. ``aggr``) are folded into the hash so
@@ -62,7 +62,7 @@ def _auto_name(kind: str, **kwargs: object) -> str:
     return f"{kind}_fallback"
 
 
-def rep(
+def iterate(
     init: Tensor,
     fn: Callable[[Tensor], Tensor],
     *,
@@ -74,18 +74,18 @@ def rep(
     ``field.inf()``, scenario helpers, or any tensor with first dimension equal
     to the number of nodes.
 
-    Can be called as ``rep(init, fn)`` for auto-naming or
-    ``rep(init, fn, name="my_name")`` for explicit naming.
+    Can be called as ``iterate(init, fn)`` for auto-naming or
+    ``iterate(init, fn, name="my_name")`` for explicit naming.
     """
-    from ..layers import RepLayer
+    from ..layers import IterateLayer
 
     resolved_name = name if name is not None else _auto_name("r")
 
-    return RepLayer(init, fn, name=resolved_name)(torch.empty(0))
+    return IterateLayer(init, fn, name=resolved_name)(torch.empty(0))
 
 
-def foldhood(
-    expr: NeighborExpr,
+def gather(
+    expr: LinkField,
     aggr: str | Callable | nn.Module = "sum",
     include_self: bool | None = None,
     mode: str | None = None,
@@ -95,13 +95,13 @@ def foldhood(
 ) -> Tensor:
     r"""Gather neighbours and fold edge-wise messages into a field.
 
-    The input must be a :class:`NeighborExpr`, typically built with :func:`nbr`
-    and optionally combined with arithmetic or :func:`nbr_range`.
+    The input must be a :class:`LinkField`, typically built with :func:`scatter`
+    and optionally combined with arithmetic or :func:`scatter_range`.
 
     When a tag is present, the source field is exported in the context and can
     be overridden by runtime message overrides.
     """
-    from ..layers import FoldhoodLayer
+    from ..layers import GatherLayer
     from ..core import current_context
 
     ctx = current_context()
@@ -114,7 +114,7 @@ def foldhood(
     elif expr.tag is None:
         expr.tag = _auto_name("h", aggr=aggr)
 
-    return FoldhoodLayer(
+    return GatherLayer(
         aggr=aggr,
         mode=effective_mode,
         tau=effective_tau,

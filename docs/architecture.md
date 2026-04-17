@@ -15,8 +15,8 @@ graph TB
     end
 
     subgraph DSL["DSL Layer"]
-        R[rep]
-        N[nbr]
+        R[iterate]
+        N[scatter]
         B[branch]
         M[mux]
         G[gradient]
@@ -24,8 +24,8 @@ graph TB
     end
 
     subgraph Layers["PyTorch Layers"]
-        RL[RepLayer]
-        NL[NbrLayer]
+        RL[IterateLayer]
+        NL[GatherLayer]
         BL[BranchLayer]
         ML[MuxLayer]
     end
@@ -115,7 +115,7 @@ classDiagram
     class DeviceContext {
         +num_neighbors: int
         +round(neighbor_exports, neighbor_messages, neighbor_ranges)
-        +local_field(own, nbr) Tensor
+        +local_field(own, scatter) Tensor
         +result(tensor) Tensor
         +get_state(name) float
     }
@@ -129,7 +129,7 @@ classDiagram
 
 - **AggregateContext** — the global execution environment for a graph. One context per simulation.
 - **RoundContext** — the per-round snapshot of topology, state, and exports. Created fresh each round.
-- **StateManager** — persistent per-node memory across rounds. Handles `rep` state, branch-switch resets, and snapshots.
+- **StateManager** — persistent per-node memory across rounds. Handles `iterate` state, branch-switch resets, and snapshots.
 - **DeviceContext** — a local view of execution from a single device's perspective, useful for debugging and didactic purposes.
 
 ### 2. Functional Utilities
@@ -171,14 +171,14 @@ graph LR
 
 ```mermaid
 classDiagram
-    class RepLayer {
+    class IterateLayer {
         +name: str
         +init: float
         +fn: Callable
         +forward(x) Tensor
     }
 
-    class NbrLayer {
+    class GatherLayer {
         +aggr: str
         +mode: str (hard|soft)
         +tau: float
@@ -197,16 +197,16 @@ classDiagram
         +forward(cond, if_true, if_false) Tensor
     }
 
-    note for RepLayer "Per-node recurrent state with branch-aware reset"
-    note for NbrLayer "Neighborhood message passing with aggregation"
+    note for IterateLayer "Per-node recurrent state with branch-aware reset"
+    note for GatherLayer "Neighborhood message passing with aggregation"
     note for BranchLayer "Domain restriction with communication isolation"
     note for MuxLayer "Pointwise conditional without topology change"
 ```
 
 **Concepts:**
 
-- **RepLayer** — wraps `rep`: manages named recurrent state, automatically resets on branch switches.
-- **NbrLayer** — wraps `nbr`: sends messages along edges, aggregates with configurable strategy.
+- **IterateLayer** — wraps `iterate`: manages named recurrent state, automatically resets on branch switches.
+- **GatherLayer** — wraps `gather`: sends messages along edges, aggregates with configurable strategy.
 - **BranchLayer** — wraps `branch`: splits execution domain, isolates communication between branches.
 - **MuxLayer** — wraps `mux`: pointwise selection without affecting communication topology.
 
@@ -217,8 +217,8 @@ The user-facing API — composable field operators.
 ```mermaid
 graph TB
     subgraph Core["Core Primitives"]
-        rep["rep(init, fn, name)"]
-        nbr["nbr(expr, aggr)"]
+        iterate["iterate(init, fn, name)"]
+        scatter["scatter(expr, aggr)"]
         branch["branch(cond, if_true, if_false)"]
         mux["mux(cond, if_true, if_false)"]
     end
@@ -237,28 +237,28 @@ graph TB
         field_inf["field.inf()"]
         const["const(value)"]
         mid["mid()"]
-        nbr_range["nbr_range()"]
+        scatter_range["scatter_range()"]
     end
 
-    gradient --> rep
-    gradient --> nbr
+    gradient --> iterate
+    gradient --> scatter
     gradient --> mux
 
-    gradient_cast --> rep
-    gradient_cast --> nbr
+    gradient_cast --> iterate
+    gradient_cast --> scatter
 
     broadcast --> gradient_cast
 
-    collect_cast --> rep
-    collect_cast --> nbr
+    collect_cast --> iterate
+    collect_cast --> scatter
 ```
 
 **Conceptual semantics:**
 
 | Operator | Meaning |
 |----------|---------|
-| `rep` | "Remember this value across rounds, evolving it with `fn`" |
-| `nbr` | "Send this expression to neighbors and aggregate their messages" |
+| `iterate` | "Remember this value across rounds, evolving it with `fn`" |
+| `scatter` | "Send this expression to neighbors and aggregate their messages" |
 | `branch` | "Split the domain: nodes where `cond` is true run `if_true`, others run `if_false`, with no communication between branches" |
 | `mux` | "Select between two values per-node, without changing communication" |
 | `gradient` | "Compute minimum-cost distance from source nodes" |
@@ -420,22 +420,22 @@ Within a single round, the DSL primitives compose as follows:
 ```mermaid
 sequenceDiagram
     participant DSL as DSL Program
-    participant Rep as RepLayer
-    participant Nbr as NbrLayer
+    participant Iterate as IterateLayer
+    participant Gather as GatherLayer
     participant Branch as BranchLayer
     participant Func as Functional
     participant State as StateManager
 
-    DSL->>Rep: rep(init, fn, name)
-    Rep->>State: get_or_init(init, name)
-    State-->>Rep: current_state
+    DSL->>Iterate: iterate(init, fn, name)
+    Iterate->>State: get_or_init(init, name)
+    State-->>Iterate: current_state
 
-    Rep->>DSL: fn(current_state)
+    Iterate->>DSL: fn(current_state)
 
-    DSL->>Nbr: minhood(nbr(expr))
-    Nbr->>Func: scatter_aggr(messages, aggr)
-    Func-->>Nbr: aggregated values
-    Nbr-->>DSL: neighbor contribution
+    DSL->>Gather: gather_min(scatter(expr))
+    Gather->>Func: scatter_aggr(messages, aggr)
+    Func-->>Gather: aggregated values
+    Gather-->>DSL: neighbor contribution
 
     DSL->>Branch: branch(cond, if_true, if_false)
     Branch->>State: track_branch(name, cond)
@@ -450,8 +450,8 @@ sequenceDiagram
     end
 
     Branch-->>DSL: branch result
-    DSL-->>Rep: new_state
-    Rep->>State: update(name, new_state)
+    DSL-->>Iterate: new_state
+    Iterate->>State: update(name, new_state)
 ```
 
 ---
@@ -472,8 +472,8 @@ graph TB
 
     subgraph "Field Operations"
         Local["Local Ops\npointwise arithmetic"]
-        Neighbor["Neighbor Ops\nnbr() + aggregation"]
-        Temporal["Temporal Ops\nrep() + state evolution"]
+        Neighbor["Neighbor Ops\nscatter() + aggregation"]
+        Temporal["Temporal Ops\niterate() + state evolution"]
         Conditional["Conditional Ops\nmux(), branch()"]
     end
 
@@ -512,7 +512,7 @@ graph LR
 2. **Neighbor relations** define who can communicate with whom
 3. **Local computation** happens independently on each device
 4. **Neighbor communication** exchanges messages along edges
-5. **State evolution** (`rep`) carries information across rounds
+5. **State evolution** (`iterate`) carries information across rounds
 
 ### Hard vs Soft Semantics
 
@@ -527,13 +527,13 @@ Every operator supports two modes:
 graph TB
     subgraph "Hard Mode"
         H1[branch: boolean split]
-        H2[nbr: exact min/sum/max]
+        H2[scatter: exact min/sum/max]
         H3[mux: exact selection]
     end
 
     subgraph "Soft Mode"
         S1[branch: sigmoid-weighted blend]
-        S2[nbr: softmax-weighted aggregation]
+        S2[scatter: softmax-weighted aggregation]
         S3[mux: soft_where with tau]
     end
 
@@ -588,23 +588,23 @@ Complex behaviors emerge from composing primitives:
 ### Gradient Pattern
 
 ```
-gradient(source) = rep(field.inf(), λd. mux(source, field.of(0), minhood(nbr(d) + step)), name="dist")
+gradient(source) = iterate(field.inf(), λd. mux(source, field.of(0), gather_min(scatter(d) + step)), name="dist")
 ```
 
 ```mermaid
 graph LR
     Source[source field] --> Mux
-    Rep[rep state d] --> Add[d + step]
-    Add --> Nbr[nbr aggr=min]
-    Nbr --> Mux[mux]
-    Mux --> Rep
-    Rep --> Output[distance field]
+    Iterate[iterate state d] --> Add[d + step]
+    Add --> Gather[scatter aggr=min]
+    Gather --> Mux[mux]
+    Mux --> Iterate
+    Iterate --> Output[distance field]
 ```
 
 ### Collect-Cast Pattern
 
 ```
-collect_cast(potential, local, null, acc) = rep("collect", local, λc. acc(local, collect_from_children(c)))
+collect_cast(potential, local, null, acc) = iterate("collect", local, λc. acc(local, collect_from_children(c)))
 ```
 
 ```mermaid
@@ -614,8 +614,8 @@ graph TB
     Parent --> Filter[filter children edges]
     Filter --> Gather[gather child values]
     Gather --> Acc[accumulate]
-    Acc --> Rep[rep state]
-    Rep --> Output[collected field]
+    Acc --> Iterate[iterate state]
+    Iterate --> Output[collected field]
 ```
 
 ### Broadcast Pattern

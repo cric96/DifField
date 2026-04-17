@@ -1,12 +1,12 @@
 """Composable nn.Module layers for autofield primitives."""
 
 from .control import BranchLayer, MuxLayer
-from .neighbor import FoldhoodLayer
-from .rep import RepLayer
+from .gather import GatherLayer
+from .iterate import IterateLayer
 
 __all__ = [
-    "RepLayer",
-    "FoldhoodLayer",
+    "IterateLayer",
+    "GatherLayer",
     "BranchLayer",
     "MuxLayer",
 ]

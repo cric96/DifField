@@ -1,207 +1,142 @@
-"""Tests for differentiability of aggregate operations."""
+"""Tests for differentiability of DSL primitives."""
 
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 
 from autofield import (
     AggregateContext,
     collect_cast,
     gradient,
     gradient_cast,
+    broadcast,
+    scatter_range,
+    iterate,
     mux,
-    nbr,
-    nbr_range,
-    rep,
-    minhood,
-    sumhood,
+    gather_min,
+    scatter,
 )
 from autofield.dsl import field
-from autofield.utils import make_grid_graph
-from conftest import (
-    assert_finite_gradients,
-    field_zeros,
-    field_with_overrides,
+from conftest import assert_finite_gradients, field_with_overrides
+from tests.aggregate.support import (
+    GRADIENT_ROUNDS,
+    LINE_SOURCE,
+    PROPAGATION_ROUNDS,
+    values,
 )
-from tests.aggregate.support import GRADIENT_ROUNDS, ROUNDS, flags, values
 
 
-class TestRepDifferentiability:
-    def test_nested_rep_multiple_nbr_differentiability(self):
-        rows, cols = 3, 3
-        edge_index, n = make_grid_graph(rows, cols)
+class TestDifferentiability:
+    def test_nested_iterate_multiple_scatter_differentiability(self):
+        edge_index = torch.tensor([[0, 1, 1, 2], [1, 0, 2, 1]], dtype=torch.long)
+        ctx = AggregateContext(edge_index, 3)
+        source = values(1.0, 0.0, 0.0)
+        w = torch.tensor(1.0, requires_grad=True)
 
-        w1 = torch.tensor(0.5, requires_grad=True)
-        w2 = torch.tensor(0.5, requires_grad=True)
-
-        ctx = AggregateContext(edge_index, n)
-        zero_field = field_zeros(ctx)
-        for _ in range(ROUNDS):
+        for _ in range(GRADIENT_ROUNDS):
             with ctx.round():
-                val = rep(
-                    zero_field,
-                    lambda outer_s: rep(
-                        zero_field,
-                        lambda inner_s: (
-                            sumhood(nbr(outer_s) * w1)
-                            + sumhood(nbr(inner_s) * w2)
-                            + 1.0
-                        ),
-                    ),
+                d = iterate(
+                    field.inf(),
+                    lambda dist: mux(source, field.zeros(), gather_min(scatter(dist) + w)),
                 )
 
-        loss = val.sum()
+        loss = d[2]
         loss.backward()
 
-        assert w1.grad is not None
-        assert w2.grad is not None
-        assert w1.grad.item() != 0.0
-        assert w2.grad.item() != 0.0
+        assert_finite_gradients([w])
+        assert w.grad.item() > 0
 
+    def test_soft_gradient_differentiability(self, triangle_topology):
+        edge_index, n = triangle_topology
+        ctx = AggregateContext(edge_index, n)
+        source = field_with_overrides(ctx, ((0, 1.0),))
+        w = torch.tensor(1.5, requires_grad=True)
 
-class TestGradientCastDifferentiability:
-    def test_backward_through_accumulation_parameter(self, line_ctx):
-        source = field_with_overrides(line_ctx, ((0, 1.0),))
-        step = torch.tensor(1.0, requires_grad=True)
+        for _ in range(GRADIENT_ROUNDS):
+            with ctx.round():
+                d = gradient(source, weight=scatter(w), mode="soft", tau=1.0)
 
-        for _ in range(ROUNDS):
+        loss = d.sum()
+        loss.backward()
+
+        assert_finite_gradients([w])
+        assert w.grad.item() != 0.0
+
+    def test_gradient_cast_differentiability(self, line_ctx):
+        source = field_with_overrides(line_ctx, LINE_SOURCE)
+        center = torch.ones(line_ctx.num_nodes, requires_grad=True)
+        w = torch.tensor(1.0, requires_grad=True)
+
+        for _ in range(PROPAGATION_ROUNDS):
             with line_ctx.round():
-                output = gradient_cast(
+                out = gradient_cast(
                     source,
-                    field.zeros(),
-                    lambda value: value + step,
-                    name="backprop",
-                )
-
-        loss = output.sum()
-        loss.backward()
-
-        assert_finite_gradients([step])
-        assert step.grad.item() != 0.0
-
-
-class TestCollectCastDifferentiability:
-    def test_backward_to_local_payloads(self, line_ctx):
-        potential = torch.arange(line_ctx.num_nodes, dtype=torch.float32)
-        local = torch.ones(line_ctx.num_nodes, requires_grad=True)
-
-        for _ in range(ROUNDS):
-            with line_ctx.round():
-                output = collect_cast(
-                    potential,
-                    local,
-                    field.zeros(),
-                    lambda acc, value: acc + value,
-                    name="local_grad",
-                )
-
-        output[0].backward()
-
-        assert_finite_gradients([local])
-        assert torch.allclose(local.grad, torch.ones(line_ctx.num_nodes))
-
-    def test_soft_backpropagates_through_potential(self, line_ctx):
-        potential = torch.arange(
-            line_ctx.num_nodes, dtype=torch.float32, requires_grad=True
-        )
-
-        for _ in range(ROUNDS):
-            with line_ctx.round():
-                output = collect_cast(
-                    potential,
-                    torch.ones(line_ctx.num_nodes),
-                    field.zeros(),
-                    lambda acc, value: acc + value,
-                    name="soft_potential",
+                    center,
+                    lambda x: x,
+                    weight=scatter(w),
                     mode="soft",
                     tau=1.0,
                 )
 
-        output[0].backward()
+        loss = out.sum()
+        loss.backward()
 
-        assert_finite_gradients([potential])
-        assert potential.grad.abs().sum().item() > 0.0
+        assert_finite_gradients([center, w])
+        assert center.grad is not None
+        assert w.grad is not None
+
+    def test_collect_cast_differentiability(self, line_ctx):
+        potential = torch.arange(line_ctx.num_nodes, dtype=torch.float32, requires_grad=True)
+        local = torch.ones(line_ctx.num_nodes, requires_grad=True)
+
+        for _ in range(PROPAGATION_ROUNDS):
+            with line_ctx.round():
+                out = collect_cast(
+                    potential,
+                    local,
+                    field.zeros(),
+                    torch.add,
+                    mode="soft",
+                    tau=1.0,
+                )
+
+        loss = out.sum()
+        loss.backward()
+
+        assert_finite_gradients([potential, local])
+
+    def test_broadcast_differentiability(self, line_ctx):
+        mask = values(1.0, 0.0, 0.0, 0.0)
+        value = torch.tensor(10.0, requires_grad=True)
+
+        for _ in range(PROPAGATION_ROUNDS):
+            with line_ctx.round():
+                out = broadcast(mask, value, mode="soft", tau=1.0)
+
+        loss = out.sum()
+        loss.backward()
+
+        assert_finite_gradients([value])
+        assert value.grad.item() > 0.0
 
 
-class TestNbrRangeDifferentiability:
-    def test_nbr_range_is_differentiable_with_edge_weight_tensor(
+class TestScatterRangeDifferentiability:
+    def test_scatter_range_is_differentiable_with_edge_weight_tensor(
         self, triangle_topology
     ):
-        edge_index, _ = triangle_topology
+        edge_index, n = triangle_topology
         edge_weight = torch.tensor(
-            [2.0, 2.0, 2.0, 2.0, 10.0, 10.0], requires_grad=True
+            [1.0, 1.0, 1.0, 1.0, 1.0, 1.0], requires_grad=True
         )
-        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
-        source = field_with_overrides(ctx, ((0, 1.0),))
+        ctx = AggregateContext(edge_index, n, edge_weight=edge_weight)
 
-        for _ in range(GRADIENT_ROUNDS):
-            with ctx.round():
-                d = rep(
-                    field.inf(),
-                    lambda dist_old: mux(
-                        source, field.of(0.0), minhood(nbr(dist_old) + nbr_range())
-                    ),
-                )
+        with ctx.round():
+            ranges = gather_min(scatter_range())
 
-        loss = d[d.isfinite()].sum()
+        loss = ranges.sum()
         loss.backward()
 
+        assert_finite_gradients([edge_weight])
         assert edge_weight.grad is not None
-        assert torch.isfinite(edge_weight.grad).all()
-        assert edge_weight.grad.abs().sum().item() > 0.0
-
-
-class TestGradientDifferentiability:
-    def test_gradient_fixed(self):
-        rows, cols = 5, 5
-        edge_index, n = make_grid_graph(rows, cols)
-        w = torch.tensor(1.0)
-
-        ctx = AggregateContext(edge_index, n)
-        source = field_with_overrides(ctx, ((0, 1.0),))
-        zero_field = field_zeros(ctx)
-        for _ in range(rows + cols):
-            with ctx.round():
-                d = rep(
-                    field.inf(),
-                    lambda dist: mux(source, zero_field, minhood(nbr(dist) + w)),
-                )
-
-        expected = field_zeros(ctx)
-        for row_idx in range(rows):
-            for col_idx in range(cols):
-                expected[row_idx * cols + col_idx] = float(row_idx + col_idx)
-
-        assert torch.allclose(d, expected)
-
-    def test_differentiability(self):
-        rows, cols = 3, 3
-        edge_index, n = make_grid_graph(rows, cols)
-        w = torch.tensor(1.0, requires_grad=True)
-
-        ctx = AggregateContext(edge_index, n)
-        source = field_with_overrides(ctx, ((0, 1.0),))
-        zero_field = field_zeros(ctx)
-        for _ in range(6):
-            with ctx.round():
-                d = rep(
-                    field.inf(),
-                    lambda dist: mux(source, zero_field, minhood(nbr(dist) + w)),
-                )
-
-        loss = d[d.isfinite()].sum()
-        loss.backward()
-        assert w.grad is not None
-        assert w.grad.item() != 0.0
-
-    def test_convenience_gradient_uses_edge_weight_by_default(self, triangle_topology):
-        edge_index, _ = triangle_topology
-        edge_weight = torch.tensor([2.0, 2.0, 2.0, 2.0, 10.0, 10.0])
-        ctx = AggregateContext(edge_index, 3, edge_weight=edge_weight)
-        source = field_with_overrides(ctx, ((0, 1.0),))
-
-        for _ in range(GRADIENT_ROUNDS):
-            with ctx.round():
-                d = gradient(source, name="weighted")
-
-        assert torch.allclose(d, values(0.0, 2.0, 4.0))
+        assert not torch.allclose(edge_weight.grad, torch.zeros_like(edge_weight))

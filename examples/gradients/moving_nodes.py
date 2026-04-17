@@ -26,9 +26,9 @@ from autofield import (
     limit_speed,
     normalize_vectors,
     mux,
-    nbr,
-    rep,
-    minhood,
+    scatter,
+    iterate,
+    gather_min,
 )
 from autofield.dsl import field
 from shared.plotting import (
@@ -167,9 +167,9 @@ def main():
 
     def program(runtime):
         src = source.to(runtime.scenario.device)
-        return rep(
+        return iterate(
             field.inf(),
-            lambda dist_old: mux(src, field.of(0.0), minhood(nbr(dist_old + weight))),
+            lambda dist_old: mux(src, field.of(0.0), gather_min(scatter(dist_old + weight))),
             name="dist",
         )
 

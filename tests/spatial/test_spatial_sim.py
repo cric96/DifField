@@ -14,13 +14,13 @@ from autofield import (
     gradient,
     limit_speed,
     mux,
-    nbr,
+    scatter,
     normalize_vectors,
-    rep,
-    minhood,
-    maxhood,
-    sumhood,
-    avghood,
+    iterate,
+    gather_min,
+    gather_max,
+    gather_sum,
+    gather_avg,
 )
 from autofield.dsl import field
 
@@ -169,9 +169,9 @@ class TestSpatialScenarioTopology:
         )
 
         def program(_runtime):
-            return rep(
+            return iterate(
                 field.inf(),
-                lambda d: mux(source, field.of(0.0), minhood(nbr(d + 1.0))),
+                lambda d: mux(source, field.of(0.0), gather_min(scatter(d + 1.0))),
                 name="dist",
             )
 

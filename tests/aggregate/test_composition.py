@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import torch
 
-from autofield import branch, mux, nbr, rep, maxhood, sumhood
+from autofield import branch, mux, scatter, iterate, gather_max, gather_sum
 from autofield.dsl import field
 from conftest import field_zeros
 from tests.aggregate.support import ROUNDS, flags, values
 
 
-class TestRepBranchMuxComposition:
-    def test_mux_rep_branch_composition(self, line_ctx):
+class TestIterateBranchMuxComposition:
+    def test_mux_iterate_branch_composition(self, line_ctx):
         cond_mux = flags(True, True, False, False)
         cond_branch = flags(True, True, True, False)
 
@@ -20,17 +20,17 @@ class TestRepBranchMuxComposition:
             with line_ctx.round():
                 val = mux(
                     cond_mux,
-                    rep(
+                    iterate(
                         field.zeros(),
                         lambda outer_s: branch(
                             cond_branch,
-                            lambda: sumhood(nbr(outer_s)) + 1.0,
-                            lambda: maxhood(nbr(outer_s)) + 10.0,
+                            lambda: gather_sum(scatter(outer_s)) + 1.0,
+                            lambda: gather_max(scatter(outer_s)) + 10.0,
                         ),
                     ),
-                    rep(
+                    iterate(
                         field.zeros(),
-                        lambda s: sumhood(nbr(s)) + 100.0,
+                        lambda s: gather_sum(scatter(s)) + 100.0,
                     ),
                 )
             results.append(val.clone())
@@ -39,26 +39,26 @@ class TestRepBranchMuxComposition:
         assert torch.allclose(results[1], values(2.0, 3.0, 300.0, 200.0))
         assert torch.allclose(results[2], values(4.0, 5.0, 600.0, 400.0))
 
-    def test_rep_branch_rep_composition(self, line_ctx):
+    def test_iterate_branch_iterate_composition(self, line_ctx):
         cond = flags(True, True, False, False)
 
         results = []
         for _ in range(ROUNDS):
             with line_ctx.round():
-                val = rep(
+                val = iterate(
                     field.zeros(),
                     lambda outer_s: branch(
                         cond,
-                        lambda: rep(
+                        lambda: iterate(
                             field.zeros(),
                             lambda inner_s: (
-                                sumhood(nbr(outer_s)) + sumhood(nbr(inner_s)) + 1.0
+                                gather_sum(scatter(outer_s)) + gather_sum(scatter(inner_s)) + 1.0
                             ),
                         ),
-                        lambda: rep(
+                        lambda: iterate(
                             field.zeros(),
                             lambda inner_s: (
-                                maxhood(nbr(outer_s)) + maxhood(nbr(inner_s)) + 10.0
+                                gather_max(scatter(outer_s)) + gather_max(scatter(inner_s)) + 10.0
                             ),
                         ),
                     ),
@@ -80,13 +80,13 @@ class TestMultipleAssignmentsComposition:
 
         for _ in range(ROUNDS):
             with line_ctx.round():
-                x = rep(field.zeros(), lambda s: s + 1.0)
+                x = iterate(field.zeros(), lambda s: s + 1.0)
                 y = branch(
                     cond,
-                    lambda: rep(field.zeros(), lambda s: sumhood(nbr(s)) + x),
-                    lambda: rep(field.zeros(), lambda s: maxhood(nbr(s)) + x * 2),
+                    lambda: iterate(field.zeros(), lambda s: gather_sum(scatter(s)) + x),
+                    lambda: iterate(field.zeros(), lambda s: gather_max(scatter(s)) + x * 2),
                 )
-                z = rep(field.zeros(), lambda s: sumhood(nbr(s + y)))
+                z = iterate(field.zeros(), lambda s: gather_sum(scatter(s + y)))
 
             results_x.append(x.clone())
             results_y.append(y.clone())
@@ -103,18 +103,18 @@ class TestMultipleAssignmentsComposition:
         assert torch.allclose(results_z[2], values(19.0, 38.0, 40.0, 26.0))
 
 
-class TestNestedRepComposition:
-    def test_nested_rep_multiple_nbr(self, line_ctx):
+class TestNestedIterateComposition:
+    def test_nested_iterate_multiple_scatter(self, line_ctx):
         zero_field = field_zeros(line_ctx)
         results = []
         for _ in range(ROUNDS):
             with line_ctx.round():
-                val = rep(
+                val = iterate(
                     zero_field,
-                    lambda outer_s: rep(
+                    lambda outer_s: iterate(
                         zero_field,
                         lambda inner_s: (
-                            sumhood(nbr(outer_s)) + sumhood(nbr(inner_s)) + 1.0
+                            gather_sum(scatter(outer_s)) + gather_sum(scatter(inner_s)) + 1.0
                         ),
                     ),
                 )

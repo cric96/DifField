@@ -13,6 +13,6 @@ This directory contains an interactive Jupyter Notebook to step-by-step explore 
 - How to setup a random `SpatialScenario` and access edge/position data.
 - How to visualize a network topology.
 - **How to inspect the inner message exchanges** across edges using the `full_repr()` / message grid views.
-- How to write an aggregate program with primitives like `rep`, `mux`, `nbr`, `minhood`.
+- How to write an aggregate program with primitives like `iterate`, `mux`, `scatter`, `gather_min`.
 - How to execute it using `SimulationEngine.run()`.
 

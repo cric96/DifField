@@ -1,11 +1,11 @@
-"""Tests for layer implementations: RepLayer, FoldhoodLayer, BranchLayer, MuxLayer."""
+"""Tests for layer implementations: IterateLayer, GatherLayer, BranchLayer, MuxLayer."""
 
 from __future__ import annotations
 
 import torch
 
-from autofield import mux, rep
-from autofield.layers import BranchLayer, MuxLayer, FoldhoodLayer, RepLayer
+from autofield import mux, iterate
+from autofield.layers import BranchLayer, MuxLayer, GatherLayer, IterateLayer
 from autofield.dsl import field
 from conftest import field_from_values, field_with_overrides, field_zeros
 from tests.aggregate.support import AddConstant, flags, values
@@ -13,30 +13,30 @@ from tests.aggregate.support import AddConstant, flags, values
 COMPOSITION_ROUNDS = 5
 
 
-class TestFoldhoodLayer:
+class TestGatherLayer:
     def test_sum_triangle(self, triangle_ctx):
-        layer = FoldhoodLayer(aggr="sum")
+        layer = GatherLayer(aggr="sum")
         x = field_from_values(triangle_ctx, [1.0, 2.0, 3.0])
         with triangle_ctx.round():
             m = layer(x)
         assert torch.allclose(m, values(5.0, 4.0, 3.0))
 
     def test_min_triangle(self, triangle_ctx):
-        layer = FoldhoodLayer(aggr="min", fill_value=float("inf"))
+        layer = GatherLayer(aggr="min", fill_value=float("inf"))
         x = field_from_values(triangle_ctx, [10.0, 2.0, 5.0])
         with triangle_ctx.round():
             m = layer(x)
         assert torch.allclose(m, values(2.0, 5.0, 2.0))
 
 
-class TestRepLayer:
-    def test_rep_layer_in_dsl(self, line_ctx):
+class TestIterateLayer:
+    def test_iterate_layer_in_dsl(self, line_ctx):
         zero_field = field_zeros(line_ctx)
-        rep_layer = RepLayer(zero_field, lambda s: s + 1, name="counter")
+        iterate_layer = IterateLayer(zero_field, lambda s: s + 1, name="counter")
         results = []
         for _ in range(COMPOSITION_ROUNDS):
             with line_ctx.round():
-                val = rep_layer(zero_field)
+                val = iterate_layer(zero_field)
             results.append(val[0].item())
         assert results == [1.0, 2.0, 3.0, 4.0, 5.0]
 
@@ -46,8 +46,8 @@ class TestBranchLayer:
         cond = flags(True, True, False, False)
         x = field_from_values(line_ctx, [1.0, 2.0, 30.0, 10.0])
         layer = BranchLayer(
-            FoldhoodLayer(aggr="sum"),
-            FoldhoodLayer(aggr="max"),
+            GatherLayer(aggr="sum"),
+            GatherLayer(aggr="max"),
             branch_name="standalone",
         )
 
@@ -70,30 +70,30 @@ class TestMuxLayer:
 
 
 class TestLayersInDsl:
-    def test_nbr_layer_in_dsl(self, triangle_ctx):
-        nbr_layer = FoldhoodLayer(aggr="sum")
+    def test_gather_layer_in_dsl(self, triangle_ctx):
+        gather_layer = GatherLayer(aggr="sum")
         x = field_from_values(triangle_ctx, [1.0, 2.0, 3.0])
         with triangle_ctx.round():
-            m = nbr_layer(x)
+            m = gather_layer(x)
         assert torch.allclose(m, values(5.0, 4.0, 3.0))
 
     def test_layers_compose_with_dsl(self, triangle_ctx):
-        nbr_layer = FoldhoodLayer(aggr="min", fill_value=float("inf"))
+        gather_layer = GatherLayer(aggr="min", fill_value=float("inf"))
         x = field_from_values(triangle_ctx, [10.0, 2.0, 5.0])
         cond = field_from_values(triangle_ctx, [1.0, 0.0, 1.0])
         with triangle_ctx.round():
-            messages = nbr_layer(x)
+            messages = gather_layer(x)
             result = mux(cond, messages, field.zeros())
         assert torch.allclose(result, values(2.0, 0.0, 2.0))
 
     def test_gradient_with_layers(self, line_ctx):
-        nbr_min = FoldhoodLayer(aggr="min")
+        gather_min_layer = GatherLayer(aggr="min")
         source = field_with_overrides(line_ctx, ((0, 1.0),))
 
         for _ in range(COMPOSITION_ROUNDS):
             with line_ctx.round():
-                d = rep(
+                d = iterate(
                     field.inf(),
-                    lambda s: mux(source, field.zeros(), nbr_min(s + 1)),
+                    lambda s: mux(source, field.zeros(), gather_min_layer(s + 1)),
                 )
         assert torch.allclose(d, values(0.0, 1.0, 2.0, 3.0))

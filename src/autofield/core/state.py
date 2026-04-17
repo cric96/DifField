@@ -7,7 +7,7 @@ from torch import Tensor
 
 
 class StateManager:
-    """Manages per-node recurrent states for rep, with branch-switch reset."""
+    """Manages per-node recurrent states for iterate, with branch-switch reset."""
 
     def __init__(self, num_nodes: int, device: torch.device | str = "cpu") -> None:
         self.num_nodes = num_nodes
@@ -33,7 +33,7 @@ class StateManager:
         return self._states[name]
 
     def update(self, new_val: Tensor, *, name: str) -> None:
-        """Store updated state (called after each round for a rep)."""
+        """Store updated state (called after each round for an iterate)."""
         self._states[name] = new_val
 
     def track_branch(self, branch_name: str, cond: Tensor) -> Tensor:
@@ -51,7 +51,7 @@ class StateManager:
         return switched
 
     def reset_states_for_nodes(self, mask: Tensor, init_map: dict[str, Tensor]) -> None:
-        """Reset rep states for nodes indicated by *mask*."""
+        """Reset iterate states for nodes indicated by *mask*."""
         if not mask.any():
             return
 

@@ -77,16 +77,16 @@ class DeviceContext:
         return neighbor_tensor
 
     def local_field(
-        self, own: float, *, nbr: float | list[float] | Tensor = 0.0
+        self, own: float, *, scatter: float | list[float] | Tensor = 0.0
     ) -> Tensor:
-        """Build a field with *own* for this device and *nbr* for neighbours."""
+        """Build a field with *own* for this device and *scatter* for neighbours."""
         num_nodes = self._num_neighbors + 1
-        if isinstance(nbr, (list, Tensor)):
-            tensor = torch.as_tensor(nbr, dtype=torch.float32)
+        if isinstance(scatter, (list, Tensor)):
+            tensor = torch.as_tensor(scatter, dtype=torch.float32)
             field = torch.zeros(num_nodes, dtype=torch.float32)
             field[1 : 1 + tensor.shape[0]] = tensor
         else:
-            field = torch.full((num_nodes,), nbr, dtype=torch.float32)
+            field = torch.full((num_nodes,), scatter, dtype=torch.float32)
         field[0] = own
         return field
 
@@ -96,7 +96,7 @@ class DeviceContext:
         return tensor[0]
 
     def get_state(self, name: str) -> float:
-        """Return this device's ``rep`` state for *name*."""
+        """Return this device's ``iterate`` state for *name*."""
         state_tensor = self._agg_ctx._ctx.state.get_state(name=name)
         if state_tensor is None:
             raise KeyError(f"State '{name}' not found")

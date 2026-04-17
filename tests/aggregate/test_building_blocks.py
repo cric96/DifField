@@ -8,11 +8,11 @@ from autofield import (
     gradient,
     gradient_cast,
     broadcast,
-    nbr_range,
-    rep,
+    scatter_range,
+    iterate,
     mux,
-    minhood,
-    nbr,
+    gather_min,
+    scatter,
 )
 from autofield.dsl import field
 from conftest import assert_finite_gradients, field_from_values, field_with_overrides
@@ -39,9 +39,9 @@ class TestGradient:
         source = field_with_overrides(ctx, ((0, 1.0),))
         for _ in range(rows + cols):
             with ctx.round():
-                d = rep(
+                d = iterate(
                     field.inf(),
-                    lambda dist: mux(source, field.zeros(), minhood(nbr(dist) + w)),
+                    lambda dist: mux(source, field.zeros(), gather_min(scatter(dist) + w)),
                 )
 
         expected = torch.zeros(n, dtype=torch.float32)
@@ -78,9 +78,9 @@ class TestGradient:
         source = field_with_overrides(ctx, ((0, 1.0),))
         for _ in range(GRADIENT_ROUNDS):
             with ctx.round():
-                d = rep(
+                d = iterate(
                     field.inf(),
-                    lambda dist: mux(source, field.zeros(), minhood(nbr(dist) + w)),
+                    lambda dist: mux(source, field.zeros(), gather_min(scatter(dist) + w)),
                 )
         assert torch.allclose(d, values(0.0, 1.0, 2.0))
 
@@ -177,7 +177,7 @@ class TestGradientCast:
                     source,
                     center,
                     lambda value: value,
-                    weight=nbr_range(),
+                    weight=scatter_range(),
                     name="weighted_multi_source",
                 )
 

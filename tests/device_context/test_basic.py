@@ -9,11 +9,11 @@ from autofield import (
     AggregateContext,
     gradient,
     mux,
-    nbr,
-    nbr_range,
-    rep,
-    minhood,
-    sumhood,
+    scatter,
+    scatter_range,
+    iterate,
+    gather_min,
+    gather_sum,
 )
 from autofield.dsl import DeviceContext, field
 
@@ -43,7 +43,7 @@ def test_local_field(own, neighbors):
     num_neighbors = 1 if isinstance(neighbors, float) else len(neighbors)
     device = DeviceContext(num_neighbors=num_neighbors)
 
-    local = device.local_field(own=own, nbr=neighbors)
+    local = device.local_field(own=own, scatter=neighbors)
 
     assert local.shape == (num_neighbors + 1,)
     assert local[0] == own
@@ -68,9 +68,9 @@ class TestDeviceContextBasic:
         global_states = collect_round_outputs(
             ctx,
             GLOBAL_SYNC_ROUNDS,
-            lambda: rep(
+            lambda: iterate(
                 field.inf(),
-                lambda dist: mux(source, field.of(0.0), minhood(nbr(dist + weight))),
+                lambda dist: mux(source, field.of(0.0), gather_min(scatter(dist + weight))),
                 name=GRADIENT_STATE,
             ),
         )
@@ -80,7 +80,7 @@ class TestDeviceContextBasic:
         device = DeviceContext(num_neighbors=ONE_NEIGHBOR)
         source_local = device.local_field(
             own=source[observed_device_id].item(),
-            nbr=0.0,
+            scatter=0.0,
         )
 
         for round_index in range(GLOBAL_SYNC_ROUNDS):
@@ -92,12 +92,12 @@ class TestDeviceContextBasic:
                     ]
                 }
             with device.round(neighbor_exports=neighbor_exports):
-                local_distance = rep(
+                local_distance = iterate(
                     field.inf(),
                     lambda dist: mux(
                         source_local,
                         field.of(0.0),
-                        minhood(nbr(dist + weight)),
+                        gather_min(scatter(dist + weight)),
                     ),
                     name=GRADIENT_STATE,
                 )
@@ -114,12 +114,12 @@ class TestDeviceContextBasic:
 
         for _ in range(3):
             with device.round():
-                local_distance = rep(
+                local_distance = iterate(
                     field.inf(),
                     lambda dist: mux(
                         source_local,
                         field.of(0.0),
-                        minhood(nbr(dist + weight)),
+                        gather_min(scatter(dist + weight)),
                     ),
                     name=GRADIENT_STATE,
                 )
@@ -130,7 +130,7 @@ class TestDeviceContextBasic:
         device = DeviceContext(num_neighbors=TWO_NEIGHBORS)
 
         with device.round(neighbor_ranges=[1.5, 2.5]):
-            total_range = sumhood(nbr_range())
+            total_range = gather_sum(scatter_range())
 
         assert_float_close(device.result(total_range).item(), 4.0)
 
@@ -146,7 +146,7 @@ class TestDeviceContextBasic:
         )
 
         device = DeviceContext(num_neighbors=ONE_NEIGHBOR, self_loop=False)
-        source_local = device.local_field(own=0.0, nbr=0.0)
+        source_local = device.local_field(own=0.0, scatter=0.0)
         neighbor_ranges = [3.0]
         observed_device_id = 2
         upstream_neighbor_id = 1

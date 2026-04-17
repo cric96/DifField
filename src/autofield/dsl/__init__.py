@@ -4,26 +4,26 @@ from torch import Tensor
 
 from ..core import AggregateContext, DeviceContext
 from .building_blocks import broadcast, collect_cast, gradient, gradient_cast
-from .neighbor import NeighborExpr, as_nbr_expr, nbr, nbr_range
-from .primitives import branch, const, field, foldhood, mid, mux, rep
-from .hoods import minhood, maxhood, sumhood, avghood
+from .scattering import LinkField, as_scatter_expr, scatter, scatter_range
+from .primitives import branch, const, field, gather, mid, mux, iterate
+from .gathering import gather_min, gather_max, gather_sum, gather_avg
 
 Field = Tensor
 
 __all__ = [
     "AggregateContext",
     "DeviceContext",
-    "NeighborExpr",
+    "LinkField",
     "Field",
-    "rep",
-    "nbr",
-    "foldhood",
-    "minhood",
-    "maxhood",
-    "sumhood",
-    "avghood",
-    "as_nbr_expr",
-    "nbr_range",
+    "iterate",
+    "scatter",
+    "gather",
+    "gather_min",
+    "gather_max",
+    "gather_sum",
+    "gather_avg",
+    "as_scatter_expr",
+    "scatter_range",
     "branch",
     "broadcast",
     "gradient_cast",

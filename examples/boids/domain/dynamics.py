@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable
 
 import torch
-from autofield import avghood, bounce_in_box, limit_speed, nbr, rep
+from autofield import gather_avg, bounce_in_box, limit_speed, scatter, iterate
 from autofield.dsl import AggregateContext
 
 from .geometry import hard_separation_force
@@ -29,8 +29,8 @@ def reference_boids_velocity_step(
     max_speed: float | torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Compute pre-clipped and clipped velocity for the standard boids model."""
-    neigh_vel = avghood(nbr(vel))
-    neigh_pos = avghood(nbr(pos))
+    neigh_vel = gather_avg(scatter(vel))
+    neigh_pos = gather_avg(scatter(pos))
     align_force = neigh_vel - vel
     cohesion_force = neigh_pos - pos
     sep_force = hard_separation_force(pos, sep)
@@ -102,7 +102,7 @@ def step_boids_dynamics(
         return torch.nan_to_num(clipped_vel, nan=0.0, posinf=0.0, neginf=0.0)
 
     with ctx.round():
-        vel = rep(velocities, step_velocity_update, name="vel")
+        vel = iterate(velocities, step_velocity_update, name="vel")
 
     new_pos = pos_t + dt * vel
     new_pos, vel_bounced = bounce_in_box(new_pos, vel)
@@ -196,7 +196,7 @@ def rollout_with_dynamic_topology(
             return resolved_clipped
 
         with ctx.round():
-            vel = rep(init_vel, rollout_velocity_update, name="vel")
+            vel = iterate(init_vel, rollout_velocity_update, name="vel")
 
         new_pos = pos_t + dt * vel
         new_pos, vel_bounced = bounce_in_box(new_pos, vel)

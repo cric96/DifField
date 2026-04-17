@@ -8,7 +8,7 @@ import pytest
 import torch
 from torch import Tensor
 
-from autofield import AggregateContext, branch, rep
+from autofield import AggregateContext, branch, iterate
 from autofield.dsl import DeviceContext
 
 ABS_TOL = 1e-6
@@ -43,7 +43,7 @@ def values(*items: float) -> Tensor:
     return torch.tensor(items, dtype=torch.float32)
 
 
-def repeated(value: float, count: int) -> list[float]:
+def iterated(value: float, count: int) -> list[float]:
     return [value] * count
 
 
@@ -98,7 +98,7 @@ def run_round(
         return unwrap_device_output(device, program())
 
 
-def run_named_rep(
+def run_named_iterate(
     device: DeviceContext,
     *,
     state_name: str,
@@ -109,13 +109,13 @@ def run_named_rep(
 ) -> float:
     return run_round(
         device,
-        lambda: rep(device.local_field(init), update, name=state_name),
+        lambda: iterate(device.local_field(init), update, name=state_name),
         neighbor_exports=maybe_exports(state_name, neighbor_values),
         neighbor_ranges=neighbor_ranges,
     )
 
 
-def run_branched_rep(
+def run_branched_iterate(
     device: DeviceContext,
     *,
     condition: Tensor,
@@ -130,8 +130,8 @@ def run_branched_rep(
         device,
         lambda: branch(
             condition,
-            lambda: rep(device.local_field(true_init), true_update, name=state_name),
-            lambda: rep(device.local_field(false_init), false_update, name=state_name),
+            lambda: iterate(device.local_field(true_init), true_update, name=state_name),
+            lambda: iterate(device.local_field(false_init), false_update, name=state_name),
         ),
         neighbor_exports=maybe_exports(state_name, neighbor_values),
     )

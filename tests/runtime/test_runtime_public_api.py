@@ -15,13 +15,13 @@ from autofield import (
     build_spatial_graph,
     gradient,
     mux,
-    nbr,
-    rep,
-    minhood,
-    maxhood,
-    sumhood,
-    avghood,
-    foldhood,
+    scatter,
+    iterate,
+    gather_min,
+    gather_max,
+    gather_sum,
+    gather_avg,
+    gather,
 )
 from autofield.dsl import field
 from autofield.utils import get_device, get_grid_distances
@@ -47,9 +47,9 @@ class TestSimulationFramework:
 
         def program(runtime):
             src = runtime.signals["source"]
-            return rep(
+            return iterate(
                 field.inf(),
-                lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+                lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
                 name="dist",
             )
 
@@ -77,9 +77,9 @@ class TestSimulationFramework:
 
         def program(rt):
             src = rt.signals["source"]
-            return rep(
+            return iterate(
                 field.inf(),
-                lambda d: mux(src, field.of(0.0), minhood(nbr(d + 1.0))),
+                lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
                 name="dist",
             )
 
@@ -130,8 +130,8 @@ class TestSnapshotRecorder:
         )
 
         def program(_runtime):
-            counter = rep(field.zeros(), lambda s: s + 1, name="counter")
-            return sumhood(nbr(counter, tag="counter_msg"))
+            counter = iterate(field.zeros(), lambda s: s + 1, name="counter")
+            return gather_sum(scatter(counter, tag="counter_msg"))
 
         output, _ = engine.run(rounds=1, program=program, signals={}, recorder=recorder)
         record = recorder.records[0]

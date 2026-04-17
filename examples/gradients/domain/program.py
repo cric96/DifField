@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-from autofield import foldhood, mux, nbr, rep, SimulationEngine
+from autofield import gather, mux, scatter, iterate, SimulationEngine
 from autofield.dsl import field
 
 try:
@@ -30,10 +30,10 @@ def run_gradient_program(
     engine = SimulationEngine.from_scenario(scenario)
 
     def program(_runtime):
-        return rep(
+        return iterate(
             field.inf(),
             lambda dist_old: mux(
-                source, field.of(0.0), foldhood(nbr(dist_old + weight), aggr=aggr)
+                source, field.of(0.0), gather(scatter(dist_old + weight), aggr=aggr)
             ),
             name="dist",
         )

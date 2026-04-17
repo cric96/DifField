@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from autofield import branch, mux, nbr, rep, sumhood
+from autofield import branch, mux, scatter, iterate, gather_sum
 from autofield.dsl import DeviceContext
 
 from .support import (
@@ -31,9 +31,9 @@ class TestDeviceContextMultipleAssignments:
         dev_1 = DeviceContext(num_neighbors=TWO_NEIGHBORS)
         dev_2 = DeviceContext(num_neighbors=ONE_NEIGHBOR)
 
-        src_0 = dev_0.local_field(own=1.0, nbr=0.0)
-        src_1 = dev_1.local_field(own=0.0, nbr=[1.0, 0.0])
-        src_2 = dev_2.local_field(own=0.0, nbr=0.0)
+        src_0 = dev_0.local_field(own=1.0, scatter=0.0)
+        src_1 = dev_1.local_field(own=0.0, scatter=[1.0, 0.0])
+        src_2 = dev_2.local_field(own=0.0, scatter=0.0)
 
         network = DeviceNetwork(dev_0, dev_1, dev_2)
 
@@ -75,12 +75,12 @@ class TestDeviceContextMultipleAssignments:
         assert_tuple_close(round_3[1], (3.0, 100.0, 330.0))
         assert_tuple_close(round_3[2], (3.0, 100.0, 330.0))
 
-    def test_decentralized_multiple_auto_rep_no_tags(self):
+    def test_decentralized_multiple_auto_iterate_no_tags(self):
         dev_0 = DeviceContext(num_neighbors=THREE_NEIGHBORS)
         dev_1 = DeviceContext(num_neighbors=THREE_NEIGHBORS)
 
-        src_0 = dev_0.local_field(own=1.0, nbr=0.0)
-        src_1 = dev_1.local_field(own=0.0, nbr=1.0)
+        src_0 = dev_0.local_field(own=1.0, scatter=0.0)
+        src_1 = dev_1.local_field(own=0.0, scatter=1.0)
 
         network = DeviceNetwork(dev_0, dev_1)
 
@@ -118,15 +118,15 @@ class TestDeviceContextMultipleAssignments:
 
 
 def _nested_assignment_program(device: DeviceContext, source):
-    x = rep(device.local_field(0.0), lambda s: s + UNIT_VALUE, name=X_STATE)
+    x = iterate(device.local_field(0.0), lambda s: s + UNIT_VALUE, name=X_STATE)
     y = mux(
         source,
-        rep(device.local_field(0.0), lambda s: sumhood(nbr(s + x)), name=Y_STATE),
+        iterate(device.local_field(0.0), lambda s: gather_sum(scatter(s + x)), name=Y_STATE),
         device.local_field(MUX_FALLBACK_VALUE),
     )
     z = branch(
         x > BRANCH_THRESHOLD,
-        lambda: rep(
+        lambda: iterate(
             device.local_field(0.0),
             lambda s: s + y + FALSE_BRANCH_INCREMENT,
             name="z",
@@ -137,10 +137,10 @@ def _nested_assignment_program(device: DeviceContext, source):
 
 
 def _two_assignment_program(device: DeviceContext, source):
-    x = rep(device.local_field(0.0), lambda s: s + UNIT_VALUE, name=X_STATE)
+    x = iterate(device.local_field(0.0), lambda s: s + UNIT_VALUE, name=X_STATE)
     y = mux(
         source,
-        rep(device.local_field(0.0), lambda s: sumhood(nbr(s)) + x, name=Y_STATE),
+        iterate(device.local_field(0.0), lambda s: gather_sum(scatter(s)) + x, name=Y_STATE),
         device.local_field(MUX_FALLBACK_VALUE),
     )
     return x, y
