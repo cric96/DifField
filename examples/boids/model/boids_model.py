@@ -14,10 +14,7 @@ from ..domain.dynamics import (
 )
 from .parameterization import (
     _softplus_param,
-    _bounded_sigmoid,
-    _inverse_sigmoid_target,
     _inverse_softplus_target,
-    _inverse_bounded_sigmoid_target,
 )
 
 if TYPE_CHECKING:
@@ -33,28 +30,25 @@ class LearnableAggregateBoids(nn.Module):
         radius: float,
         sep: float,
         dt: float,
+        damping: float,
+        max_speed: float,
         init_connectivity: str = "hybrid",
         init_k_neighbors: int = 8,
         init_min_degree: int = 2,
         init_w_sep_target: float = 0.10,
         init_w_align_target: float = 2.40,
         init_w_cohesion_target: float = 0.08,
-        init_damping_target: float = 0.55,
-        init_max_speed_target: float = 0.05,
-        max_speed_min: float = 0.002,
-        max_speed_max: float = 0.06,
     ):
         super().__init__()
         self.positions0 = positions0
         self.radius = radius
         self.sep = sep
         self.dt = dt
+        self.damping = damping
+        self.max_speed = max_speed
         self.init_connectivity = init_connectivity
         self.init_k_neighbors = init_k_neighbors
         self.init_min_degree = init_min_degree
-
-        self.max_speed_min = float(max_speed_min)
-        self.max_speed_max = float(max_speed_max)
 
         self.w_sep_raw = nn.Parameter(
             torch.tensor(_inverse_softplus_target(init_w_sep_target))
@@ -65,22 +59,7 @@ class LearnableAggregateBoids(nn.Module):
         self.w_cohesion_raw = nn.Parameter(
             torch.tensor(_inverse_softplus_target(init_w_cohesion_target))
         )
-        self.damping_raw = nn.Parameter(
-            torch.tensor(_inverse_sigmoid_target(init_damping_target))
-        )
 
-        # max_speed is usually fixed during training for stability
-        self.register_buffer(
-            "max_speed_raw",
-            torch.tensor(
-                _inverse_bounded_sigmoid_target(
-                    init_max_speed_target, self.max_speed_min, self.max_speed_max
-                )
-            ),
-        )
-
-        # Health tracking moved out of the module in the new architecture,
-        # but we keep these fields for backward compatibility if needed by old runners
         self.last_init_graph_stats = {}
         self.last_rollout_graph_health = {}
         self.last_rollout_speed_health = {}
@@ -92,23 +71,21 @@ class LearnableAggregateBoids(nn.Module):
         positions0: torch.Tensor,
         simulation: "SimulationSpec",
         model: "ModelSpec",
-    ) -> LearnableAggregateBoids:
+    ) -> "LearnableAggregateBoids":
         """Factory creating a model from high-level specifications."""
         return cls(
             positions0=positions0,
             radius=simulation.radius,
             sep=simulation.sep,
             dt=simulation.dt,
+            damping=simulation.damping,
+            max_speed=simulation.max_speed,
             init_connectivity=model.init_connectivity,
             init_k_neighbors=model.init_k_neighbors,
             init_min_degree=model.init_min_degree,
             init_w_sep_target=model.init_w_sep_target,
             init_w_align_target=model.init_w_align_target,
             init_w_cohesion_target=model.init_w_cohesion_target,
-            init_damping_target=model.init_damping_target,
-            init_max_speed_target=model.init_max_speed_target,
-            max_speed_min=model.max_speed_min,
-            max_speed_max=model.max_speed_max,
         )
 
     @property
@@ -123,19 +100,9 @@ class LearnableAggregateBoids(nn.Module):
     def w_cohesion(self) -> torch.Tensor:
         return _softplus_param(self.w_cohesion_raw)
 
-    @property
-    def damping(self) -> torch.Tensor:
-        return torch.sigmoid(self.damping_raw)
-
-    @property
-    def max_speed(self) -> torch.Tensor:
-        return _bounded_sigmoid(
-            self.max_speed_raw, self.max_speed_min, self.max_speed_max
-        )
-
     def trainable_parameters(self) -> list[nn.Parameter]:
         """Return parameters that should be optimized."""
-        return [self.w_sep_raw, self.w_align_raw, self.w_cohesion_raw, self.damping_raw]
+        return [self.w_sep_raw, self.w_align_raw, self.w_cohesion_raw]
 
     def step(
         self,
@@ -187,7 +154,6 @@ class LearnableAggregateBoids(nn.Module):
             )
         )
 
-        # For backward compatibility with existing runners that expect health stats on the model object
         self.last_init_graph_stats = init_graph_stats
         self.last_rollout_graph_health = graph_health
         self.last_rollout_speed_health = speed_health

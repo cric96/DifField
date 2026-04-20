@@ -24,6 +24,7 @@ except ImportError:
 
 from autofield import GridScenario, SimulationEngine, SnapshotRecorder, branch, gather, mux, scatter, iterate, gather_min
 from autofield.utils import get_device
+from autofield.dsl import field
 from shared.plotting import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers
 
 

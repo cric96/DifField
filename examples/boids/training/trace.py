@@ -65,8 +65,8 @@ def trace_metadata_from_specs(
         "teacher_w_sep": float(teacher.w_sep),
         "teacher_w_align": float(teacher.w_align),
         "teacher_w_cohesion": float(teacher.w_cohesion),
-        "teacher_damping": float(teacher.damping),
-        "teacher_max_speed": float(teacher.max_speed),
+        "damping": float(simulation.damping),
+        "max_speed": float(simulation.max_speed),
         "source": "teacher",
     }
 

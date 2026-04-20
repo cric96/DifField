@@ -166,6 +166,4 @@ class BoidsRenderer:
             "w_sep": float(model.w_sep.item()),
             "w_align": float(model.w_align.item()),
             "w_cohesion": float(model.w_cohesion.item()),
-            "damping": float(model.damping.item()),
-            "max_speed": float(model.max_speed.item()),
         }

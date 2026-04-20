@@ -22,11 +22,11 @@ def teacher_rollout(
     init_min_degree: int,
     sep: float,
     dt: float,
+    damping: float,
+    max_speed: float,
     w_sep: float = 1.4,
     w_align: float = 0.8,
     w_cohesion: float = 0.6,
-    damping: float = 0.96,
-    max_speed: float = 0.014,
     return_preclip: bool = False,
 ) -> (
     tuple[torch.Tensor, torch.Tensor] | tuple[torch.Tensor, torch.Tensor, torch.Tensor]
@@ -97,10 +97,10 @@ def teacher_rollout_from_specs(
         init_min_degree=model.init_min_degree,
         sep=simulation.sep,
         dt=simulation.dt,
+        damping=simulation.damping,
+        max_speed=simulation.max_speed,
         w_sep=teacher.w_sep,
         w_align=teacher.w_align,
         w_cohesion=teacher.w_cohesion,
-        damping=teacher.damping,
-        max_speed=teacher.max_speed,
         return_preclip=return_preclip,
     )

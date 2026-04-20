@@ -8,13 +8,12 @@ from autofield import normalize_vectors
 
 
 def hard_separation_force(positions: torch.Tensor, sep: float) -> torch.Tensor:
-    dx = positions[:, 0].unsqueeze(1) - positions[:, 0].unsqueeze(0)
-    dy = positions[:, 1].unsqueeze(1) - positions[:, 1].unsqueeze(0)
-    dist = torch.sqrt(dx.pow(2) + dy.pow(2) + 1e-9)
-    sep_mask = (dist <= sep) & (dist > 0)
-    sep_force = torch.stack(
-        [(dx * sep_mask).sum(dim=1), (dy * sep_mask).sum(dim=1)], dim=1
-    )
+    from autofield import gather_sum, normalize_vectors, scatter
+
+    delta = positions - scatter(positions)
+    dist = delta.norm(dim=-1)
+    sep_mask = ((dist <= sep) & (dist > 0)).pointwise()
+    sep_force = gather_sum(delta * sep_mask)
     return normalize_vectors(sep_force)
 
 

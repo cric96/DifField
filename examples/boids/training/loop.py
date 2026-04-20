@@ -296,8 +296,6 @@ class BoidsTrainingLoop:
             "w_sep": float(model.w_sep.item()),
             "w_align": float(model.w_align.item()),
             "w_cohesion": float(model.w_cohesion.item()),
-            "damping": float(model.damping.item()),
-            "max_speed": float(model.max_speed.item()),
         }
         recovery = compute_parameter_recovery_metrics(teacher_params, learned_params)
 
@@ -320,12 +318,6 @@ class BoidsTrainingLoop:
             w_cohesion=learned_params["w_cohesion"],
             w_cohesion_abs_error=float(recovery["w_cohesion"]["abs_error"]),
             w_cohesion_rel_error=float(recovery["w_cohesion"]["rel_error"]),
-            damping=learned_params["damping"],
-            damping_abs_error=float(recovery["damping"]["abs_error"]),
-            damping_rel_error=float(recovery["damping"]["rel_error"]),
-            max_speed=learned_params["max_speed"],
-            max_speed_abs_error=float(recovery["max_speed"]["abs_error"]),
-            max_speed_rel_error=float(recovery["max_speed"]["rel_error"]),
             grad_norm=float(grad_norm_val),
             lr=float(lr),
             cap_fraction=float(
@@ -354,19 +346,16 @@ class BoidsTrainingLoop:
                 "w_sep": float(model.w_sep.item()),
                 "w_align": float(model.w_align.item()),
                 "w_cohesion": float(model.w_cohesion.item()),
-                "damping": float(model.damping.item()),
-                "max_speed": float(model.max_speed.item()),
             }
             recovery = compute_parameter_recovery_metrics(
                 teacher_params, learned_params
             )
 
             message = (
-                f"epoch={epoch + 1:3d} train_step={losses['total'].item():.64f} center={monitor['center_error']:.6f} "
+                f"epoch={epoch + 1:3d} train_step={losses['total'].item():.6f} center={monitor['center_error']:.6f} "
                 f"err_sep={recovery['w_sep']['rel_error']:.1%} "
                 f"err_align={recovery['w_align']['rel_error']:.1%} "
-                f"err_coh={recovery['w_cohesion']['rel_error']:.1%} "
-                f"err_damp={recovery['damping']['rel_error']:.1%}"
+                f"err_coh={recovery['w_cohesion']['rel_error']:.1%}"
             )
             if not torch.isnan(torch.tensor(evals["full_per_step_loss"])):
                 message += (

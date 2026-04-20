@@ -12,13 +12,11 @@ DEFAULTS = {
     "teacher_w_sep": 0.05,
     "teacher_w_align": 0.90,
     "teacher_w_cohesion": 0.35,
+    "damping": 0.94,
+    "max_speed": 0.014,
     "init_w_sep_target": 0.02,
     "init_w_align_target": 0.08,
     "init_w_cohesion_target": 1.10,
-    "teacher_damping": 0.94,
-    "teacher_max_speed": 0.014,
-    "init_damping_target": 0.72,
-    "init_max_speed_target": 0.014,
     "lr": 0.05,
     "curriculum_ramp_fraction": 1.0,
     "final_lr_ratio": 1.0,
@@ -51,12 +49,6 @@ HISTORY_KEYS = [
     "w_cohesion",
     "w_cohesion_abs_error",
     "w_cohesion_rel_error",
-    "damping",
-    "damping_abs_error",
-    "damping_rel_error",
-    "max_speed",
-    "max_speed_abs_error",
-    "max_speed_rel_error",
     "grad_norm",
     "lr",
     "cap_fraction",
@@ -94,12 +86,8 @@ def parse_learnable_args() -> argparse.Namespace:
     parser.add_argument("--init-w-sep-target", type=float, default=DEFAULTS["init_w_sep_target"], help="Initial learnable separation weight target")
     parser.add_argument("--init-w-align-target", type=float, default=DEFAULTS["init_w_align_target"], help="Initial learnable alignment weight target")
     parser.add_argument("--init-w-cohesion-target", type=float, default=DEFAULTS["init_w_cohesion_target"], help="Initial learnable cohesion weight target")
-    parser.add_argument("--teacher-damping", type=float, default=DEFAULTS["teacher_damping"])
-    parser.add_argument("--teacher-max-speed", type=float, default=DEFAULTS["teacher_max_speed"])
-    parser.add_argument("--init-damping-target", type=float, default=DEFAULTS["init_damping_target"], help="Initial learnable damping value in (0,1)")
-    parser.add_argument("--init-max-speed-target", type=float, default=DEFAULTS["init_max_speed_target"], help="Initial learnable speed cap > 0")
-    parser.add_argument("--max-speed-min", type=float, default=0.004, help="Lower bound for learnable speed cap")
-    parser.add_argument("--max-speed-max", type=float, default=0.06, help="Upper bound for learnable speed cap")
+    parser.add_argument("--damping", type=float, default=DEFAULTS["damping"], help="Fixed damping factor in (0,1)")
+    parser.add_argument("--max-speed", type=float, default=DEFAULTS["max_speed"], help="Fixed speed cap > 0")
     parser.add_argument("--seed", type=int, default=5)
     parser.add_argument("--lr", type=float, default=DEFAULTS["lr"])
     parser.add_argument("--out-dir", type=str, default="generated/results")

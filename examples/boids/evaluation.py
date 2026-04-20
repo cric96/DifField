@@ -22,7 +22,7 @@ from shared.metrics import is_finite_number, mean, nested_get, std
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Evaluate learnable boids demo across seeds")
+    parser = argparse.ArgumentParser(description="Evaluate learnable boids across seeds")
     parser.add_argument("--seeds", type=str, default="11,13,17,19,23,32")
     parser.add_argument("--epochs", type=int, default=40)
     parser.add_argument("--rounds", type=int, default=24)
@@ -33,8 +33,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=str, default="generated/results/evaluation")
     parser.add_argument("--python", type=str, default=sys.executable)
     parser.add_argument("--supervision-mode", choices=["teacher", "replay"], default="teacher")
-    parser.add_argument("--replay-trace-dir", type=str, default="", help="Optional shared replay trace directory passed to learnable.py")
-    parser.add_argument("--save-replay-traces", action="store_true", help="Persist teacher traces while evaluating in teacher mode")
+    parser.add_argument("--replay-trace-dir", type=str, default="", help="Optional shared replay trace directory")
+    parser.add_argument("--save-replay-traces", action="store_true", help="Persist teacher traces while evaluating")
     parser.add_argument("--skip-viz", action="store_true", help="Pass --no-viz --no-gif to each run")
     parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
@@ -48,26 +48,19 @@ def _load_history(run_dir: Path) -> dict[str, list[float]] | None:
     history_path = run_dir / "history.csv"
     if not history_path.exists():
         return None
-
     with history_path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         rows = list(reader)
         fieldnames = reader.fieldnames or []
-
     if not rows or not fieldnames:
         return None
-
-    return {
-        name: [float(row[name]) for row in rows]
-        for name in fieldnames
-    }
+    return {name: [float(row[name]) for row in rows] for name in fieldnames}
 
 
 def _series_mean_std(histories: list[dict[str, list[float]]], key: str) -> tuple[list[float], list[float]] | None:
     series = [history[key] for history in histories if key in history and history[key]]
     if not series:
         return None
-
     min_len = min(len(values) for values in series)
     trimmed = [values[:min_len] for values in series]
     means = [mean([values[idx] for values in trimmed]) for idx in range(min_len)]
@@ -82,7 +75,7 @@ def _plot_band(ax, x_vals: list[float], mean_vals: list[float], std_vals: list[f
     ax.fill_between(x_vals, lower, upper, alpha=0.18, color=line.get_color())
 
 
-def _plot_mode_training_bands(mode: str, histories: list[dict[str, list[float]]], output_dir: Path) -> None:
+def _plot_training_bands(mode: str, histories: list[dict[str, list[float]]], output_dir: Path) -> None:
     if plt is None or not histories:
         return
 
@@ -100,9 +93,7 @@ def _plot_mode_training_bands(mode: str, histories: list[dict[str, list[float]]]
         return
 
     min_len = min(
-        len(epochs),
-        len(total_stats[0]),
-        len(center_stats[0]),
+        len(epochs), len(total_stats[0]), len(center_stats[0]),
         len(val_curr_step_stats[0]) if val_curr_step_stats is not None else len(epochs),
         len(val_full_step_stats[0]) if val_full_step_stats is not None else len(epochs),
         len(val_curr_total_stats[0]) if val_curr_total_stats is not None else len(epochs),
@@ -140,7 +131,7 @@ def _plot_mode_training_bands(mode: str, histories: list[dict[str, list[float]]]
     plt.close(fig)
 
 
-def _plot_mode_parameter_error_bands(
+def _plot_parameter_error_bands(
     mode: str,
     histories: list[dict[str, list[float]]],
     teacher_params: dict[str, float],
@@ -160,13 +151,11 @@ def _plot_mode_parameter_error_bands(
             continue
         abs_error_histories = [
             [abs(value - teacher_value) for value in history[name]]
-            for history in histories
-            if name in history and history[name]
+            for history in histories if name in history and history[name]
         ]
         rel_error_histories = [
             [abs(value - teacher_value) / max(abs(teacher_value), 1e-9) * 100.0 for value in history[name]]
-            for history in histories
-            if name in history and history[name]
+            for history in histories if name in history and history[name]
         ]
         if not abs_error_histories or not rel_error_histories:
             continue
@@ -200,7 +189,7 @@ def _plot_mode_parameter_error_bands(
     plt.close(fig)
 
 
-def _export_mode_plots(
+def _export_plots(
     mode: str,
     summaries: list[dict],
     histories: list[dict[str, list[float]]],
@@ -210,9 +199,9 @@ def _export_mode_plots(
         return
 
     teacher_params = nested_get(summaries[0], "parameters.teacher", {}) or {}
-    _plot_mode_training_bands(mode, histories, output_dir)
+    _plot_training_bands(mode, histories, output_dir)
     if isinstance(teacher_params, dict) and teacher_params:
-        _plot_mode_parameter_error_bands(mode, histories, teacher_params, output_dir)
+        _plot_parameter_error_bands(mode, histories, teacher_params, output_dir)
 
 
 def main() -> None:
@@ -221,17 +210,10 @@ def main() -> None:
     root = Path(args.out_dir)
     root.mkdir(parents=True, exist_ok=True)
     run_options = LearnableRunOptions(
-        python=args.python,
-        root=root,
-        epochs=args.epochs,
-        rounds=args.rounds,
-        num_nodes=args.num_nodes,
-        eval_seeds=args.eval_seeds,
-        eval_every=args.eval_every,
-        skip_viz=args.skip_viz,
-        supervision_mode=args.supervision_mode,
-        replay_trace_dir=args.replay_trace_dir,
-        save_replay_traces=args.save_replay_traces,
+        python=args.python, root=root, epochs=args.epochs, rounds=args.rounds,
+        num_nodes=args.num_nodes, eval_seeds=args.eval_seeds, eval_every=args.eval_every,
+        skip_viz=args.skip_viz, supervision_mode=args.supervision_mode,
+        replay_trace_dir=args.replay_trace_dir, save_replay_traces=args.save_replay_traces,
         device=args.device,
     )
 
@@ -243,10 +225,7 @@ def main() -> None:
         run_name = f"{label}_seed{seed}"
         print(f"  running {run_name} ...")
         outcome = run_learnable_subprocess(
-            options=run_options,
-            run_name=run_name,
-            seed=int(seed),
-            lr=args.lr,
+            options=run_options, run_name=run_name, seed=int(seed), lr=args.lr,
         )
         if not outcome.ok:
             print(f"  FAILED {run_name}: exit={outcome.returncode}")
@@ -269,15 +248,14 @@ def main() -> None:
         "val_full_per_step_loss": "validation.full_horizon.final_per_step_loss",
         "val_full_center_error": "validation.full_horizon.final_center_error",
     }
-    recovery_params = ["w_sep", "w_align", "w_cohesion", "damping", "max_speed"]
+    recovery_params = ["w_sep", "w_align", "w_cohesion"]
     rows = []
     if summaries:
         row: dict[str, str | float] = {"mode": label, "runs": len(summaries)}
         for metric_name, metric_path in metrics.items():
             values = [
                 float(nested_get(summary, metric_path))
-                for summary in summaries
-                if is_finite_number(nested_get(summary, metric_path))
+                for summary in summaries if is_finite_number(nested_get(summary, metric_path))
             ]
             row[f"{metric_name}_mean"] = mean(values) if values else float("nan")
             row[f"{metric_name}_std"] = std(values) if values else float("nan")
@@ -335,7 +313,7 @@ def main() -> None:
     with (root / "all_summaries.json").open("w", encoding="utf-8") as handle:
         json.dump({label: summaries}, handle, indent=2)
 
-    _export_mode_plots(label, summaries, histories, root)
+    _export_plots(label, summaries, histories, root)
 
     print("\nDone.")
 

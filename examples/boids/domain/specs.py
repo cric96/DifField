@@ -25,6 +25,8 @@ class SimulationSpec:
     sep: float
     dt: float
     init_velocity_scale: float
+    damping: float
+    max_speed: float
     device: torch.device
 
 
@@ -33,8 +35,6 @@ class TeacherDynamics:
     w_sep: float
     w_align: float
     w_cohesion: float
-    damping: float
-    max_speed: float
 
 
 @dataclass(frozen=True)
@@ -45,10 +45,6 @@ class ModelSpec:
     init_w_sep_target: float
     init_w_align_target: float
     init_w_cohesion_target: float
-    init_damping_target: float
-    init_max_speed_target: float
-    max_speed_min: float
-    max_speed_max: float
 
 
 @dataclass(frozen=True)
@@ -114,12 +110,11 @@ def build_learnable_spec(
     teacher_w_sep = float(args.teacher_w_sep)
     teacher_w_align = float(args.teacher_w_align)
     teacher_w_cohesion = float(args.teacher_w_cohesion)
-    teacher_damping = float(args.teacher_damping)
-    teacher_max_speed = float(args.teacher_max_speed)
+    damping = float(args.damping)
+    max_speed = float(args.max_speed)
     init_w_sep_target = float(args.init_w_sep_target)
     init_w_align_target = float(args.init_w_align_target)
     init_w_cohesion_target = float(args.init_w_cohesion_target)
-    init_damping_target = float(args.init_damping_target)
     lr = float(args.lr)
     min_horizon = (
         rounds
@@ -154,7 +149,7 @@ def build_learnable_spec(
         replay_trace_dir = Path(replay_trace_dir_arg)
     elif supervision_mode == "replay" or bool(args.save_replay_traces):
         replay_trace_dir = run_dir / "replay_traces"
-    init_max_speed_target = teacher_max_speed
+
     sim_spec = SimulationSpec(
         num_nodes=num_nodes,
         rounds=rounds,
@@ -162,6 +157,8 @@ def build_learnable_spec(
         sep=args.sep,
         dt=args.dt,
         init_velocity_scale=args.init_velocity_scale,
+        damping=damping,
+        max_speed=max_speed,
         device=get_device(args.device),
     )
     return LearnableBoidsSpec(
@@ -173,8 +170,6 @@ def build_learnable_spec(
             w_sep=teacher_w_sep,
             w_align=teacher_w_align,
             w_cohesion=teacher_w_cohesion,
-            damping=teacher_damping,
-            max_speed=teacher_max_speed,
         ),
         model=ModelSpec(
             init_connectivity=args.init_connectivity,
@@ -183,10 +178,6 @@ def build_learnable_spec(
             init_w_sep_target=max(0.0, init_w_sep_target),
             init_w_align_target=max(0.0, init_w_align_target),
             init_w_cohesion_target=max(0.0, init_w_cohesion_target),
-            init_damping_target=init_damping_target,
-            init_max_speed_target=init_max_speed_target,
-            max_speed_min=args.max_speed_min,
-            max_speed_max=args.max_speed_max,
         ),
         training=TrainingSpec(
             epochs=epochs,

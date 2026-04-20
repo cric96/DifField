@@ -1,7 +1,4 @@
-"""Tests specific to the learnable boids example family.
-
-These tests target the post-rename layout where aggregate logic lives in logics.py.
-"""
+"""Tests specific to the learnable boids example family."""
 
 from __future__ import annotations
 
@@ -58,12 +55,8 @@ def _make_learnable_args(**overrides: object) -> SimpleNamespace:
         "init_w_sep_target": DEFAULTS["init_w_sep_target"],
         "init_w_align_target": DEFAULTS["init_w_align_target"],
         "init_w_cohesion_target": DEFAULTS["init_w_cohesion_target"],
-        "teacher_damping": DEFAULTS["teacher_damping"],
-        "teacher_max_speed": DEFAULTS["teacher_max_speed"],
-        "init_damping_target": DEFAULTS["init_damping_target"],
-        "init_max_speed_target": DEFAULTS["init_max_speed_target"],
-        "max_speed_min": 0.004,
-        "max_speed_max": 0.06,
+        "damping": DEFAULTS["damping"],
+        "max_speed": DEFAULTS["max_speed"],
         "seed": 5,
         "lr": DEFAULTS["lr"],
         "supervision_mode": DEFAULTS["supervision_mode"],
@@ -104,6 +97,8 @@ def _make_model() -> LearnableAggregateBoids:
         radius=0.3,
         sep=0.08,
         dt=1.0,
+        damping=0.95,
+        max_speed=0.014,
         init_connectivity="hybrid",
         init_k_neighbors=4,
         init_min_degree=2,
@@ -118,38 +113,17 @@ def _make_small_boids_model() -> LearnableAggregateBoids:
         radius=0.35,
         sep=0.08,
         dt=1.0,
+        damping=0.96,
+        max_speed=0.014,
         init_connectivity="hybrid",
         init_k_neighbors=4,
         init_min_degree=2,
-        init_damping_target=0.96,
-        init_max_speed_target=0.014,
-    )
-
-
-def _make_frozen_speed_model() -> LearnableAggregateBoids:
-    torch.manual_seed(0)
-    positions0 = torch.rand(8, 2)
-    return LearnableAggregateBoids(
-        positions0=positions0,
-        radius=0.3,
-        sep=0.08,
-        dt=1.0,
-        init_connectivity="hybrid",
-        init_k_neighbors=4,
-        init_min_degree=2,
-        init_max_speed_target=0.014,
     )
 
 
 def _softplus_inverse(value: float) -> torch.Tensor:
     adjusted = max(value - 1e-4, 1e-6)
     return torch.log(torch.expm1(torch.tensor(adjusted, dtype=torch.float32)))
-
-
-def _bounded_sigmoid_inverse(value: float, low: float, high: float) -> torch.Tensor:
-    scaled = (value - low) / (high - low)
-    scaled = min(max(float(scaled), 1e-4), 1.0 - 1e-4)
-    return torch.logit(torch.tensor(scaled, dtype=torch.float32))
 
 
 def _teacher_specs(
@@ -162,14 +136,14 @@ def _teacher_specs(
         sep=model.sep,
         dt=model.dt,
         init_velocity_scale=0.01,
+        damping=model.damping,
+        max_speed=model.max_speed,
         device=torch.device("cpu"),
     )
     teacher = TeacherDynamics(
         w_sep=1.4,
         w_align=0.8,
         w_cohesion=0.6,
-        damping=0.96,
-        max_speed=0.014,
     )
     model_spec = ModelSpec(
         init_connectivity=model.init_connectivity,
@@ -178,10 +152,6 @@ def _teacher_specs(
         init_w_sep_target=float(model.w_sep.item()),
         init_w_align_target=float(model.w_align.item()),
         init_w_cohesion_target=float(model.w_cohesion.item()),
-        init_damping_target=teacher.damping,
-        init_max_speed_target=teacher.max_speed,
-        max_speed_min=model.max_speed_min,
-        max_speed_max=model.max_speed_max,
     )
     return simulation, teacher, model_spec
 
@@ -210,7 +180,7 @@ def _assert_finite_gradients(params: list[torch.nn.Parameter]) -> None:
         assert torch.isfinite(param.grad).all()
 
 
-def test_trainable_parameters_include_only_scalar_dynamics_weights():
+def test_trainable_parameters_include_only_three_weights():
     model = _make_model()
 
     params = model.trainable_parameters()
@@ -219,7 +189,6 @@ def test_trainable_parameters_include_only_scalar_dynamics_weights():
         id(model.w_sep_raw),
         id(model.w_align_raw),
         id(model.w_cohesion_raw),
-        id(model.damping_raw),
     ]
 
 
@@ -237,15 +206,6 @@ def test_rollout_records_speed_cap_diagnostics():
     assert mean_pre_clip_speed > 0.0
 
 
-def test_frozen_speed_weights_mode_excludes_max_speed_parameter():
-    model = _make_frozen_speed_model()
-
-    params = model.trainable_parameters()
-
-    assert all(param is not model.max_speed_raw for param in params)
-    assert abs(float(model.max_speed.item()) - 0.014) < 1e-4
-
-
 def test_explicit_init_weight_targets_are_respected():
     torch.manual_seed(0)
     positions0 = torch.rand(8, 2)
@@ -254,18 +214,18 @@ def test_explicit_init_weight_targets_are_respected():
         radius=0.3,
         sep=0.08,
         dt=1.0,
+        damping=0.95,
+        max_speed=0.014,
         init_w_sep_target=0.10,
         init_w_align_target=2.40,
         init_w_cohesion_target=0.08,
-        init_damping_target=0.55,
-        init_max_speed_target=0.05,
     )
 
     assert abs(float(model.w_sep.item()) - 0.10) < 1e-4
     assert abs(float(model.w_align.item()) - 2.40) < 1e-4
     assert abs(float(model.w_cohesion.item()) - 0.08) < 1e-4
-    assert abs(float(model.damping.item()) - 0.55) < 1e-4
-    assert abs(float(model.max_speed.item()) - 0.05) < 1e-4
+    assert abs(model.damping - 0.95) < 1e-6
+    assert abs(model.max_speed - 0.014) < 1e-6
 
 
 def test_rollout_reports_dynamic_topology_metrics():
@@ -300,13 +260,11 @@ def test_sample_initial_boids_state_matches_simple_speed_norms():
     assert torch.allclose(velocities0.norm(dim=1), torch.full((10,), 0.014), atol=1e-6)
 
 
-def test_extract_learned_parameters_returns_demo_weights_only():
+def test_extract_learned_parameters_returns_three_weights_only():
     history = {
         "w_sep": [1.0],
         "w_align": [0.7],
         "w_cohesion": [0.6],
-        "damping": [0.95],
-        "max_speed": [0.014],
     }
 
     learned_params = extract_learned_parameters(history)
@@ -315,8 +273,6 @@ def test_extract_learned_parameters_returns_demo_weights_only():
         "w_sep": 1.0,
         "w_align": 0.7,
         "w_cohesion": 0.6,
-        "damping": 0.95,
-        "max_speed": 0.014,
     }
 
 
@@ -339,7 +295,7 @@ def test_evaluate_seed_reports_requested_horizon_and_per_step_loss():
     assert metrics["center_error"] >= 0.0
 
 
-def test_learnable_defaults_use_fixed_horizon_and_keep_validation_enabled():
+def test_learnable_defaults_use_fixed_horizon():
     args = _make_learnable_args()
 
     spec = build_learnable_spec(
@@ -358,7 +314,8 @@ def test_learnable_defaults_use_fixed_horizon_and_keep_validation_enabled():
     assert spec.training.num_initial_conditions == 1
     assert spec.evaluation.seeds == [101]
     assert spec.evaluation.every == 5
-    assert spec.model.init_max_speed_target == spec.teacher.max_speed
+    assert spec.simulation.damping == DEFAULTS["damping"]
+    assert spec.simulation.max_speed == DEFAULTS["max_speed"]
 
 
 def test_learnable_defaults_respect_explicit_overrides():
@@ -369,6 +326,8 @@ def test_learnable_defaults_respect_explicit_overrides():
         lr=0.03,
         eval_seeds="205,207",
         eval_every=2,
+        damping=0.90,
+        max_speed=0.02,
     )
 
     spec = build_learnable_spec(
@@ -386,6 +345,8 @@ def test_learnable_defaults_respect_explicit_overrides():
     assert spec.training.max_horizon == 10
     assert spec.evaluation.seeds == [205, 207]
     assert spec.evaluation.every == 2
+    assert abs(spec.simulation.damping - 0.90) < 1e-6
+    assert abs(spec.simulation.max_speed - 0.02) < 1e-6
 
 
 def test_replay_spec_materializes_trace_directory_when_enabled(tmp_path: Path):
@@ -489,14 +450,14 @@ def test_alignment_cohesion_demo_task_reduces_teacher_forced_loss():
         radius=0.23,
         sep=0.06,
         dt=1.0,
+        damping=0.94,
+        max_speed=0.014,
         init_connectivity="hybrid",
         init_k_neighbors=6,
         init_min_degree=2,
         init_w_sep_target=0.02,
         init_w_align_target=0.08,
         init_w_cohesion_target=1.10,
-        init_damping_target=0.72,
-        init_max_speed_target=0.014,
     )
     simulation = SimulationSpec(
         num_nodes=10,
@@ -505,14 +466,14 @@ def test_alignment_cohesion_demo_task_reduces_teacher_forced_loss():
         sep=0.06,
         dt=1.0,
         init_velocity_scale=0.014,
+        damping=0.94,
+        max_speed=0.014,
         device=torch.device("cpu"),
     )
     teacher = TeacherDynamics(
         w_sep=0.05,
         w_align=0.90,
         w_cohesion=0.35,
-        damping=0.94,
-        max_speed=0.014,
     )
     model_spec = ModelSpec(
         init_connectivity="hybrid",
@@ -521,10 +482,6 @@ def test_alignment_cohesion_demo_task_reduces_teacher_forced_loss():
         init_w_sep_target=0.02,
         init_w_align_target=0.08,
         init_w_cohesion_target=1.10,
-        init_damping_target=0.72,
-        init_max_speed_target=0.014,
-        max_speed_min=model.max_speed_min,
-        max_speed_max=model.max_speed_max,
     )
     trace = teacher_trace_from_specs(
         seed=9,
@@ -625,14 +582,6 @@ def test_teacher_forced_step_losses_vanish_when_model_matches_teacher():
         model.w_sep_raw.copy_(_softplus_inverse(teacher.w_sep))
         model.w_align_raw.copy_(_softplus_inverse(teacher.w_align))
         model.w_cohesion_raw.copy_(_softplus_inverse(teacher.w_cohesion))
-        model.damping_raw.copy_(
-            torch.logit(torch.tensor(teacher.damping, dtype=torch.float32))
-        )
-        model.max_speed_raw.copy_(
-            _bounded_sigmoid_inverse(
-                teacher.max_speed, model.max_speed_min, model.max_speed_max
-            ),
-        )
 
     trace = teacher_trace_from_specs(
         seed=17,
@@ -677,14 +626,6 @@ def test_weights_rollout_matches_teacher_when_parameters_match():
         model.w_sep_raw.copy_(_softplus_inverse(teacher.w_sep))
         model.w_align_raw.copy_(_softplus_inverse(teacher.w_align))
         model.w_cohesion_raw.copy_(_softplus_inverse(teacher.w_cohesion))
-        model.damping_raw.copy_(
-            torch.logit(torch.tensor(teacher.damping, dtype=torch.float32))
-        )
-        model.max_speed_raw.copy_(
-            _bounded_sigmoid_inverse(
-                teacher.max_speed, model.max_speed_min, model.max_speed_max
-            ),
-        )
 
     teacher_pos_seq, teacher_vel_seq = teacher_rollout_from_specs(
         positions0=model.positions0,

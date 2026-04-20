@@ -206,15 +206,108 @@ class LinkField:
             _repr=f"(-{self})",
         )
 
+    def abs(self) -> "LinkField":
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: (
+                torch.abs(self.evaluate(
+                    ctx=ctx,
+                    edge_index=edge_index,
+                    edge_weight=edge_weight,
+                ))
+            ),
+            _repr=f"abs({self})",
+        )
+
+    def _comparison(
+        self,
+        other: float | Tensor | "LinkField",
+        op: Callable[[Tensor, Tensor], Tensor],
+        op_str: str,
+    ) -> "LinkField":
+        other_expr = as_scatter_expr(other)
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: op(
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+                other_expr.evaluate(
+                    ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+                ),
+            ).float(),
+            _repr=f"({self} {op_str} {other_expr})",
+        )
+
+    def __le__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._comparison(other, torch.le, "<=")
+
+    def __lt__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._comparison(other, torch.lt, "<")
+
+    def __ge__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._comparison(other, torch.ge, ">=")
+
+    def __gt__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._comparison(other, torch.gt, ">")
+
+    def _logical(
+        self,
+        other: float | Tensor | "LinkField",
+        op: Callable[[Tensor, Tensor], Tensor],
+        op_str: str,
+    ) -> "LinkField":
+        other_expr = as_scatter_expr(other)
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: op(
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight),
+                other_expr.evaluate(
+                    ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+                ),
+            ).float(),
+            _repr=f"({self} {op_str} {other_expr})",
+        )
+
+    def __and__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._logical(other, torch.logical_and, "&")
+
+    def __or__(self, other: float | Tensor | "LinkField") -> "LinkField":
+        return self._logical(other, torch.logical_or, "|")
+
+    def pointwise(self) -> "LinkField":
+        """Treat this scalar field as a factor for pointwise multiplication with vectors."""
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: self.evaluate(
+                ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+            ).unsqueeze(-1),
+            _repr=f"pointwise({self})",
+        )
+
+    def unsqueeze(self, dim: int) -> "LinkField":
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: self.evaluate(
+                ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+            ).unsqueeze(dim),
+            _repr=f"unsqueeze({self}, {dim})",
+        )
+
+    def norm(self, dim: int = -1, keepdim: bool = False) -> "LinkField":
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: self.evaluate(
+                ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+            ).norm(dim=dim, keepdim=keepdim),
+            _repr=f"norm({self})",
+        )
+
 
 def as_scatter_expr(value: float | Tensor | LinkField) -> LinkField:
     """Convert a scalar, tensor, or LinkField into an edge-wise LinkField.
 
-    For scalars and tensors this creates an expression that gathers source
-    node values (i.e. ``field_value[source_nodes]``). This is mainly used to
+    For scalars and tensors this creates an expression that gathers **target**
+    node values (i.e. ``field_value[target_nodes]``). This is mainly used to
     support arithmetic inside neighbor expressions, such as ``scatter(x) + 1`` or
     ``scatter(x) * weight_field``. If *value* is already
     a :class:`LinkField` it is returned unchanged.
+
+    The distinction between source and target matters: ``scatter(x)`` yields
+    ``x_j`` (outgoing value) while a bare tensor ``x`` yields ``x_i`` (incoming
+    value). Thus ``scatter(x) - x`` computes ``x_j - x_i`` on each edge.
 
     The optional ``source_field`` metadata is resolved from the active round
     context when available; outside a round context it falls back to the raw
@@ -226,7 +319,7 @@ def as_scatter_expr(value: float | Tensor | LinkField) -> LinkField:
     def evaluate(
         ctx: RoundContext, edge_index: Tensor, _edge_weight: Tensor | None
     ) -> Tensor:
-        source_nodes, _target_nodes = edge_sources_targets(edge_index)
+        _source_nodes, target_nodes = edge_sources_targets(edge_index)
         if isinstance(value, Tensor):
             field_value = ensure_field(value, ctx)
         else:
@@ -236,7 +329,7 @@ def as_scatter_expr(value: float | Tensor | LinkField) -> LinkField:
                 dtype=torch.float32,
                 device=ctx.edge_index.device,
             )
-        return field_value[source_nodes]
+        return field_value[target_nodes]
 
     # Handle source field resolution carefully to avoid crashing when not in round
     try:

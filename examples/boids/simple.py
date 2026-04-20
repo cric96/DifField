@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simple boids entrypoint using the new boids package layout."""
+"""Simple boids simulation: cohesion, alignment, separation only."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ try:
         plot_node_trajectories,
     )
     from .domain.geometry import sample_initial_state as sample_initial_boids_state
-    from .domain.dynamics import reference_boids_velocity_update
 except ImportError:
     from shared.plotting import (
         export_moving_gif,
@@ -32,30 +31,22 @@ except ImportError:
         plot_node_trajectories,
     )
     from boids.domain.geometry import sample_initial_state as sample_initial_boids_state
-    from boids.domain.dynamics import reference_boids_velocity_update
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Pure aggregate boids (iterate/scatter)")
+    parser = argparse.ArgumentParser(description="Aggregate boids (cohesion + alignment + separation)")
     parser.add_argument("--num-nodes", type=int, default=60)
     parser.add_argument("--rounds", type=int, default=80)
     parser.add_argument("--radius", type=float, default=0.23)
-    parser.add_argument(
-        "--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid"
-    )
+    parser.add_argument("--init-connectivity", choices=["radius", "knn", "hybrid"], default="hybrid")
     parser.add_argument("--init-k-neighbors", type=int, default=8)
     parser.add_argument("--init-min-degree", type=int, default=2)
-    parser.add_argument(
-        "--sep",
-        type=float,
-        default=0.06,
-        help="Distance threshold for separation influence",
-    )
+    parser.add_argument("--sep", type=float, default=0.06, help="Distance threshold for separation")
     parser.add_argument("--dt", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=5)
-    parser.add_argument("--w-sep", type=float, default=1.0)
-    parser.add_argument("--w-align", type=float, default=0.7)
-    parser.add_argument("--w-cohesion", type=float, default=0.6)
+    parser.add_argument("--w-sep", type=float, default=1.0, help="Separation weight")
+    parser.add_argument("--w-align", type=float, default=0.7, help="Alignment weight")
+    parser.add_argument("--w-cohesion", type=float, default=0.6, help="Cohesion weight")
     parser.add_argument("--damping", type=float, default=0.95)
     parser.add_argument("--speed", type=float, default=0.014)
     parser.add_argument("--record-every", type=int, default=10)
@@ -64,20 +55,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gif-fps", type=int, default=8)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
     parser.add_argument("--no-gif", action="store_true", help="Disable gif export")
-    parser.add_argument(
-        "--hide-links",
-        action="store_true",
-        help="Do not draw graph links in visual outputs",
-    )
+    parser.add_argument("--hide-links", action="store_true", help="Do not draw graph links")
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
-    parser.add_argument(
-        "--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]"
-    )
+    parser.add_argument("--device", type=str, default="", help="Device (cuda/cpu) [auto if empty]")
     return parser.parse_args()
 
 
-def aggregate_boids_velocity(
+def boids_velocity_step(
     vel: torch.Tensor,
     pos: torch.Tensor,
     *,
@@ -89,34 +74,31 @@ def aggregate_boids_velocity(
     damping: float,
     max_speed: float,
 ) -> torch.Tensor:
-    return reference_boids_velocity_update(
-        vel,
-        pos,
-        dt=dt,
-        sep=sep,
-        w_sep=w_sep,
-        w_align=w_align,
-        w_cohesion=w_cohesion,
-        damping=damping,
-        max_speed=max_speed,
-    )
+    """Single velocity update: separation + alignment + cohesion."""
+    from autofield import gather_avg, limit_speed, scatter
+    from boids.domain.geometry import hard_separation_force
+
+    neigh_vel = gather_avg(scatter(vel))
+    neigh_pos = gather_avg(scatter(pos))
+    align_force = neigh_vel - vel
+    cohesion_force = neigh_pos - pos
+    sep_force = hard_separation_force(pos, sep)
+
+    acc = w_sep * sep_force + w_align * align_force + w_cohesion * cohesion_force
+    pre_clip_vel = damping * vel + dt * acc
+    return limit_speed(pre_clip_vel, max_speed)
 
 
 def main() -> None:
     args = parse_args()
     device = get_device(args.device)
     positions, velocities0 = sample_initial_boids_state(
-        args.num_nodes,
-        seed=args.seed,
-        velocity_scale=args.speed,
-        device=device,
+        args.num_nodes, seed=args.seed, velocity_scale=args.speed, device=device,
     )
 
     scenario = SpatialScenario(
         positions=positions,
-        edge_radius=args.radius
-        if args.init_connectivity in {"radius", "hybrid"}
-        else None,
+        edge_radius=args.radius if args.init_connectivity in {"radius", "hybrid"} else None,
         k_neighbors=args.init_k_neighbors if args.init_connectivity == "knn" else None,
         ensure_init_connected=args.init_connectivity == "hybrid",
         init_min_degree=args.init_min_degree,
@@ -126,12 +108,11 @@ def main() -> None:
     ctx = AggregateContext(
         scenario.edge_index, scenario.num_nodes, edge_weight=scenario.edge_weight
     )
+
     positions_by_round: dict[int, torch.Tensor] = {}
     edge_index_by_round: dict[int, torch.Tensor] = {}
     values_by_round: dict[int, torch.Tensor] = {}
-    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {
-        args.rounds - 1
-    }
+    record_rounds = set(range(0, args.rounds, max(1, args.record_every))) | {args.rounds - 1}
 
     for step in range(args.rounds):
         scenario.sync_context(ctx._ctx)
@@ -139,16 +120,11 @@ def main() -> None:
         with ctx.round():
             vel = iterate(
                 velocities0,
-                lambda prev: aggregate_boids_velocity(
-                    prev,
-                    pos_t,
-                    dt=args.dt,
-                    sep=args.sep,
-                    w_sep=args.w_sep,
-                    w_align=args.w_align,
-                    w_cohesion=args.w_cohesion,
-                    damping=args.damping,
-                    max_speed=args.speed,
+                lambda prev: boids_velocity_step(
+                    prev, pos_t,
+                    dt=args.dt, sep=args.sep,
+                    w_sep=args.w_sep, w_align=args.w_align, w_cohesion=args.w_cohesion,
+                    damping=args.damping, max_speed=args.speed,
                 ),
                 name="vel",
             )
@@ -156,6 +132,7 @@ def main() -> None:
         new_pos, vel = bounce_in_box(new_pos, vel)
         scenario.update_positions(new_pos, refresh_topology=True)
         ctx._ctx.state.update(vel, name="vel")
+
         if step in record_rounds:
             positions_by_round[step] = scenario.positions.detach().cpu().clone()
             edge_index_by_round[step] = scenario.edge_index.detach().cpu().clone()
@@ -163,48 +140,30 @@ def main() -> None:
 
     center = scenario.positions.mean(dim=0)
     spread = (scenario.positions - center).norm(dim=1).mean().item()
-    print("=== Pure Aggregate Boids ===")
-    print(
-        f"nodes={args.num_nodes} rounds={args.rounds} radius={args.radius} sep={args.sep} spread={spread:.4f} edges={scenario.edge_index.shape[1]}"
-    )
-    print(
-        f"init_connectivity={args.init_connectivity} init_components={int(scenario.init_graph_stats['num_components'])} "
-        f"init_min_degree={scenario.init_graph_stats['min_degree']:.0f} init_edges={int(scenario.init_graph_stats['num_edges'])}"
-    )
+    print("=== Boids: Cohesion + Alignment + Separation ===")
+    print(f"nodes={args.num_nodes} rounds={args.rounds} radius={args.radius} sep={args.sep} spread={spread:.4f}")
+    print(f"w_sep={args.w_sep} w_align={args.w_align} w_cohesion={args.w_cohesion} damping={args.damping}")
 
     if not args.no_viz:
         highlight_idx = int(max(0, min(args.highlight_node, args.num_nodes - 1)))
         plot_moving_snapshots(
-            positions_by_round=positions_by_round,
-            values_by_round=values_by_round,
-            source_idx=highlight_idx,
-            output_path=f"{args.viz_prefix}_snapshots.png",
-            title="Pure Aggregate Boids speed snapshots",
-            edge_index_by_round=edge_index_by_round,
-            show_links=not args.hide_links,
-            links_alpha=args.links_alpha,
-            links_width=args.links_width,
+            positions_by_round=positions_by_round, values_by_round=values_by_round,
+            source_idx=highlight_idx, output_path=f"{args.viz_prefix}_snapshots.png",
+            title="Boids speed snapshots", edge_index_by_round=edge_index_by_round,
+            show_links=not args.hide_links, links_alpha=args.links_alpha, links_width=args.links_width,
         )
         plot_node_trajectories(
-            positions_over_time=[
-                positions_by_round[idx] for idx in sorted(positions_by_round.keys())
-            ],
-            source_idx=highlight_idx,
-            output_path=f"{args.viz_prefix}_trajectories.png",
-            title="Pure Aggregate Boids trajectories",
+            positions_over_time=[positions_by_round[idx] for idx in sorted(positions_by_round.keys())],
+            source_idx=highlight_idx, output_path=f"{args.viz_prefix}_trajectories.png",
+            title="Boids trajectories",
         )
         if not args.no_gif:
             export_moving_gif(
-                positions_by_round=positions_by_round,
-                values_by_round=values_by_round,
-                source_idx=highlight_idx,
-                output_path=f"{args.viz_prefix}.gif",
-                title="Pure Aggregate Boids speed",
-                fps=max(1, args.gif_fps),
-                edge_index_by_round=edge_index_by_round,
-                show_links=not args.hide_links,
-                links_alpha=args.links_alpha,
-                links_width=args.links_width,
+                positions_by_round=positions_by_round, values_by_round=values_by_round,
+                source_idx=highlight_idx, output_path=f"{args.viz_prefix}.gif",
+                title="Boids speed", fps=max(1, args.gif_fps),
+                edge_index_by_round=edge_index_by_round, show_links=not args.hide_links,
+                links_alpha=args.links_alpha, links_width=args.links_width,
             )
 
 
