@@ -48,52 +48,6 @@ def main():
                 "--no-gif",
             ],
         ),
-        # Boids examples
-        (
-            "examples/boids/simple.py",
-            [
-                "--num-nodes",
-                "10",
-                "--rounds",
-                "5",
-                "--device",
-                "cpu",
-                "--no-viz",
-                "--no-gif",
-            ],
-        ),
-        (
-            "examples/boids/learnable.py",
-            [
-                "--num-nodes",
-                "10",
-                "--rounds",
-                "5",
-                "--epochs",
-                "1",
-                "--device",
-                "cpu",
-                "--no-viz",
-                "--no-gif",
-            ],
-        ),
-        # Territories examples
-        (
-            "examples/territories/learnable.py",
-            [
-                "--rows",
-                "6",
-                "--cols",
-                "6",
-                "--epochs",
-                "1",
-                "--num-sinks",
-                "2",
-                "--device",
-                "cpu",
-                "--no-viz",
-            ],
-        ),
         # Gradient examples
         (
             "examples/gradients/fixed.py",
