@@ -55,6 +55,8 @@ class BenchmarkArtifacts:
     scaling_trend_plot: Path | None
     relative_scaling_plot: Path | None
     heatmap_plot: Path | None
+    plot_3d_bar_plot: Path | None
+    plot_linearity_plot: Path | None
 
 
 def default_seeds(repetitions: int, start: int) -> list[int]:
@@ -538,11 +540,11 @@ def plot_relative_scaling(aggregated_rows: list[dict[str, Any]], output_path: Pa
     plt.close(fig)
 
 
-def plot_runtime_heatmap(aggregat, _std_matrixed_rows: list[dict[str, Any]], output_path: Path) -> None:
+def plot_runtime_heatmap(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
     if plt is None or not aggregated_rows:
         return
 
-    node_counts, k_values, matrix = build_runtime_matrix(aggregated_rows)
+    node_counts, k_values, matrix, _ = build_runtime_matrix(aggregated_rows)
 
     masked = np.ma.masked_invalid(matrix.T)
     fig, ax = plt.subplots(figsize=(9.5, 6.5))
@@ -565,6 +567,117 @@ def plot_runtime_heatmap(aggregat, _std_matrixed_rows: list[dict[str, Any]], out
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=170)
+    plt.close(fig)
+
+
+def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+    if plt is None or not aggregated_rows:
+        return
+
+    node_counts, k_values, matrix, _ = build_runtime_matrix(aggregated_rows)
+
+    fig = plt.figure(figsize=(12, 10))
+    fig.patch.set_facecolor("#ffffff")
+    ax = fig.add_subplot(111, projection='3d')
+    ax.set_facecolor("#ffffff")
+
+    _x = np.arange(len(k_values))
+    _y = np.arange(len(node_counts))
+    _xx, _yy = np.meshgrid(_x, _y)
+    x, y = _xx.ravel(), _yy.ravel()
+
+    top = matrix.ravel()
+    mask = np.isfinite(top)
+    x = x[mask]
+    y = y[mask]
+    top = top[mask]
+    
+    max_z = 2.0
+    top_capped = np.minimum(top, max_z)
+    
+    bottom = np.zeros_like(top)
+    width = depth = 0.8  # Increased width to reduce gaps between bars
+
+    cmap = plt.get_cmap('inferno')
+    norm = plt.Normalize(0, max_z)
+    colors = cmap(norm(top_capped))
+
+    # Use x - width/2 and y - depth/2 so the bars are centered on the ticks
+    # Adding black edges helps distinguish the bars
+    ax.bar3d(x - width/2, y - depth/2, bottom, width, depth, top_capped, shade=True, color=colors, edgecolor='black', linewidth=0.1, alpha=0.95)
+    
+    ax.set_title("Runtime Scaling (3D)")
+    ax.set_xlabel("k nearest neighbors")
+    ax.set_ylabel("Number of nodes")
+    ax.set_zlabel("Mean runtime (s)")
+
+    ax.set_xticks(_x)
+    ax.set_xticklabels([str(k) for k in k_values])
+    ax.set_yticks(_y)
+    ax.set_yticklabels([str(n) for n in node_counts])
+
+    ax.set_zlim(0, max_z)
+    
+    # Adjust viewing angle to make smaller bars in front
+    ax.view_init(elev=25, azim=-50)
+
+    ax.bar3d(x, y, bottom, width, depth, top, shade=True, color=colors)
+    
+    ax.set_title("Runtime Scaling (3D)")
+    ax.set_xlabel("k nearest neighbors")
+    ax.set_ylabel("Number of nodes")
+    ax.set_zlabel("Mean runtime (s)")
+
+    ax.set_xticks(_x + 0.4)
+    ax.set_xticklabels([str(k) for k in k_values])
+    ax.set_yticks(_y + 0.4)
+    ax.set_yticklabels([str(n) for n in node_counts])
+
+    ax.set_zlim(0, 2.0)
+    
+    ax.view_init(elev=30, azim=-60)
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=160)
+    
+    variation_path = output_path.with_name(output_path.stem + "_variation" + output_path.suffix)
+    ax.view_init(elev=20, azim=45)
+    plt.savefig(variation_path, dpi=160)
+    plt.close(fig)
+
+
+def plot_linearity(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+    if plt is None or not aggregated_rows:
+        return
+
+    rows_k32 = [row for row in aggregated_rows if int(row["k_neighbors"]) == 32]
+    if not rows_k32:
+        return
+        
+    ordered = sorted(rows_k32, key=lambda row: int(row["num_nodes"]))
+    nodes = np.array([int(row["num_nodes"]) for row in ordered])
+    times = np.array([float(row["mean_time_seconds"]) for row in ordered])
+    
+    fig, ax = plt.subplots(figsize=(8, 5))
+    fig.patch.set_facecolor("#fbf7ef")
+    ax.set_facecolor("#fffdf8")
+    
+    ax.plot(nodes, times, marker="o", linewidth=2.0, label="Actual runtime (k=32)")
+    
+    if len(nodes) >= 2:
+        m, c = np.polyfit(nodes, times, 1)
+        ax.plot(nodes, m * nodes + c, linestyle="--", color="gray", label="Linear fit")
+        
+    ax.set_title("Linearity Check for k=32")
+    ax.set_xlabel("Number of nodes")
+    ax.set_ylabel("Mean runtime (s)")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=True)
+    
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=160)
     plt.close(fig)
 
 
@@ -675,6 +788,8 @@ def main() -> None:
         scaling_trend_plot=None if args.skip_plots else out_dir / "scaling_trend.png",
         relative_scaling_plot=None if args.skip_plots else out_dir / "relative_scaling.png",
         heatmap_plot=None if args.skip_plots else out_dir / "runtime_heatmap.png",
+        plot_3d_bar_plot=None if args.skip_plots else out_dir / "runtime_3d_bar.png",
+        plot_linearity_plot=None if args.skip_plots else out_dir / "linearity_check.png",
     )
 
     write_rows_csv(raw_rows, artifacts.raw_csv)
@@ -689,6 +804,8 @@ def main() -> None:
             plot_scaling_trend(aggregated_rows, artifacts.scaling_trend_plot)
             plot_relative_scaling(aggregated_rows, artifacts.relative_scaling_plot)
             plot_runtime_heatmap(aggregated_rows, artifacts.heatmap_plot)
+            plot_3d_bar_time(aggregated_rows, artifacts.plot_3d_bar_plot)
+            plot_linearity(aggregated_rows, artifacts.plot_linearity_plot)
         except Exception as e:
             print(f"Warning: failed to generate plots: {e}")
 
@@ -721,7 +838,9 @@ def main() -> None:
             f"  - {artifacts.runtime_matrix_plot}\n"
             f"  - {artifacts.scaling_trend_plot}\n"
             f"  - {artifacts.relative_scaling_plot}\n"
-            f"  - {artifacts.heatmap_plot}"
+            f"  - {artifacts.heatmap_plot}\n"
+            f"  - {artifacts.plot_3d_bar_plot}\n"
+            f"  - {artifacts.plot_linearity_plot}"
         )
     print(f"Benchmark finished in {total_elapsed:.2f}s")
 

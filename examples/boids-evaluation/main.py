@@ -43,8 +43,11 @@ from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_
 from shared.training import MetricHistory, grad_norm, parse_int_csv
 from shared.diagnostics.csv import save_history_csv
 from shared.metrics import mean, std
+from generate_plots import generate_boids_plots, plot_train_val_metrics, plot_parameter_recovery_bands
 
 try:
+    import matplotlib
+    matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 except ImportError:
     plt = None
@@ -506,7 +509,7 @@ def train_one_seed(
     links_alpha: float,
     links_width: float,
     gif_fps: int,
-) -> tuple[LearnableBoids, dict[str, list[float]]]:
+) -> tuple[LearnableBoids, dict[str, list[float]], dict[int, torch.Tensor]]:
     torch.manual_seed(seed)
 
     model = LearnableBoids(
@@ -525,6 +528,8 @@ def train_one_seed(
         "val_total_loss", "val_pos_loss", "val_vel_loss", "val_pos_error",
     ]
     history = MetricHistory.from_keys(history_keys)
+
+    eval_trajectories = {}
 
     teacher_params = {
         "w_sep": teacher_w_sep,
@@ -602,6 +607,7 @@ def train_one_seed(
                 show_source=False,
                 phantom_pos_seq=eval_teacher_pos_seq,
             )
+            eval_trajectories[epoch] = val_pred_pos.detach().cpu()
 
         history.append(
             epoch=float(epoch + 1),
@@ -637,7 +643,7 @@ def train_one_seed(
                 msg += f" val={val_total:.6f}"
             print(msg)
 
-    return model, history.to_dict()
+    return model, history.to_dict(), eval_trajectories
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -725,151 +731,6 @@ def _save_validation_gif(
             {"target": teacher_params, "learned": learned_params, "recovery": recovery},
             f, indent=2,
         )
-
-
-def _plot_band(ax, x_vals, mean_vals, std_vals, label, color=None):
-    import math
-    valid_indices = [i for i, v in enumerate(mean_vals) if not math.isnan(v)]
-    if not valid_indices:
-        return
-    x_valid = [x_vals[i] for i in valid_indices]
-    m_valid = [mean_vals[i] for i in valid_indices]
-    s_valid = [std_vals[i] for i in valid_indices]
-    
-    line, = ax.plot(x_valid, m_valid, linewidth=2.0, label=label, marker="o", markersize=3, color=color)
-    if len(x_valid) > 1:
-        lower = [v - d for v, d in zip(m_valid, s_valid)]
-        upper = [v + d for v, d in zip(m_valid, s_valid)]
-        ax.fill_between(x_valid, lower, upper, alpha=0.18, color=line.get_color())
-
-
-def plot_train_val_metrics(
-    histories: list[dict[str, list[float]]],
-    out_dir: Path,
-) -> None:
-    if plt is None or not histories:
-        return
-
-    epochs = histories[0].get("epoch", [])
-    if not epochs:
-        return
-
-    def series_mean_std(key: str):
-        series = [h[key] for h in histories if key in h and h[key]]
-        if not series:
-            return None
-        min_len = min(len(v) for v in series)
-        trimmed = [v[:min_len] for v in series]
-        import math
-        return [mean([v[i] for v in trimmed]) if not all(math.isnan(v[i]) for v in trimmed) else float("nan") for i in range(min_len)], \
-               [std([v[i] for v in trimmed]) if not all(math.isnan(v[i]) for v in trimmed) else float("nan") for i in range(min_len)]
-
-    # --- Training Metrics ---
-    train_loss = series_mean_std("total_loss")
-    train_pos_err = series_mean_std("pos_error")
-    
-    # --- Validation Metrics ---
-    val_loss = series_mean_std("val_total_loss")
-    val_pos_err = series_mean_std("val_pos_error")
-
-    if not (train_loss or val_loss):
-        return
-
-    fig, axes = plt.subplots(2, 1, figsize=(8, 8), sharex=True)
-
-    # 1. Total Loss (Log scale often better for training curves)
-    if train_loss:
-        min_len = min(len(epochs), len(train_loss[0]))
-        _plot_band(axes[0], epochs[:min_len], train_loss[0][:min_len], train_loss[1][:min_len], "train loss", color="tab:blue")
-    if val_loss:
-        min_len = min(len(epochs), len(val_loss[0]))
-        _plot_band(axes[0], epochs[:min_len], val_loss[0][:min_len], val_loss[1][:min_len], "val loss", color="tab:orange")
-    
-    axes[0].set_ylabel("Total Loss")
-    axes[0].set_yscale("log")
-    axes[0].set_title("Loss Comparison")
-    axes[0].grid(alpha=0.25, which="both")
-    axes[0].legend(loc="best")
-
-    # 2. Position Error
-    if train_pos_err:
-        min_len = min(len(epochs), len(train_pos_err[0]))
-        _plot_band(axes[1], epochs[:min_len], train_pos_err[0][:min_len], train_pos_err[1][:min_len], "train pos err", color="tab:blue")
-    if val_pos_err:
-        min_len = min(len(epochs), len(val_pos_err[0]))
-        _plot_band(axes[1], epochs[:min_len], val_pos_err[0][:min_len], val_pos_err[1][:min_len], "val pos err", color="tab:orange")
-
-    axes[1].set_ylabel("Position Error (L2)")
-    axes[1].set_xlabel("epoch")
-    axes[1].set_title("Position Error Comparison")
-    axes[1].grid(alpha=0.25)
-    axes[1].legend(loc="best")
-
-    fig.tight_layout()
-    output_path = out_dir / "metrics_comparison.png"
-    fig.savefig(str(output_path), dpi=150)
-    plt.close(fig)
-    print(f"Saved {output_path}")
-
-
-def plot_parameter_recovery_bands(
-    histories: list[dict[str, list[float]]],
-    teacher_params: dict[str, float],
-    output_path: str,
-) -> None:
-    if plt is None or not histories:
-        return
-
-    epochs = histories[0].get("epoch", [])
-    if not epochs:
-        return
-
-    fig, axes = plt.subplots(2, 1, figsize=(9.5, 7.8), sharex=True)
-    plotted = False
-
-    for name in teacher_params:
-        abs_key = f"{name}_abs_error"
-        rel_key = f"{name}_rel_error"
-        if abs_key not in histories[0] or rel_key not in histories[0]:
-            continue
-
-        abs_series = [h[abs_key] for h in histories if abs_key in h and h[abs_key]]
-        rel_series = [h[rel_key] for h in histories if rel_key in h and h[rel_key]]
-        if not abs_series or not rel_series:
-            continue
-
-        min_len = min(min(len(v) for v in abs_series), min(len(v) for v in rel_series))
-        abs_trimmed = [v[:min_len] for v in abs_series]
-        rel_trimmed = [v[:min_len] for v in rel_series]
-
-        abs_mean = [mean([v[i] for v in abs_trimmed]) for i in range(min_len)]
-        abs_std = [std([v[i] for v in abs_trimmed]) for i in range(min_len)]
-        rel_mean = [mean([v[i] for v in rel_trimmed]) for i in range(min_len)]
-        rel_std = [std([v[i] for v in rel_trimmed]) for i in range(min_len)]
-
-        _plot_band(axes[0], epochs[:min_len], abs_mean, abs_std, name)
-        _plot_band(axes[1], epochs[:min_len], rel_mean, rel_std, name)
-        plotted = True
-
-    if not plotted:
-        plt.close(fig)
-        return
-
-    axes[0].set_ylabel("abs error")
-    axes[0].set_title("Parameter Error Across Seeds")
-    axes[0].grid(alpha=0.25)
-    axes[0].legend(loc="best")
-
-    axes[1].set_xlabel("epoch")
-    axes[1].set_ylabel("rel error (%)")
-    axes[1].grid(alpha=0.25)
-    axes[1].legend(loc="best")
-
-    fig.tight_layout()
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-    print(f"Saved {output_path}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -966,6 +827,7 @@ def main() -> None:
 
     all_histories: list[dict[str, list[float]]] = []
     final_models: dict[int, LearnableBoids] = {}
+    all_eval_trajectories: list[dict[int, torch.Tensor]] = []
 
     for seed in seeds:
         print(f"\n--- Training seed {seed} ---")
@@ -978,7 +840,7 @@ def main() -> None:
             trace_dir=trace_dir, device=device,
         )
 
-        model, history = train_one_seed(
+        model, history, eval_trajectories = train_one_seed(
             seed=seed,
             trace=trace,
             eval_seed=eval_seed,
@@ -1013,6 +875,7 @@ def main() -> None:
         )
         all_histories.append(history)
         final_models[seed] = model
+        all_eval_trajectories.append(eval_trajectories)
 
     # Final visualization suite
     teacher_params = {
@@ -1022,62 +885,52 @@ def main() -> None:
     }
 
     plot_train_val_metrics(all_histories, out_dir)
-    plot_parameter_recovery_bands(all_histories, teacher_params, str(out_dir / "param_recovery_bands.png"))
+    plot_parameter_recovery_bands(all_histories, teacher_params, out_dir)
 
-    last_seed = seeds[-1]
-    last_model = final_models[last_seed]
+    for i, (seed, model) in enumerate(final_models.items()):
+        seed_dir = out_dir / f"seed_{seed}"
+        seed_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Save individual seed history
+        history = all_histories[i]
+        save_history_csv(history, seed_dir / "history.csv")
 
-    # Evaluate final model on evaluation seed for consistent phantom overlay
-    with torch.no_grad():
-        pred_pos, pred_vel, pred_edge_seq = last_model.rollout(
-            args.rounds,
-            positions0=eval_trace.positions0,
-            velocities0=eval_trace.velocities0,
+        # Evaluate final model on evaluation seed for consistent phantom overlay
+        with torch.no_grad():
+            pred_pos, pred_vel, pred_edge_seq = model.rollout(
+                args.rounds,
+                positions0=eval_trace.positions0,
+                velocities0=eval_trace.velocities0,
+            )
+
+        positions_over_time = [pred_pos[r] for r in range(args.rounds)]
+        highlight_idx = max(0, min(args.highlight_node, args.num_nodes - 1))
+
+        # Extract data for reproducing the figures
+        extracted_data = {
+            "pred_pos": pred_pos.detach().cpu(),
+            "pred_vel": pred_vel.detach().cpu(),
+            "eval_trace_pos": eval_trace.pos_seq.detach().cpu(),
+            "eval_trace_vel": eval_trace.vel_seq.detach().cpu(),
+            "pred_edge_seq": [ei.detach().cpu() for ei in pred_edge_seq],
+            "highlight_node": highlight_idx,
+            "rounds": args.rounds,
+            "num_nodes": args.num_nodes,
+            "history": history,
+            "teacher_params": teacher_params,
+            "eval_trajectories": all_eval_trajectories[i]
+        }
+        torch.save(extracted_data, seed_dir / "eval_data.pt")
+
+        generate_boids_plots(
+            data=extracted_data,
+            seed=seed,
+            seed_dir=seed_dir,
+            hide_links=args.hide_links,
+            links_alpha=args.links_alpha,
+            links_width=args.links_width,
+            gif_fps=args.gif_fps,
         )
-
-    positions_over_time = [pred_pos[r] for r in range(args.rounds)]
-    highlight_idx = max(0, min(args.highlight_node, args.num_nodes - 1))
-
-    plot_node_trajectories(
-        positions_over_time=positions_over_time,
-        source_idx=highlight_idx,
-        output_path=str(out_dir / "trajectories.png"),
-        title="Boids trajectories (final model)",
-        show_source=False,
-        phantom_pos_seq=eval_trace.pos_seq,
-    )
-
-    positions_by_round = {r: pred_pos[r] for r in range(args.rounds)}
-    values_by_round = {r: pred_vel[r].norm(dim=1) for r in range(args.rounds)}
-    edge_index_by_round = {r: pred_edge_seq[r] for r in range(args.rounds)}
-
-    plot_moving_snapshots(
-        positions_by_round=positions_by_round,
-        values_by_round=values_by_round,
-        edge_index_by_round=edge_index_by_round,
-        source_idx=highlight_idx,
-        output_path=str(out_dir / "validation_positions.png"),
-        title="Validation position over time",
-        show_links=not args.hide_links,
-        links_alpha=args.links_alpha,
-        links_width=args.links_width,
-        show_source=False,
-    )
-
-    export_moving_gif(
-        positions_by_round=positions_by_round,
-        values_by_round=values_by_round,
-        edge_index_by_round=edge_index_by_round,
-        source_idx=highlight_idx,
-        output_path=str(out_dir / "validation_final.gif"),
-        title="Final model prediction",
-        fps=args.gif_fps,
-        show_links=not args.hide_links,
-        links_alpha=args.links_alpha,
-        links_width=args.links_width,
-        show_source=False,
-        phantom_pos_seq=eval_trace.pos_seq,
-    )
 
     # Save aggregated history and summary
     avg_history = {}
