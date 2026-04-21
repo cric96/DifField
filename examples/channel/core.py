@@ -30,6 +30,8 @@ def channel_body(
         ),
         name="dist_src",
     )
+    # materialize scatter_range please as tensor matrix
+
     dist_dst = iterate(
         field.inf(),
         lambda dist_old: mux(

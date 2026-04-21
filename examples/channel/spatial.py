@@ -56,13 +56,13 @@ def parse_args():
     )
     parser.add_argument("--num-nodes", type=int, default=150)
     parser.add_argument("--rounds", type=int, default=100)
-    parser.add_argument("--radius", type=float, default=0.18)
+    parser.add_argument("--radius", type=float, default=None, help="Connectivity radius (auto-computed if not set)")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--source", type=int, default=-1)
     parser.add_argument("--dest", type=int, default=-1)
-    parser.add_argument("--tolerance", type=float, default=0.5)
-    parser.add_argument("--obstacle-ratio", type=float, default=0.15)
-    parser.add_argument("--record-every", type=int, default=10)
+    parser.add_argument("--tolerance", type=float, default=0.01)
+    parser.add_argument("--obstacle-ratio", type=float, default=0.18)
+    parser.add_argument("--record-every", type=int, default=20)
     parser.add_argument("--viz-prefix", type=str, default="generated/channel_random")
     parser.add_argument("--gif-fps", type=int, default=10)
     parser.add_argument("--no-viz", action="store_true", help="Disable figure export")
@@ -217,37 +217,6 @@ def _draw_source_dest(
         clip_on=False,
     )
 
-    def annotate_point(point: np.ndarray, text: str, dx: float, dy: float, facecolor: str):
-        ax.annotate(
-            text,
-            xy=(float(point[0, 0]), float(point[0, 1])),
-            xytext=(dx, dy),
-            textcoords="offset points",
-            ha="center",
-            va="center",
-            fontsize=10,
-            fontweight="bold",
-            color="#1f1b18",
-            bbox={
-                "boxstyle": "round,pad=0.32",
-                "facecolor": facecolor,
-                "edgecolor": "#1f1b18",
-                "linewidth": 1.0,
-                "alpha": 0.96,
-            },
-            arrowprops={
-                "arrowstyle": "-|>",
-                "color": "#1f1b18",
-                "lw": 1.0,
-                "shrinkA": 2,
-                "shrinkB": 6,
-            },
-            zorder=11,
-            clip_on=False,
-        )
-
-    annotate_point(source_point, "SOURCE", 52, -16, "#eaffea")
-    annotate_point(dest_point, "TARGET", -54, 16, "#fff0f0")
     return source_ring, source_star, dest_ring, dest_star
 
 
@@ -474,12 +443,12 @@ def create_obstacle_mask(
 
     ratio = float(obstacle_ratio)
     wall_count = max(2, min(6, 2 + int(round(ratio * 12.0))))
-    wall_width = 0.012 + 0.03 * ratio
+    wall_width = 0.04
     gap_size = 0.02
     margin = 0.02
     wall_centers = torch.linspace(
-        0.12,
-        0.88,
+        0.18,
+        0.82,
         steps=wall_count,
         device=positions.device,
         dtype=positions.dtype,
@@ -706,7 +675,7 @@ def plot_channel_evolution(
             source_idx,
             dest_idx,
             channel_values=values_by_round[round_idx],
-            title=f"Round {round_idx + 1}",
+            title="Channel Evolution",
             show_links=show_links,
             links_alpha=links_alpha,
             links_width=links_width,
@@ -758,7 +727,7 @@ def export_channel_gif(
             source_idx,
             dest_idx,
             channel_values=values_by_round[round_idx],
-            title=f"Channel Evolution (round {round_idx + 1})",
+            title="Channel Evolution",
             show_links=show_links,
             links_alpha=links_alpha,
             links_width=links_width,
@@ -815,6 +784,13 @@ def main():
     torch.manual_seed(args.seed)
 
     positions = torch.rand(args.num_nodes, 2, device=device)
+
+    if args.radius is None:
+        # Heuristic: aim for average degree ~22 in a unit square
+        # k = n * pi * r^2  => r = sqrt(k / (n * pi))
+        args.radius = float(np.sqrt(18.0 / (args.num_nodes * np.pi)))
+        print(f"Auto-computed radius: {args.radius:.4f} (targeting average degree ~22)")
+
     scenario = SpatialScenario(
         positions=positions,
         edge_radius=args.radius,
@@ -831,7 +807,11 @@ def main():
     obstacle = create_obstacle_mask(positions, args.obstacle_ratio)
     print(f"Obstacle nodes: {obstacle.sum().item()} / {args.num_nodes}")
 
-    record_rounds = build_record_rounds(args.rounds, args.record_every)
+    if not args.no_gif:
+        record_rounds = build_record_rounds(args.rounds, args.record_every)
+    else:
+        record_rounds = {args.rounds - 1}
+
     recorder = SnapshotRecorder(
         state_fields=["dist_src", "dist_dst", "_gc_dist_channel"],
         capture_output=True,
@@ -905,18 +885,48 @@ def main():
             links_width=args.links_width,
         )
 
-        plot_channel_evolution(
-            positions_by_round,
-            values_by_round,
-            edge_index_by_round,
+        if not args.no_gif:
+            plot_channel_evolution(
+                positions_by_round,
+                values_by_round,
+                edge_index_by_round,
+                obstacle,
+                source_idx,
+                dest_idx,
+                output_dir=f"{args.viz_prefix}_evolution_frames",
+                show_links=not args.hide_links,
+                links_alpha=args.links_alpha,
+                links_width=args.links_width,
+            )
+
+        # Always render the last frame as a standalone image in evolution style
+        last_round = max(values_by_round.keys())
+        fig, ax = plt.subplots(figsize=(8, 7))
+        _draw_channel_overlay(
+            ax,
+            positions_by_round[last_round],
+            edge_index_by_round[last_round],
             obstacle,
             source_idx,
             dest_idx,
-            output_dir=f"{args.viz_prefix}_evolution_frames",
+            channel_values=values_by_round[last_round],
+            title="",
             show_links=not args.hide_links,
             links_alpha=args.links_alpha,
             links_width=args.links_width,
+            node_size=50,
+            channel_size=70,
+            obstacle_size=80,
+            source_ring_size=200,
+            source_star_size=150,
+            dest_ring_size=200,
+            dest_star_size=150,
+            show_legend=False,
         )
+        last_frame_path = f"{args.viz_prefix}_last_frame.png"
+        plt.savefig(last_frame_path, dpi=150, bbox_inches="tight")
+        plt.close(fig)
+        print(f"Saved last frame to {last_frame_path}")
 
         if not args.no_gif:
             export_channel_gif(

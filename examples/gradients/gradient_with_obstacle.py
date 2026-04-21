@@ -153,7 +153,7 @@ def plot_final_field(
     draw_obstacles(ax, obstacle, rows, cols)
     draw_markers(ax, src_pos, ms=14)
 
-    ax.set_title(f"Distance Field After {rounds} Rounds", fontsize=13)
+    ax.set_title("Distance Field", fontsize=13)
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # Annotate finite cells with distance values
@@ -200,7 +200,7 @@ def plot_evolution(
         im = ax.imshow(grid, cmap="viridis", interpolation="nearest")
         draw_obstacles(ax, obstacle, rows, cols)
         draw_markers(ax, src_pos, ms=10)
-        ax.set_title(f"t = {step + 1}", fontsize=10)
+        ax.set_title("Gradient Evolution", fontsize=10)
         ax.set_xticks([])
         ax.set_yticks([])
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
