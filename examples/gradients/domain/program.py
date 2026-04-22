@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import torch
-from autofield import gather, mux, scatter, iterate, SimulationEngine
-from autofield.dsl import field
+from diffield import gather, mux, scatter, iterate, SimulationEngine
+from diffield.dsl import field
 
 try:
-    from autofield import SnapshotRecorder
+    from diffield import SnapshotRecorder
 except ImportError:
     SnapshotRecorder = None
 

@@ -2,7 +2,7 @@
 
 import torch
 
-from autofield import (
+from diffield import (
     AggregateContext,
     collect_cast,
     gradient,
@@ -14,7 +14,7 @@ from autofield import (
     gather_min,
     scatter,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 from conftest import assert_finite_gradients, field_from_values, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
@@ -29,7 +29,7 @@ from tests.aggregate.support import (
 
 class TestGradient:
     def test_fixed_hop_count(self):
-        from autofield.utils import make_grid_graph
+        from diffield.utils import make_grid_graph
 
         rows, cols = 5, 5
         edge_index, n = make_grid_graph(rows, cols)

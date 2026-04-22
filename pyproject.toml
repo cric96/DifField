@@ -1,5 +1,5 @@
 [project]
-name = "autofield"
+name = "diffield"
 version = "0.1.0"
 description = "Differentiable field calculus and aggregate computing on graphs"
 readme = "README.md"

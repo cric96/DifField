@@ -16,9 +16,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import SimulationEngine, SnapshotRecorder, SpatialScenario, branch
-from autofield.dsl import field
-from autofield.utils import get_device
+from diffield import SimulationEngine, SnapshotRecorder, SpatialScenario, branch
+from diffield.dsl import field
+from diffield.utils import get_device
 from channel.core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes
 from shared.plotting.common import LineCollection, plt, save_gif
 
@@ -248,9 +248,10 @@ def _finalize_axes(ax, title: str, *, legend_loc: str = "upper left", show_legen
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
-    ax.grid(alpha=0.2)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    for spine in ax.spines.values():
+        spine.set_visible(False)
     ax.set_title(title, fontsize=13)
     if show_legend:
         ax.legend(loc=legend_loc)

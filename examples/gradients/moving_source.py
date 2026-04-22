@@ -12,9 +12,9 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from autofield.utils import get_device
+from diffield.utils import get_device
 
-from autofield import (
+from diffield import (
     EventSchedule,
     GridScenario,
     ScheduledEvent,
@@ -25,7 +25,7 @@ from autofield import (
     iterate,
     gather_min,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 from shared.plotting import save_grid_simulation_gif
 
 

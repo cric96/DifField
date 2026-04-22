@@ -41,7 +41,7 @@ def field_where(
         y: Value where condition is inactive.
         mode: ``"hard"`` or ``"soft"``. Defaults to the thread-local setting.
         tau: Temperature for soft mode (larger = sharper). Defaults to
-            :data:`~autofield.constants.DEFAULT_TAU_BRANCH`.
+            :data:`~diffield.constants.DEFAULT_TAU_BRANCH`.
     """
     effective_mode = mode if mode is not None else get_default_mode()
     if effective_mode == "soft":

@@ -12,8 +12,8 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from autofield import DeviceContext, GridScenario, SimulationEngine, gradient, scatter
-from autofield.utils import get_device
+from diffield import DeviceContext, GridScenario, SimulationEngine, gradient, scatter
+from diffield.utils import get_device
 
 
 def parse_args():

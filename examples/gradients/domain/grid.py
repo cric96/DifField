@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from autofield import GridScenario
-from autofield.utils import get_grid_distances
+from diffield import GridScenario
+from diffield.utils import get_grid_distances
 
 
 def build_corner_source_grid(

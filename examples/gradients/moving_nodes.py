@@ -11,11 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
 import torch
-from autofield.utils import get_device
+from diffield.utils import get_device
 
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import (
+from diffield import (
     EventSchedule,
     ScheduledEvent,
     SimulationEngine,
@@ -30,7 +30,7 @@ from autofield import (
     iterate,
     gather_min,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 from shared.plotting import (
     export_moving_gif,
     plot_moving_snapshots,

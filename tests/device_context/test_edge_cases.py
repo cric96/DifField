@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from autofield import scatter, gather_sum
-from autofield.dsl import DeviceContext
+from diffield import scatter, gather_sum
+from diffield.dsl import DeviceContext
 
 from .support import (
     ONE_NEIGHBOR,

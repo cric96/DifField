@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import SnapshotRecorder
+from diffield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 try:
@@ -27,9 +27,9 @@ try:
 except ImportError:
     from gradients.domain.program import auto_rounds, run_gradient_program
 
-from autofield import GridScenario, SimulationEngine, mux, scatter, iterate, scatter_range, gather_min
-from autofield.dsl import field
-from autofield.utils import get_device
+from diffield import GridScenario, SimulationEngine, mux, scatter, iterate, scatter_range, gather_min
+from diffield.dsl import field
+from diffield.utils import get_device
 
 
 def parse_args():

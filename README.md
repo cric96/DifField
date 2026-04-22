@@ -1,10 +1,10 @@
-# AutoField
+# DifField
 
 **Differentiable Field Calculus for Graph-Based Learning and Simulation**
 
-AutoField is a PyTorch-based framework that brings **aggregate computing** and **field calculus** to differentiable programming. It lets you write spatial programs using high-level field operations — `iterate`, `scatter`, `branch`, `gradient` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
+DifField is a PyTorch-based framework that brings **aggregate computing** and **field calculus** to differentiable programming. It lets you write spatial programs using high-level field operations — `iterate`, `scatter`, `branch`, `gradient` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
 
-![AutoField](docs/auto-field.png)
+![DifField](docs/dif-field.png)
 
 ---
 
@@ -30,8 +30,8 @@ bash install-rocm-7.2.sh
 Build a distance field from a source node on a 10×10 grid:
 
 ```python
-from autofield import GridScenario, SimulationEngine, iterate, scatter, mux, gather_min
-from autofield.dsl import field
+from diffield import GridScenario, SimulationEngine, iterate, scatter, mux, gather_min
+from diffield.dsl import field
 
 scenario = GridScenario(10, 10, connectivity=4)
 engine = SimulationEngine.from_scenario(scenario)
@@ -54,7 +54,7 @@ The program converges to a **hop-distance field** — every node holds its minim
 
 ## Architecture
 
-AutoField is organized in five conceptual layers:
+DifField is organized in five conceptual layers:
 
 ```mermaid
 flowchart TB
@@ -115,7 +115,7 @@ The DSL provides composable field operators that run on every node of the graph 
 ### Field Helpers
 
 ```python
-from autofield.dsl import field
+from diffield.dsl import field
 
 field.of(0.0)     # constant field
 field.zeros()     # zero field
@@ -141,11 +141,11 @@ The simulation layer provides reusable components for running aggregate programs
 ### Example: Dynamic Simulation with Events
 
 ```python
-from autofield import (
+from diffield import (
     GridScenario, SimulationEngine, EventSchedule, ScheduledEvent,
     SnapshotRecorder, iterate, scatter, mux, gather_min,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 
 scenario = GridScenario(10, 10, connectivity=4)
 engine = SimulationEngine.from_scenario(scenario)
@@ -185,7 +185,7 @@ output, runtime = engine.run(
 For spatial scenarios, `edge_weight` can represent the geometric distance between neighbouring devices. Use `edge_weight_mode="distance"` when building a `SpatialScenario` to carry Euclidean edge lengths instead of unit hop weights.
 
 ```python
-from autofield import SpatialScenario, gradient
+from diffield import SpatialScenario, gradient
 
 scenario = SpatialScenario(positions=positions, edge_radius=0.2, edge_weight_mode="distance")
 

@@ -11,7 +11,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from autofield.utils import get_device
+from diffield.utils import get_device
 
 try:
     from .specs import ChannelProgramSpec, GridSpec, LargeChannelSpec

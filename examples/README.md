@@ -1,6 +1,6 @@
-# AutoField Examples
+# DifField Examples
 
-Application examples and training workflows built on top of the **autofield** library.
+Application examples and training workflows built on top of the **diffield** library.
 
 These examples demonstrate how to apply differentiable Field Calculus to real problems — from distance fields to flocking control and territory partitioning — with a focus on learning coordination parameters from data via imitation learning or objective functions.
 

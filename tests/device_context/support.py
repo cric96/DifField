@@ -8,8 +8,8 @@ import pytest
 import torch
 from torch import Tensor
 
-from autofield import AggregateContext, branch, iterate
-from autofield.dsl import DeviceContext
+from diffield import AggregateContext, branch, iterate
+from diffield.dsl import DeviceContext
 
 ABS_TOL = 1e-6
 

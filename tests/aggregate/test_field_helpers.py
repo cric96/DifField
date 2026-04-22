@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from autofield import const, mid
-from autofield.dsl import field
+from diffield import const, mid
+from diffield.dsl import field
 from conftest import field_zeros, field_ones, field_of, field_mid
 
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from autofield import (
+from diffield import (
     AggregateContext,
     branch,
     mux,
@@ -16,8 +16,8 @@ from autofield import (
     gather_max,
     gather_sum,
 )
-from autofield.dsl import field
-from autofield.dsl.scattering import LinkField
+from diffield.dsl import field
+from diffield.dsl.scattering import LinkField
 from conftest import field_from_values, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,

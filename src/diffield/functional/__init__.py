@@ -1,4 +1,4 @@
-"""Low-level differentiable operations for autofield."""
+"""Low-level differentiable operations for diffield."""
 
 from .aggregation import scatter_aggr
 from .conditionals import field_where

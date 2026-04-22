@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
-from autofield import SnapshotRecorder
+from diffield import SnapshotRecorder
 from ..domain.program import run_gradient_program
 
 try:

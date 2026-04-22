@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn.functional as F
 
-from autofield import (
+from diffield import (
     AggregateContext,
     collect_cast,
     gradient,
@@ -17,7 +17,7 @@ from autofield import (
     gather_min,
     scatter,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 from conftest import assert_finite_gradients, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,

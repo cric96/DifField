@@ -6,8 +6,8 @@ import time
 
 import torch
 
-from autofield import GridScenario, SimulationEngine, SnapshotRecorder, branch
-from autofield.dsl import field
+from diffield import GridScenario, SimulationEngine, SnapshotRecorder, branch
+from diffield.dsl import field
 
 try:
     from .core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes, distance_src_to_dst

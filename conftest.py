@@ -16,8 +16,8 @@ import pytest
 import torch
 import torch.nn as nn
 from torch import Tensor
-from autofield import AggregateContext
-from autofield.utils import make_grid_graph
+from diffield import AggregateContext
+from diffield.utils import make_grid_graph
 
 
 @pytest.fixture
@@ -142,48 +142,48 @@ def make_grid_graph(rows: int, cols: int) -> tuple[Tensor, int]:
 
 def field_from_values(ctx: AggregateContext, values: list[float] | Tensor) -> Tensor:
     """Create a field from a list of values in the given context."""
-    from autofield.dsl import field
-    from autofield.core import with_context
+    from diffield.dsl import field
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.from_values(values)
 
 
 def field_ones(ctx: AggregateContext) -> Tensor:
     """Create a field of ones in the given context."""
-    from autofield.dsl import field
-    from autofield.core import with_context
+    from diffield.dsl import field
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.ones()
 
 
 def field_zeros(ctx: AggregateContext) -> Tensor:
     """Create a field of zeros in the given context."""
-    from autofield.dsl import field
-    from autofield.core import with_context
+    from diffield.dsl import field
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.zeros()
 
 
 def field_of(ctx: AggregateContext, value: float) -> Tensor:
     """Create a constant field in the given context."""
-    from autofield.dsl import field
-    from autofield.core import with_context
+    from diffield.dsl import field
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.of(value)
 
 
 def field_mid(ctx: AggregateContext) -> Tensor:
     """Create a field of node IDs in the given context."""
-    from autofield.dsl import mid
-    from autofield.core import with_context
+    from diffield.dsl import mid
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return mid()
 
 
 def field_with_overrides(ctx: AggregateContext, overrides: tuple[tuple[int, float], ...]) -> Tensor:
     """Create a field with specific overrides in the given context."""
-    from autofield.dsl import field
-    from autofield.core import with_context
+    from diffield.dsl import field
+    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.with_overrides(field.zeros(), overrides)
 

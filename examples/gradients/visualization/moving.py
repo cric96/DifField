@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 import torch
-from autofield import SpatialScenario, mux, scatter, iterate, gather_min
-from autofield.dsl import AggregateContext, field
+from diffield import SpatialScenario, mux, scatter, iterate, gather_min
+from diffield.dsl import AggregateContext, field
 from ..domain.moving_logic import MAX_DIST
 
 try:

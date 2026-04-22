@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from autofield import AggregateContext, scatter, iterate, gather, gather_min, gather_max, gather_sum, gather_avg
-from autofield.dsl import field
+from diffield import AggregateContext, scatter, iterate, gather, gather_min, gather_max, gather_sum, gather_avg
+from diffield.dsl import field
 from conftest import field_from_values
 from tests.aggregate.support import ROUNDS, values
 

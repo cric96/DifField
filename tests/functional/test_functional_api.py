@@ -7,8 +7,8 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from autofield import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from autofield.functional import scatter_min_by_first
+from diffield import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
+from diffield.functional import scatter_min_by_first
 
 
 class TestScatterAggr:
@@ -157,7 +157,7 @@ class TestFieldWhere:
         assert cond.grad.abs().item() > 0.0
 
     def test_default_mode_uses_global(self):
-        from autofield import get_default_mode, set_default_mode, with_mode
+        from diffield import get_default_mode, set_default_mode, with_mode
 
         assert get_default_mode() == "hard"
         cond = torch.tensor([0.5])

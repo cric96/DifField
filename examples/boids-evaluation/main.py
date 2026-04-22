@@ -27,7 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import (
+from diffield import (
     SpatialScenario,
     bounce_in_box,
     gather_avg,
@@ -37,7 +37,7 @@ from autofield import (
     normalize_vectors,
     scatter,
 )
-from autofield.dsl import AggregateContext
+from diffield.dsl import AggregateContext
 
 from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
 from shared.training import MetricHistory, grad_norm, parse_int_csv

@@ -1,1 +1,1 @@
-"""Test package for autofield."""
+"""Test package for diffield."""

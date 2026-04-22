@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from autofield import mux, iterate
-from autofield.layers import BranchLayer, MuxLayer, GatherLayer, IterateLayer
-from autofield.dsl import field
+from diffield import mux, iterate
+from diffield.layers import BranchLayer, MuxLayer, GatherLayer, IterateLayer
+from diffield.dsl import field
 from conftest import field_from_values, field_with_overrides, field_zeros
 from tests.aggregate.support import AddConstant, flags, values
 

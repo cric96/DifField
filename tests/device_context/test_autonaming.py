@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from autofield import gather_min, scatter, iterate, gather_sum
-from autofield.dsl import DeviceContext
+from diffield import gather_min, scatter, iterate, gather_sum
+from diffield.dsl import DeviceContext
 
 from .support import (
     BRANCH_STATE,

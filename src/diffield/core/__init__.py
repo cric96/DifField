@@ -1,4 +1,4 @@
-"""Core execution and state-management utilities for autofield."""
+"""Core execution and state-management utilities for diffield."""
 
 from .context import RoundContext, sub_context
 from .device import DeviceContext

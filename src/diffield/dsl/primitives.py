@@ -34,7 +34,7 @@ class _LambdaModule(nn.Module):
 def _auto_name(kind: str, **kwargs: object) -> str:
     """Generate a deterministic name from the caller's source location.
 
-    Walks up the stack skipping frames that belong to autofield internals
+    Walks up the stack skipping frames that belong to diffield internals
     (e.g. ``_LambdaModule.forward`` when ``iterate`` is called inside a branch
     lambda) so the name always reflects the user's source position.
 
@@ -49,7 +49,7 @@ def _auto_name(kind: str, **kwargs: object) -> str:
     frame = inspect.currentframe()
     while frame is not None:
         code = frame.f_code
-        if not code.co_filename.endswith("autofield/dsl/primitives.py"):
+        if not code.co_filename.endswith("diffield/dsl/primitives.py"):
             param_key = tuple(sorted(kwargs.items()))
             code_id = id(code)
             key = (

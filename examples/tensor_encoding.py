@@ -2,7 +2,7 @@
 """Tensor encoding of fields — example from the paper.
 
 Replicates the four-stage computational cycle described in
-"Tensor Encoding of Fields" using autofield primitives, and compares
+"Tensor Encoding of Fields" using diffield primitives, and compares
 the results against the dense tensor formulation.
 
 Graph: 3 nodes, bidirectional edges 0↔1, 1↔2
@@ -19,7 +19,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from autofield import (
+from diffield import (
     AggregateContext,
     gather_max,
     gather_min,
@@ -27,7 +27,7 @@ from autofield import (
     gather_avg,
     scatter,
 )
-from autofield.core import current_context
+from diffield.core import current_context
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -73,7 +73,7 @@ A[edge_index[0], edge_index[1]] = 1.0
 
 def main():
     print("=" * 60)
-    print("Tensor Encoding of Fields — autofield example")
+    print("Tensor Encoding of Fields — diffield example")
     print("=" * 60)
 
     print(f"\nGraph: {NUM_NODES} nodes, edges 0↔1, 1↔2")
@@ -90,12 +90,12 @@ def main():
     # Dense: q_hat = q / 30
     q_hat_dense = q / 30.0
 
-    # autofield: pointwise division
+    # diffield: pointwise division
     with ctx.round():
         q_hat_af = q / 30.0
 
     print(f"\n  Dense:    q_hat = q / 30 = {q_hat_dense.tolist()}")
-    print(f"  autofield:                = {q_hat_af.tolist()}")
+    print(f"  diffield:                = {q_hat_af.tolist()}")
     print(f"  Match: {torch.allclose(q_hat_dense, q_hat_af)}")
 
     # ── 2. Lifting operations ────────────────────────────────────────
@@ -107,7 +107,7 @@ def main():
     ones = torch.ones(NUM_NODES)
     T_g_dense = A * (q.outer(ones) - ones.outer(q))
 
-    # autofield: scatter(q) − q  (scatter(q) gives q_j, bare q gives q_i)
+    # diffield: scatter(q) − q  (scatter(q) gives q_j, bare q gives q_i)
     # produces (q_j − q_i) on each edge; the adjacency mask is implicit because
     # edges that don't exist are never materialised
     with ctx.round():
@@ -120,7 +120,7 @@ def main():
 
     print(f"\n  Dense T_g = A ⊙ (q·1^T − 1·q^T):")
     print(fmt_tensor(T_g_dense))
-    print(f"\n  autofield T_g (materialised):")
+    print(f"\n  diffield T_g (materialised):")
     print(fmt_tensor(T_g_af))
     print(f"  Match: {torch.allclose(T_g_dense, T_g_af)}")
 
@@ -132,7 +132,7 @@ def main():
     # Dense: |T_g|
     abs_T_g_dense = T_g_dense.abs()
 
-    # autofield: |scatter(q) − q|
+    # diffield: |scatter(q) − q|
     with ctx.round():
         abs_T_g_linkfield = (scatter(q) - q).abs()
         rctx = current_context()
@@ -141,7 +141,7 @@ def main():
 
     print(f"\n  Dense |T_g|:")
     print(fmt_tensor(abs_T_g_dense))
-    print(f"\n  autofield |T_g| (materialised):")
+    print(f"\n  diffield |T_g| (materialised):")
     print(fmt_tensor(abs_T_g_af))
     print(f"  Match: {torch.allclose(abs_T_g_dense, abs_T_g_af)}")
 
@@ -164,7 +164,7 @@ def main():
         y_max_dense[i] = incoming.max()
         y_min_dense[i] = incoming.min()
 
-    # autofield: gather_*
+    # diffield: gather_*
     with ctx.round():
         T_g_expr = scatter(q) - q
         y_sum_af = gather_sum(T_g_expr.abs())
@@ -175,19 +175,19 @@ def main():
     print(f"\n  In-degree d_in = A^T · 1 = {d_in.tolist()}")
 
     print(f"\n  y_sum  (dense):    {y_sum_dense.tolist()}")
-    print(f"  y_sum  (autofield): {y_sum_af.tolist()}")
+    print(f"  y_sum  (diffield): {y_sum_af.tolist()}")
     print(f"  Match: {torch.allclose(y_sum_dense, y_sum_af)}")
 
     print(f"\n  y_mean (dense):    {y_mean_dense.tolist()}")
-    print(f"  y_mean (autofield): {y_mean_af.tolist()}")
+    print(f"  y_mean (diffield): {y_mean_af.tolist()}")
     print(f"  Match: {torch.allclose(y_mean_dense, y_mean_af)}")
 
     print(f"\n  y_max  (dense):    {y_max_dense.tolist()}")
-    print(f"  y_max  (autofield): {y_max_af.tolist()}")
+    print(f"  y_max  (diffield): {y_max_af.tolist()}")
     print(f"  Match: {torch.allclose(y_max_dense, y_max_af)}")
 
     print(f"\n  y_min  (dense):    {y_min_dense.tolist()}")
-    print(f"  y_min  (autofield): {y_min_af.tolist()}")
+    print(f"  y_min  (diffield): {y_min_af.tolist()}")
     print(f"  Match: {torch.allclose(y_min_dense, y_min_af)}")
 
     print("\n" + "=" * 60)

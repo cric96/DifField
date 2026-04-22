@@ -1,4 +1,4 @@
-"""Composable nn.Module layers for autofield primitives."""
+"""Composable nn.Module layers for diffield primitives."""
 
 from .control import BranchLayer, MuxLayer
 from .gather import GatherLayer

@@ -2,7 +2,7 @@
 
 import torch
 
-from autofield import (
+from diffield import (
     EventSchedule,
     RelaxedRadiusScenario,
     ScheduledEvent,
@@ -22,7 +22,7 @@ from autofield import (
     gather_sum,
     gather_avg,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 
 
 class TestBuildSpatialGraph:

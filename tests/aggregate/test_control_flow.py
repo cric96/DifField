@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from autofield import (
+from diffield import (
     AggregateContext,
     branch,
     gather_max,
@@ -14,7 +14,7 @@ from autofield import (
     mux,
     scatter,
 )
-from autofield.dsl import field
+from diffield.dsl import field
 from conftest import field_from_values, field_zeros
 from tests.aggregate.support import ROUNDS, flags, values
 

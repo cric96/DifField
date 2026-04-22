@@ -1,12 +1,12 @@
 # Architecture & Design
 
-High-level conceptual model of AutoField — focusing on **what** each component represents and **how** they compose, not on implementation details.
+High-level conceptual model of DifField — focusing on **what** each component represents and **how** they compose, not on implementation details.
 
 ---
 
 ## System Overview
 
-AutoField implements a **field calculus** runtime on top of PyTorch. The core idea is that programs are written as **field operations** — computations that happen simultaneously across all nodes of a graph — and are executed through rounds of message passing.
+DifField implements a **field calculus** runtime on top of PyTorch. The core idea is that programs are written as **field operations** — computations that happen simultaneously across all nodes of a graph — and are executed through rounds of message passing.
 
 ```mermaid
 graph TB
@@ -488,7 +488,7 @@ graph TB
 
 ### Aggregate Computing Paradigm
 
-AutoField implements the **aggregate computing** model:
+DifField implements the **aggregate computing** model:
 
 ```mermaid
 graph LR

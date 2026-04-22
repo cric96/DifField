@@ -1,4 +1,4 @@
-"""autofield — aggregate computing and differentiable field calculus."""
+"""diffield — aggregate computing and differentiable field calculus."""
 
 from .core import (
     AggregateContext,

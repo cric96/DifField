@@ -74,8 +74,8 @@ def plot_train_val_metrics(
     # Use larger fonts globally for these plots
     plt.rcParams.update({'font.size': 14})
 
-    # Plot Total Loss separately (squarish)
-    fig, ax = plt.subplots(figsize=(5, 5))
+    # Plot Total Loss separately (rectangular)
+    fig, ax = plt.subplots(figsize=(7, 4))
     if train_loss:
         min_len = min(len(epochs), len(train_loss[0]))
         _plot_band(ax, epochs[:min_len], train_loss[0][:min_len], train_loss[1][:min_len], "train", color="tab:blue")
@@ -93,8 +93,8 @@ def plot_train_val_metrics(
     plt.close(fig)
     print(f"Saved {output_path}")
 
-    # Plot Position Error separately (squarish)
-    fig, ax = plt.subplots(figsize=(5, 5))
+    # Plot Position Error separately (rectangular)
+    fig, ax = plt.subplots(figsize=(7, 4))
     if train_pos_err:
         min_len = min(len(epochs), len(train_pos_err[0]))
         _plot_band(ax, epochs[:min_len], train_pos_err[0][:min_len], train_pos_err[1][:min_len], "train", color="tab:blue")
@@ -130,8 +130,8 @@ def plot_parameter_recovery_bands(
     # Use larger fonts globally
     plt.rcParams.update({'font.size': 14})
 
-    fig_abs, ax_abs = plt.subplots(figsize=(5, 5))
-    fig_rel, ax_rel = plt.subplots(figsize=(5, 5))
+    fig_abs, ax_abs = plt.subplots(figsize=(7, 4))
+    fig_rel, ax_rel = plt.subplots(figsize=(7, 4))
     plotted = False
 
     for name in teacher_params:
@@ -253,8 +253,7 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
             elif len(epochs) == 2:
                 mid_ep = epochs[0]
                 
-            # Progression plot: start, middle, end, reference
-            fig, axes = plt.subplots(2, 2, figsize=(8, 8))
+            # Progression plots: grid and line versions
             id_colors = _get_identity_colors(data["num_nodes"])
             
             def _plot_panel(ax, pos_seq, title, bg_color="white"):
@@ -268,23 +267,35 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
                     show_source=False, 
                     source_idx=highlight_idx
                 )
-                ax.set_title(title, fontsize=14)
+                ax.set_title(title, fontsize=20, fontweight="bold")
                 ax.set_facecolor(bg_color)
                 # Remove legends to avoid clutter on subplots
                 if ax.get_legend():
                     ax.get_legend().remove()
-                    
-            _plot_panel(axes[0, 0], eval_trajectories[start_ep], f"Start (Epoch {start_ep + 1})")
-            _plot_panel(axes[0, 1], eval_trajectories[mid_ep], f"Middle (Epoch {mid_ep + 1})")
-            _plot_panel(axes[1, 0], eval_trajectories[end_ep], f"End (Epoch {end_ep + 1})")
+
+            # 1. Grid version (2x2)
+            fig_grid, axes_grid = plt.subplots(2, 2, figsize=(10, 10))
+            _plot_panel(axes_grid[0, 0], eval_trajectories[start_ep], f"Epoch {start_ep + 1}")
+            _plot_panel(axes_grid[0, 1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
+            _plot_panel(axes_grid[1, 0], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
+            _plot_panel(axes_grid[1, 1], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
             
-            # Reference plot with a different background for distinction
-            _plot_panel(axes[1, 1], eval_trace_pos, "Reference (Teacher)", bg_color="#f4f8ff")
+            fig_grid.tight_layout()
+            out_path_grid = seed_dir / "progression_trajectories_grid.png"
+            fig_grid.savefig(str(out_path_grid), dpi=150)
+            plt.close(fig_grid)
+
+            # 2. Line version (1x4)
+            fig_line, axes_line = plt.subplots(1, 4, figsize=(18, 5))
+            _plot_panel(axes_line[0], eval_trajectories[start_ep], f"Epoch {start_ep + 1}")
+            _plot_panel(axes_line[1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
+            _plot_panel(axes_line[2], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
+            _plot_panel(axes_line[3], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
             
-            fig.tight_layout()
-            out_path = seed_dir / "progression_trajectories.png"
-            fig.savefig(str(out_path), dpi=150)
-            plt.close(fig)
+            fig_line.tight_layout()
+            out_path_line = seed_dir / "progression_trajectories_line.png"
+            fig_line.savefig(str(out_path_line), dpi=150)
+            plt.close(fig_line)
 
 def main():
     parser = argparse.ArgumentParser(description="Regenerate plots for boids evaluation from extracted data.")

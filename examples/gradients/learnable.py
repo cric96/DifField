@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from autofield.utils import get_device
+from diffield.utils import get_device
 from gradients.domain.specs import GridSpec, LearnableGradientSpec, TrainingSpec
 from gradients.training.distance_workflow import LearnableGradientWorkflow
 

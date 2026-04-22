@@ -81,7 +81,7 @@ class GatherLayer(nn.Module):
     r"""Gather neighbours and fold into a single field.
 
     ``m_i = ⊕_{j∈N(i)} msg_{j→i}`` where *msg* comes from a
-    :class:`~autofield.dsl.scattering.LinkField` or a plain tensor.
+    :class:`~diffield.dsl.scattering.LinkField` or a plain tensor.
     """
 
     def __init__(

@@ -21,9 +21,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from autofield import SimulationEngine, SpatialScenario, branch
-from autofield.dsl import field
-from autofield.utils import get_device
+from diffield import SimulationEngine, SpatialScenario, branch
+from diffield.dsl import field
+from diffield.utils import get_device
 from channel.core import CHANNEL_THRESHOLD, channel_body
 from channel.spatial import create_obstacle_mask
 from shared.training import parse_int_csv

@@ -173,7 +173,7 @@ def plot_moving_snapshots(
                 linewidths=1.0,
                 zorder=10,
             )
-        ax.set_title(f"round {round_idx + 1}")
+        ax.set_title(f"round {round_idx + 1}", fontsize=16, fontweight="bold")
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
         ax.set_aspect("equal")
@@ -185,9 +185,9 @@ def plot_moving_snapshots(
         axes[index // ncols][index % ncols].set_visible(False)
 
     fig.subplots_adjust(
-        left=0.07, right=0.88, bottom=0.08, top=0.90, wspace=0.30, hspace=0.35
+        left=0.07, right=0.88, bottom=0.08, top=0.88, wspace=0.30, hspace=0.35
     )
-    fig.suptitle(title)
+    fig.suptitle(title, fontsize=20, fontweight="bold")
     if mappable is not None:
         cax = fig.add_axes([0.90, 0.14, 0.018, 0.70])
         fig.colorbar(mappable, cax=cax)
@@ -216,7 +216,7 @@ def _draw_trajectory_on_ax(
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
         
         # Line width and alpha progression
-        widths = np.linspace(0.4, 2.5 if is_source else 1.8, num_rounds - 1)
+        widths = np.linspace(0.6, 3.5 if is_source else 2.5, num_rounds - 1)
         alphas = np.linspace(0.1, alpha_base, num_rounds - 1)
         
         lc = LineCollection(segments, linewidths=widths, colors=color, alpha=alphas, zorder=2)
@@ -227,7 +227,7 @@ def _draw_trajectory_on_ax(
             traj[-1, node_idx, 0],
             traj[-1, node_idx, 1],
             color=color,
-            s=40 if is_source else 25,
+            s=60 if is_source else 40,
             edgecolors="white",
             linewidths=0.5,
             zorder=5 if is_source else 3,
@@ -235,18 +235,20 @@ def _draw_trajectory_on_ax(
 
     # Markers for Start and End (Legend purpose)
     if color_by_id and id_colors is not None:
-        ax.scatter(traj[0, :, 0], traj[0, :, 1], c=id_colors, s=12, alpha=0.25, label="start", zorder=1)
-        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c=id_colors, marker="x", s=45, alpha=1.0, label="end", zorder=10)
+        ax.scatter(traj[0, :, 0], traj[0, :, 1], c=id_colors, s=15, alpha=0.25, label="start", zorder=1)
+        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c=id_colors, marker="x", s=55, alpha=1.0, label="end", zorder=10)
     else:
-        ax.scatter(traj[0, :, 0], traj[0, :, 1], c="black", s=12, alpha=0.25, label="start", zorder=1)
-        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c="black", marker="x", s=35, alpha=0.8, label="end", zorder=10)
+        ax.scatter(traj[0, :, 0], traj[0, :, 1], c="black", s=15, alpha=0.25, label="start", zorder=1)
+        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c="black", marker="x", s=45, alpha=0.8, label="end", zorder=10)
     
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
-    ax.grid(alpha=0.25)
-    ax.set_xlabel("x")
-    ax.set_ylabel("y")
+    ax.grid(alpha=0.2)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_xlabel("")
+    ax.set_ylabel("")
 
 
 def plot_node_trajectories(
@@ -276,18 +278,18 @@ def plot_node_trajectories(
         
         # Plot Teacher Reference
         _draw_trajectory_on_ax(axes[0], phantom, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        axes[0].set_title("Teacher Ground Truth")
+        axes[0].set_title("Teacher Ground Truth", fontsize=20, fontweight="bold")
         
         # Plot Prediction
         _draw_trajectory_on_ax(axes[1], traj, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        axes[1].set_title("Learned Model")
+        axes[1].set_title("Learned Model", fontsize=20, fontweight="bold")
         
-        fig.suptitle(title)
+        fig.suptitle(title, fontsize=24, fontweight="bold")
         axes[1].legend(loc="upper right")
     else:
         fig, ax = plt.subplots(figsize=(8.0, 7.5))
         _draw_trajectory_on_ax(ax, traj, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        ax.set_title(title)
+        ax.set_title(title, fontsize=22, fontweight="bold")
         ax.legend(loc="upper right")
 
     plt.tight_layout()

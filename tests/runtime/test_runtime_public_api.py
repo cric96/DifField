@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from autofield import (
+from diffield import (
     EventSchedule,
     FullyConnectedScenario,
     GridScenario,
@@ -23,8 +23,8 @@ from autofield import (
     gather_avg,
     gather,
 )
-from autofield.dsl import field
-from autofield.utils import get_device, get_grid_distances
+from diffield.dsl import field
+from diffield.utils import get_device, get_grid_distances
 
 
 class TestSimulationFramework:

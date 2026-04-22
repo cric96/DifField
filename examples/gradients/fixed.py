@@ -12,8 +12,8 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 import torch
-from autofield.dsl import field
-from autofield.utils import get_device
+from diffield.dsl import field
+from diffield.utils import get_device
 
 try:
     import matplotlib.pyplot as plt
@@ -27,7 +27,7 @@ except ImportError:
     from gradients.domain.program import auto_rounds, run_gradient_program
     from gradients.domain.grid import build_corner_source_grid
 
-from autofield import SnapshotRecorder
+from diffield import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 
