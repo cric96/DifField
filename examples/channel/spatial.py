@@ -16,7 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield import SimulationEngine, SnapshotRecorder, SpatialScenario, branch
+from diffield.sim import SimulationEngine, SnapshotRecorder, SpatialScenario
+from diffield.dsl import branch
 from diffield.dsl import field
 from diffield.utils import get_device
 from channel.core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes

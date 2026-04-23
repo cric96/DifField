@@ -2,8 +2,8 @@
 
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     collect_cast,
     gradient,
     gradient_cast,
@@ -13,8 +13,8 @@ from diffield import (
     mux,
     gather_min,
     scatter,
+    field,
 )
-from diffield.dsl import field
 from conftest import assert_finite_gradients, field_from_values, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,

@@ -22,7 +22,8 @@ except ImportError:
     mpatches = None
     plt = None
 
-from diffield import GridScenario, SimulationEngine, SnapshotRecorder, branch, gather, mux, scatter, iterate, gather_min
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
+from diffield.dsl import branch, gather, mux, scatter, iterate, gather_min
 from diffield.utils import get_device
 from diffield.dsl import field
 from shared.plotting import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers

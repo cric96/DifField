@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import mux, iterate
+from diffield.dsl import mux, iterate
 from diffield.layers import BranchLayer, MuxLayer, GatherLayer, IterateLayer
 from diffield.dsl import field
 from conftest import field_from_values, field_with_overrides, field_zeros

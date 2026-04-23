@@ -12,7 +12,9 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from diffield import DeviceContext, GridScenario, SimulationEngine, gradient, scatter
+from diffield import DeviceContext
+from diffield.sim import GridScenario, SimulationEngine
+from diffield.dsl import gradient, scatter
 from diffield.utils import get_device
 
 

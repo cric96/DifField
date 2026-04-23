@@ -27,7 +27,7 @@ except ImportError:
     from gradients.domain.program import auto_rounds, run_gradient_program
     from gradients.domain.grid import build_corner_source_grid
 
-from diffield import SnapshotRecorder
+from diffield.sim import SnapshotRecorder
 from shared.plotting import save_grid_simulation_gif
 
 

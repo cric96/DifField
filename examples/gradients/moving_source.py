@@ -14,18 +14,14 @@ sys.path.insert(0, str(ROOT / "examples"))
 import torch
 from diffield.utils import get_device
 
-from diffield import (
+from diffield.sim import (
     EventSchedule,
     GridScenario,
     ScheduledEvent,
     SimulationEngine,
     SnapshotRecorder,
-    mux,
-    scatter,
-    iterate,
-    gather_min,
 )
-from diffield.dsl import field
+from diffield.dsl import mux, scatter, iterate, gather_min, field
 from shared.plotting import save_grid_simulation_gif
 
 

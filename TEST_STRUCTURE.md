@@ -1,45 +1,37 @@
-# Autofield Test Structure
+# DifField Test Structure
 
-This document describes the organization and philosophy of the test suite for the `differentiable-field-calculus` (Autofield) repository, refactored to adhere to the highest software standards and Test-Driven Development (TDD) principles.
+## Overview
 
-## General Organization
+Tests are organized by **testing level** and **domain**. We use **pytest** as the test runner and **hypothesis** for property-based testing.
 
-Tests are logically divided based on the type of code being verified. We use **pytest** as the primary test runner and **hypothesis** for property-based testing. Tests are automatically tagged by pytest:
+## Test Levels
 
-- **Unit tests** (`pytest -m unit`): Located in the `tests/` directory, they verify the behavior of individual modules or framework components.
-- **Integration tests** (`pytest -m integration`): Located within `examples/` to ensure the framework works correctly on concrete use cases and complete training pipelines (boids, gradients, territories).
+| Level | Location | Marker | Purpose |
+|-------|----------|--------|---------|
+| Unit | `tests/` | `unit` | Verify individual modules and framework components in isolation |
+| Integration | `examples/` | `integration` | Validate complete training pipelines and real-world use cases |
 
-## `tests/` Directory Structure
+## Unit Test Domains
 
-1. `test_dsl_primitives.py`: Contains tests for aggregate computing primitives (`iterate`, `scatter`, `branch`, `mux`). The tests verify branch isolation, message passing, and the differentiability of all execution paths.
-2. `test_device_context.py`: Contains unit tests for decentralized (node-centric) execution, verifying that single-device execution exactly reproduces the state calculated globally.
-3. `test_building_blocks.py`: Exercises and ensures the functionality of high-level DSL layers such as `gradient_cast` and `collect_cast`.
-4. `test_layers_and_composition.py`: Verifies the Object-Oriented API based on `nn.Module` (e.g., `GatherLayer`, `IterateLayer`) and their correct interfacing with the functional DSL.
-5. `test_functional_api.py`: Contains tests for the bare functional backend, such as PyG scatter operators and property-based testing on vectorized functions.
-6. `test_spatial_sim.py`: Specific to continuous spatial simulation domains (kinematics, boundaries, mask generators, boids, radius graphs).
-7. `test_runtime_public_api.py`: Tests the simulation engine, integration of timed event scheduling, and snapshot data archiving.
+The `tests/` directory is split into subpackages, each covering a distinct layer of the framework:
 
-## Methodological Approach
+| Domain | What It Covers |
+|--------|----------------|
+| **aggregate** | DSL primitives, layers, composition, control flow, autodiff, field helpers, and naming conventions |
+| **device_context** | Decentralized (node-centric) execution — ensures single-device execution matches global computation |
+| **functional** | Low-level functional backend including PyG scatter operators |
+| **spatial** | Continuous spatial simulation: kinematics, boundaries, boids, radius graphs |
+| **runtime** | Simulation engine, event scheduling, and snapshot archiving |
 
-### TDD and Quality
-- **Isolation**: We use pytest fixtures located in `conftest.py` (e.g., `triangle_topology`, `line_topology`) to instantiate shared graphs, avoiding repetitive tests and boilerplate that mask the test's business logic. Fixtures keep tests DRY and clean.
-- **Parameterization**: Where possible, we use `@pytest.mark.parametrize` to validate multiple input configurations through the same basic assertion.
-- **Differentiability**: Much of the test suite evaluates that a pipeline produces a tensor whose `grad` is not `None` and is finite (`isfinite`), ensuring that no operation breaks the backpropagation chain.
+## Property-Based Testing
 
-### Border Case Handling
-The suite verifies the framework's behavior in problematic scenarios. In `conftest.py`, we have standardized some types of degenerate graphs:
-- `empty_topology`: A graph with zero nodes.
-- `isolated_topology`: A graph consisting only of disconnected nodes.
-- `disconnected_topology`: Multiple connected components sharing the same tensor to ensure messages do not erroneously "leak" between separate components.
-
-### Property-Based Testing
-Thanks to the integration of `hypothesis`, we apply property-based testing to critical functions (e.g., `scatter_aggr` in `test_functional_api.py`) by automatically generating thousands of random input instances, checking that the vectorized computation yields exactly the same result as a naive iterative loop in pure Python.
+Critical vectorized functions (e.g., `scatter_aggr`) are tested with **hypothesis**, which generates thousands of random inputs and verifies that optimized computations match naive pure-Python reference implementations.
 
 ## Execution
 
 ```bash
-# Run all tests (unit and integration)
-uv run pytest 
+# Run all tests
+uv run pytest
 
 # Run only unit tests
 uv run pytest -m unit
@@ -47,6 +39,6 @@ uv run pytest -m unit
 # Run only integration tests
 uv run pytest -m integration
 
-# Run fast tests ignoring any slow modules (if 'slow' marks are present in the future)
+# Skip slow tests
 uv run pytest -m "not slow"
 ```

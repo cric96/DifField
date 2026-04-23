@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     gradient,
     mux,
     scatter,
@@ -14,8 +14,9 @@ from diffield import (
     iterate,
     gather_min,
     gather_sum,
+    DeviceContext,
+    field,
 )
-from diffield.dsl import DeviceContext, field
 
 from .support import (
     ABS_TOL,

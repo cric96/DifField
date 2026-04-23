@@ -7,7 +7,7 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from diffield import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
+from diffield.functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
 from diffield.functional import scatter_min_by_first
 
 

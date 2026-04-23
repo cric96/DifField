@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     branch,
     mux,
     scatter,
@@ -15,8 +15,8 @@ from diffield import (
     gather_min,
     gather_max,
     gather_sum,
+    field,
 )
-from diffield.dsl import field
 from diffield.dsl.scattering import LinkField
 from conftest import field_from_values, field_with_overrides
 from tests.aggregate.support import (

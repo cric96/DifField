@@ -15,7 +15,7 @@ from diffield.utils import get_device
 
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield import (
+from diffield.sim import (
     EventSchedule,
     ScheduledEvent,
     SimulationEngine,
@@ -25,12 +25,8 @@ from diffield import (
     bounce_in_box,
     limit_speed,
     normalize_vectors,
-    mux,
-    scatter,
-    iterate,
-    gather_min,
 )
-from diffield.dsl import field
+from diffield.dsl import mux, scatter, iterate, gather_min, field
 from shared.plotting import (
     export_moving_gif,
     plot_moving_snapshots,

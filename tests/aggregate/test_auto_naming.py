@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import branch, scatter, iterate, gather_sum, gather_max
-from diffield.dsl import field
+from diffield.dsl import branch, scatter, iterate, gather_sum, gather_max, field
 from conftest import field_from_values, field_ones, field_of
 from tests.aggregate.support import ROUNDS, flags, values
 

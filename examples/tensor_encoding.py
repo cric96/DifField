@@ -19,8 +19,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     gather_max,
     gather_min,
     gather_sum,

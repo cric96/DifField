@@ -6,7 +6,8 @@ import time
 
 import torch
 
-from diffield import GridScenario, SimulationEngine, SnapshotRecorder, branch
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
+from diffield.dsl import branch
 from diffield.dsl import field
 
 try:

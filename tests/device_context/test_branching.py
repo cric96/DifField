@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import branch, gather_max, scatter, iterate, gather_sum
-from diffield.dsl import DeviceContext
+from diffield.dsl import branch, gather_max, scatter, iterate, gather_sum, DeviceContext
 
 from .support import (
     FALSE_BRANCH_VALUE,

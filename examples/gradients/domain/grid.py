@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import GridScenario
+from diffield.sim import GridScenario
 from diffield.utils import get_grid_distances
 
 

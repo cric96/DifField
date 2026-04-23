@@ -27,16 +27,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield import (
+from diffield.sim import (
     SpatialScenario,
     bounce_in_box,
-    gather_avg,
-    gather_sum,
-    iterate,
     limit_speed,
     normalize_vectors,
-    scatter,
 )
+from diffield.dsl import gather_avg, gather_sum, iterate, scatter
 from diffield.dsl import AggregateContext
 
 from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
