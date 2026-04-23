@@ -180,8 +180,3 @@ The `examples/` directory contains self-contained programs demonstrating both pu
 
 See `examples/README.md` for detailed usage and commands.
 
----
-
-## Further Reading
-
-- [Architecture & Design](docs/architecture.md) — UML diagrams and conceptual model
