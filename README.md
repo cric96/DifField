@@ -1,12 +1,19 @@
 <div align="center">
+    <img src="docs/dif-field.png" alt="DifField Architecture" width="25%"/>
     <h1>DifField</h1>
-    <img src="docs/dif-field.png" alt="DifField Architecture" width="30%"/>
+    <p><em>Differentiable Field Programming for Self-Organizing Systems</em></p>
 </div>
 
-**Differentiable Field Programming for Self-Organizing Systems**
+DifField is a PyTorch-based framework that brings **field programming** to the realm of differentiable programming.
+It lets you write spatial programs using high-level and composable operations — `iterate`, `scatter`, `gather` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
 
-DifField is a PyTorch-based framework that brings **field programming** to the realm of differentiable programming. 
-It lets you write spatial programs using high-level and composable operations -- `iterate`, `scatter`, `gather` -- that compile to message-passing on graphs and support end-to-end gradient-based learning.
+<div align="center">
+    <table><tr>
+        <td align="center"><img src="pics/boids_flocking.gif" width="280"/><br/><sub><b>Boids Flocking</b> — learned emergent behavior</sub></td>
+        <td align="center"><img src="pics/spatial_channel.gif" width="280"/><br/><sub><b>Spatial Channel</b> — routing around obstacles</sub></td>
+        <td align="center"><img src="pics/gradient_large.gif" width="280"/><br/><sub><b>Large-Scale Gradient</b> — 250K nodes diffusion</sub></td>
+    </tr></table>
+</div>
 
 ---
 
@@ -160,82 +167,6 @@ Field inputs are always explicit tensors,
 typically constructed with `field.of(...)`, `field.zeros()`, `field.inf()`, 
 or scenario helpers (e.g., for signals or markers).
 Neighborhood aggregation operates on `LinkField`, so write `gather_min(scatter(x))`, `gather_sum(scatter(x) * w)`, or `gather(scatter(x) + scatter_range(), aggr="min")`.
-
----
-
-## Simulation Layer
-
-The simulation layer provides reusable components for running aggregate programs over multiple rounds.
-
-### Components
-
-- **`Scenario`** — defines graph topology and helper builders (`GridScenario`, `SpatialScenario`, `FullyConnectedScenario`, `RelaxedRadiusScenario`)
-- **`SimulationEngine`** — steps aggregate programs round by round
-- **`EventSchedule`** + **`ScheduledEvent`** — deterministic round-based dynamic updates
-- **`SnapshotRecorder`** — structured capture of fields, exports, and outputs
-
-### Example: Dynamic Simulation with Events
-
-```python
-from diffield.sim import (
-    GridScenario, SimulationEngine, EventSchedule, ScheduledEvent,
-    SnapshotRecorder,
-)
-from diffield.dsl import iterate, scatter, mux, gather_min
-
-scenario = GridScenario(10, 10, connectivity=4)
-engine = SimulationEngine.from_scenario(scenario)
-
-source = scenario.marker(0, 0) ## Initial source position at (0, 0)
-
-def move_source(runtime):
-    runtime.signals["source"] = scenario.marker(9, 9)
-
-schedule = EventSchedule([
-    ScheduledEvent(round_idx=20, callback=move_source, name="move"),
-])
-
-recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds={0, 20, 39})
-
-def program(runtime):
-    src = runtime.signals["source"]
-    return iterate(
-        field.inf(),
-        lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
-        name="dist",
-    )
-
-output, runtime = engine.run(
-    rounds=40,
-    program=program,
-    signals={"source": source},
-    schedule=schedule,
-    recorder=recorder,
-)
-```
-
----
-
-## Spatial Neighborhood Range
-
-For spatial scenarios, `edge_weight` can represent the geometric distance between neighbouring devices. 
-Use `edge_weight_mode="distance"` when building a `SpatialScenario` to carry Euclidean edge lengths instead of unit hop weights.
-
-```python
-from diffield.sim import SpatialScenario
-from diffield.dsl import gradient
-
-scenario = SpatialScenario(positions=positions, edge_radius=0.2, edge_weight_mode="distance")
-
-# Uses geometric edge distances by default
-dist = gradient(source, name="dist")
-```
-
-The convenience operator `gradient(source)` uses the range sensor by default, keeping hop-based programs explicit while allowing geometric graphs to use distances consistent with node positions.
-
-When you provide a custom edge cost to `gradient`, `gradient_cast`, `broadcast`, or `collect_cast`, pass it as a neighborhood expression such as `scatter(weight_field)` or `scatter_range()`.
-
----
 
 ## Examples
 

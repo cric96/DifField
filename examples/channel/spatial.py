@@ -64,8 +64,8 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Channel with fixed random nodes and obstacles"
     )
-    parser.add_argument("--num-nodes", type=int, default=150)
-    parser.add_argument("--rounds", type=int, default=100)
+    parser.add_argument("--num-nodes", type=int, default=10000)
+    parser.add_argument("--rounds", type=int, default=200)
     parser.add_argument(
         "--radius", type=float, default=None,
         help="Connectivity radius (auto-computed if not set)",
