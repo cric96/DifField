@@ -7,7 +7,7 @@
 DifField is a PyTorch-based framework that brings **field programming** to the realm of differentiable programming.
 It lets you write spatial programs using high-level and composable operations — `iterate`, `scatter`, `gather` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
 
-<div align="center">
+<div align="center" width="100%">
     <table><tr>
         <td align="center"><img src="pics/boids_flocking.gif" width="280"/><br/><sub><b>Boids Flocking</b> — learned emergent behavior</sub></td>
         <td align="center"><img src="pics/spatial_channel.gif" width="280"/><br/><sub><b>Spatial Channel</b> — routing around obstacles</sub></td>
