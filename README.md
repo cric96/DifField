@@ -177,10 +177,6 @@ The `examples/` directory contains self-contained programs demonstrating both pu
 | **Gradients** | Self-healing distance fields on static and dynamic topologies. Includes learnable hop-cost parameters, attention-based aggregation, and moving-node scenarios |
 | **Boids** | Flocking control via aggregate programming. Learn separation, alignment, and cohesion weights through imitation learning |
 | **Channel** | Shortest-path routing around obstacles using composite distance fields, with scaling benchmarks |
-| **Collects** | Gradient-cast payload collection on various topologies (grid, k-NN, fully connected) |
-| **Tensor Encoding** | Replicates the paper's four-stage computational cycle with a dense tensor comparison |
-
-Each learning-based example follows a clean structure: `domain/` for pure aggregate programs, `model/` for PyTorch modules, and `training/` for optimization loops. Results (GIFs, plots, checkpoints) are saved in `generated/`.
 
 See `examples/README.md` for detailed usage and commands.
 
