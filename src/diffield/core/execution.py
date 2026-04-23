@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
-from torch import Tensor
+if TYPE_CHECKING:
+    from torch import Tensor
 
 from ..pyg_backend import Data
 from .context import RoundContext
@@ -27,6 +29,8 @@ class AggregateContext:
             data_edge_weight = edge_weight
             if data_edge_weight is None and hasattr(data, "edge_attr"):
                 data_edge_weight = data.edge_attr
+            if data.edge_index is None:
+                raise ValueError("PyG Data must define edge_index for AggregateContext")
             self._ctx = RoundContext(
                 data.edge_index, int(data.num_nodes), edge_weight=data_edge_weight
             )
@@ -42,9 +46,8 @@ class AggregateContext:
     @contextmanager
     def round(self):
         """Execute one round of the aggregate program."""
-        with with_context(self._ctx):
-            with self._ctx.round():
-                yield self._ctx
+        with with_context(self._ctx), self._ctx.round():
+            yield self._ctx
 
     def reset(self) -> None:
         self._ctx.reset()

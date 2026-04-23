@@ -4,17 +4,20 @@ from __future__ import annotations
 
 import hashlib
 import inspect
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
+
+    from .scattering import LinkField
 
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
 from ..core import RoundContext, current_context, with_context
 from ..core.mode import get_default_mode
 from ..functional import field_where
-from .scattering import LinkField
 
 
 class _LambdaModule(nn.Module):
@@ -56,7 +59,7 @@ def _auto_name(kind: str, **kwargs: object) -> str:
                 f"{code.co_filename}:{frame.f_lineno}:"
                 f"{code.co_name}:{code_id}:{param_key}"
             )
-            short_hash = hashlib.md5(key.encode()).hexdigest()[:8]
+            short_hash = hashlib.sha256(key.encode()).hexdigest()[:8]
             return f"{kind}_{short_hash}"
         frame = frame.f_back
     return f"{kind}_fallback"
@@ -64,7 +67,7 @@ def _auto_name(kind: str, **kwargs: object) -> str:
 
 def iterate(
     init: Tensor,
-    fn: Callable[[Tensor], Tensor],
+    fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | Callable[[Tensor], Tensor],
     *,
     name: str | None = None,
 ) -> Tensor:
@@ -77,7 +80,7 @@ def iterate(
     Can be called as ``iterate(init, fn)`` for auto-naming or
     ``iterate(init, fn, name="my_name")`` for explicit naming.
     """
-    from ..layers import IterateLayer
+    from ..layers import IterateLayer  # noqa: PLC0415
 
     resolved_name = name if name is not None else _auto_name("r")
 
@@ -101,8 +104,8 @@ def gather(
     When a tag is present, the source field is exported in the context and can
     be overridden by runtime message overrides.
     """
-    from ..layers import GatherLayer
-    from ..core import current_context
+    from ..core import current_context  # noqa: PLC0415
+    from ..layers import GatherLayer  # noqa: PLC0415
 
     ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
@@ -139,7 +142,7 @@ def branch(
     snapshot/restore semantics before merging. ``reset_states`` values must be
     node field tensors.
     """
-    from ..layers import BranchLayer
+    from ..layers import BranchLayer  # noqa: PLC0415
 
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_BRANCH
@@ -187,7 +190,7 @@ def mid() -> Tensor:
     )
 
 
-class field:
+class field:  # noqa: N801
     """Context-aware constructors for node field tensors."""
 
     @staticmethod
@@ -205,11 +208,13 @@ class field:
     @staticmethod
     def inf() -> Tensor:
         return const(float("inf"))
-    
+
     # TODO add description here
-    
+
     @staticmethod
-    def with_overrides(field: Tensor, overrides: tuple[int, float]) -> Tensor:
+    def with_overrides(
+        field: Tensor, overrides: Iterable[tuple[int, float]]
+    ) -> Tensor:
         for node_id, value in overrides:
             field[node_id] = value
         return field
@@ -222,6 +227,7 @@ class field:
         tensor = torch.as_tensor(values, dtype=torch.float32, device=ctx.edge_index.device)
         if tensor.shape[0] != ctx.num_nodes:
             raise ValueError(
-                f"Length of values ({tensor.shape[0]}) does not match number of nodes ({ctx.num_nodes})"
+                f"Length of values ({tensor.shape[0]}) does not match "
+                f"number of nodes ({ctx.num_nodes})"
             )
         return tensor

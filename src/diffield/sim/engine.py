@@ -3,15 +3,17 @@
 from __future__ import annotations
 
 import time
-from typing import Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
+
+if TYPE_CHECKING:
+    from .recording import SnapshotRecorder
 
 from ..core import AggregateContext
 from ..pyg_backend import maybe_make_data
 from .events import EventSchedule, SimulationRuntime
-from .recording import SnapshotRecorder
-
 
 ProgramStep = Callable[[SimulationRuntime], torch.Tensor]
 
@@ -26,7 +28,7 @@ class SimulationEngine:
         self.scenario = None
 
     @classmethod
-    def from_scenario(cls, scenario) -> "SimulationEngine":
+    def from_scenario(cls, scenario) -> SimulationEngine:
         engine = cls(scenario.edge_index, scenario.num_nodes)
         if hasattr(scenario, "edge_weight"):
             engine.ctx._ctx.edge_weight = scenario.edge_weight

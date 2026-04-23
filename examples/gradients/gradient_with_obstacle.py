@@ -7,13 +7,12 @@ import argparse
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import numpy as np
-import torch
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
 
 try:
     import matplotlib.patches as mpatches
@@ -22,11 +21,16 @@ except ImportError:
     mpatches = None
     plt = None
 
-from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
-from diffield.dsl import branch, gather, mux, scatter, iterate, gather_min
-from diffield.utils import get_device
-from diffield.dsl import field
-from shared.plotting import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers
+from shared.plotting import (  # noqa: E402
+    draw_markers,
+    draw_obstacles,
+    save_grid_simulation_gif,
+    to_grid,
+)
+
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():
@@ -75,8 +79,8 @@ def run_gradient_with_obstacle(
             iterate(
                 field.inf(),
                 lambda dist_old: mux(
-                    source, 
-                    field.of(0.0), 
+                    source,
+                    field.of(0.0),
                     gather_min(scatter(dist_old + weight_tensor * obstacle_tensor_with_inf))
                 ),
                 name="dist"
@@ -93,13 +97,19 @@ def run_gradient_with_obstacle(
     return output
 
 
-def plot_setup(rows: int, cols: int, src_pos: tuple[int, int], obstacle: torch.Tensor, viz_prefix: str = "generated/gradient_obstacle"):
+def plot_setup(
+    rows: int,
+    cols: int,
+    src_pos: tuple[int, int],
+    obstacle: torch.Tensor,
+    viz_prefix: str = "generated/gradient_obstacle",
+):
     """Plot the initial grid setup with source and obstacles."""
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping setup plot")
         return
 
-    fig, ax = plt.subplots(figsize=(7, 7))
+    _fig, ax = plt.subplots(figsize=(7, 7))
     grid_rgb = np.full((rows, cols, 3), 0.92)
     obstacle_cpu = obstacle.detach().cpu().numpy()
 
@@ -147,7 +157,7 @@ def plot_final_field(
     if plt is None:
         return
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    _fig, ax = plt.subplots(figsize=(8, 7))
     grid = to_grid(dist, rows, cols, obstacle)
     im = ax.imshow(grid, cmap="viridis", interpolation="nearest")
 
@@ -167,7 +177,10 @@ def plot_final_field(
                 value = dist_cpu[node_id].item()
                 if np.isfinite(value):
                     color = "white" if value > 15 else "black"
-                    ax.text(col, row, f"{value:.0f}", ha="center", va="center", fontsize=5, color=color)
+                    ax.text(
+                        col, row, f"{value:.0f}",
+                        ha="center", va="center", fontsize=5, color=color,
+                    )
 
     plt.tight_layout()
     output_path = f"{viz_prefix}_final.png"
@@ -232,7 +245,7 @@ def main():
     if not args.no_gif:
         recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True)
 
-    print(f"=== Gradient with Obstacles ===")
+    print("=== Gradient with Obstacles ===")
     print(f"Grid: {args.rows}x{args.cols}   Source: {src_pos}")
     print(f"Wall: column {args.cols // 2} (with gap at bottom)")
     print(f"Device: {device}")
@@ -248,7 +261,10 @@ def main():
     # Visualizations
     if not args.no_viz:
         plot_setup(args.rows, args.cols, src_pos, obstacle, viz_prefix=args.viz_prefix)
-        plot_final_field(args.rows, args.cols, dist, src_pos, obstacle, args.rounds, viz_prefix=args.viz_prefix)
+        plot_final_field(
+            args.rows, args.cols, dist, src_pos, obstacle,
+            args.rounds, viz_prefix=args.viz_prefix,
+        )
 
         if recorder and recorder.records:
             # Filter snapshots for evolution plot
@@ -257,7 +273,10 @@ def main():
             if not filtered_records:
                 filtered_records = recorder.records
 
-            plot_evolution(args.rows, args.cols, filtered_records, src_pos, obstacle, viz_prefix=args.viz_prefix)
+            plot_evolution(
+                args.rows, args.cols, filtered_records, src_pos,
+                obstacle, viz_prefix=args.viz_prefix,
+            )
 
             # Generate GIF
             if not args.no_gif:

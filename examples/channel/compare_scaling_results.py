@@ -2,14 +2,14 @@
 import argparse
 import csv
 from pathlib import Path
-from typing import Any
 
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
+
 
 def load_aggregated(csv_path: Path) -> dict[tuple[int, int], dict[str, float]]:
     data = {}
-    with open(csv_path, "r", encoding="utf-8") as f:
+    with open(csv_path, encoding="utf-8") as f:
         reader = csv.DictReader(f)
         for row in reader:
             key = (int(row["num_nodes"]), int(row["k_neighbors"]))
@@ -20,11 +20,14 @@ def load_aggregated(csv_path: Path) -> dict[tuple[int, int], dict[str, float]]:
             }
     return data
 
-def main():
+def main():  # noqa: PLR0915
     parser = argparse.ArgumentParser(description="Compare CPU vs CUDA scaling benchmark results")
     parser.add_argument("--cpu-csv", type=str, required=True, help="Path to CPU aggregated.csv")
     parser.add_argument("--cuda-csv", type=str, required=True, help="Path to CUDA aggregated.csv")
-    parser.add_argument("--out-dir", type=str, default="generated/results/comparison", help="Output directory")
+    parser.add_argument(
+        "--out-dir", type=str, default="generated/results/comparison",
+        help="Output directory",
+    )
     args = parser.parse_args()
 
     cpu_path = Path(args.cpu_csv)
@@ -58,22 +61,26 @@ def main():
     fig, ax = plt.subplots(figsize=(10, 8))
     fig.patch.set_facecolor("#ffffff")
     im = ax.imshow(speedup_matrix.T, cmap="RdYlGn", origin="lower", aspect="auto")
-    
+
     ax.set_xticks(np.arange(len(node_counts)))
     ax.set_xticklabels([str(n) for n in node_counts])
     ax.set_yticks(np.arange(len(k_values)))
     ax.set_yticklabels([str(k) for k in k_values])
-    
+
     ax.set_xlabel("Number of nodes")
     ax.set_ylabel("k nearest neighbors")
     # ax.set_title("Speedup (CPU Time / CUDA Time)")
-    
+
     # Add text annotations
     for i in range(len(node_counts)):
         for j in range(len(k_values)):
             val = speedup_matrix[i, j]
             if not np.isnan(val):
-                ax.text(i, j, f"{val:.1f}x", ha="center", va="center", color="black" if 0.5 < val < 2.0 else "white", fontsize=14)
+                ax.text(
+                    i, j, f"{val:.1f}x", ha="center", va="center",
+                    color="black" if 0.5 < val < 2.0 else "white",
+                    fontsize=14,
+                )
 
     fig.colorbar(im, ax=ax, label="Speedup factor")
     plt.tight_layout()
@@ -103,7 +110,10 @@ def main():
     norm = plt.Normalize(vmin=1.0, vmax=max(2.0, top.max()))
     colors = cmap(norm(top))
 
-    ax.bar3d(x - width/2, y - depth/2, bottom, width, depth, top, shade=True, color=colors, edgecolor='black', linewidth=0.1)
+    ax.bar3d(
+        x - width / 2, y - depth / 2, bottom, width, depth, top,
+        shade=True, color=colors, edgecolor="black", linewidth=0.1,
+    )
 
     # ax.set_title("CPU / CUDA Speedup", fontsize=20, pad=20)
     ax.set_xlabel("k neighbors", fontsize=20, labelpad=15)
@@ -114,7 +124,7 @@ def main():
     ax.set_xticklabels([str(k) for k in k_values], fontsize=16)
     ax.set_yticks(_y)
     ax.set_yticklabels([str(n) for n in node_counts], fontsize=16)
-    
+
     # Force Z axis to show the full range clearly
     ax.set_zlim(0, max(2.0, top.max() * 1.1))
     ax.tick_params(axis='z', labelsize=16)
@@ -127,7 +137,7 @@ def main():
     # cbar.set_label("Speedup Factor", fontsize=16)
 
     ax.view_init(elev=30, azim=-60)
-    
+
     # Use bbox_inches='tight' to ensure labels are included in the saved image.
     # Aggressive subplots_adjust often clips 3D labels.
     plt.savefig(out_dir / "speedup_3d_bar.png", dpi=160, bbox_inches='tight', pad_inches=0.2)
@@ -137,9 +147,9 @@ def main():
     for k in k_values:
         fig, ax = plt.subplots(figsize=(10, 8))
         fig.patch.set_facecolor("#ffffff")
-        
+
         relevant_nodes = sorted([n_val for (n_val, k_val) in keys if k_val == k])
-        
+
         def get_series(data_map, k_val, nodes):
             means = np.array([data_map[(n, k_val)]["mean"] for n in nodes])
             stds = np.array([data_map[(n, k_val)]["std"] for n in nodes])
@@ -150,24 +160,36 @@ def main():
 
         cpu_means, cpu_cis = get_series(cpu_data, k, relevant_nodes)
         cuda_means, cuda_cis = get_series(cuda_data, k, relevant_nodes)
-        
-        ax.plot(relevant_nodes, cpu_means, marker='o', label="CPU Runtime", color="#d62728", linewidth=4, markersize=10)
-        ax.fill_between(relevant_nodes, cpu_means - cpu_cis, cpu_means + cpu_cis, color="#d62728", alpha=0.15)
-        
-        ax.plot(relevant_nodes, cuda_means, marker='s', label="CUDA Runtime", color="#1f77b4", linewidth=4, markersize=10)
-        ax.fill_between(relevant_nodes, cuda_means - cuda_cis, cuda_means + cuda_cis, color="#1f77b4", alpha=0.15)
-        
+
+        ax.plot(
+            relevant_nodes, cpu_means, marker="o", label="CPU Runtime",
+            color="#d62728", linewidth=4, markersize=10,
+        )
+        ax.fill_between(
+            relevant_nodes, cpu_means - cpu_cis, cpu_means + cpu_cis,
+            color="#d62728", alpha=0.15,
+        )
+
+        ax.plot(
+            relevant_nodes, cuda_means, marker="s", label="CUDA Runtime",
+            color="#1f77b4", linewidth=4, markersize=10,
+        )
+        ax.fill_between(
+            relevant_nodes, cuda_means - cuda_cis, cuda_means + cuda_cis,
+            color="#1f77b4", alpha=0.15,
+        )
+
         ax.set_xscale("log", base=2)
         ax.set_xticks(relevant_nodes)
         ax.set_xticklabels([str(n) for n in relevant_nodes], fontsize=16)
         ax.tick_params(axis='y', labelsize=16)
-        
+
         ax.set_xlabel("Number of nodes", fontsize=24, labelpad=15)
         ax.set_ylabel("Mean runtime (s)", fontsize=24, labelpad=15)
         # ax.set_title(f"CPU vs CUDA Scaling Comparison (k={k})", fontsize=20, pad=20)
         ax.legend(fontsize=18)
         ax.grid(True, which="both", ls="-", alpha=0.2)
-           
+
         filename = f"comparison_k{k}.png"
         plt.tight_layout()
         plt.savefig(out_dir / filename, dpi=160)

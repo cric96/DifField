@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from ..core import RoundContext, current_context
 from .helpers import edge_sources_targets, ensure_field
@@ -48,8 +51,8 @@ class LinkField:
         return f"<{base}>"
 
     def full_repr(self, max_nodes: int = 8) -> str:
-        """Evaluate the expression in the current context and return a visual grid representation of the messages."""
-        from ..core import context_stack
+        """Evaluate in current context and return a visual grid representation."""
+        from ..core import context_stack  # noqa: PLC0415
 
         if not context_stack():
             return f"<{self.__str__()} (no active context for evaluation)>"
@@ -70,7 +73,7 @@ class LinkField:
             lines = [
                 f"{self.__str__()} evaluated to edge tensor:",
                 f"  Shape: [{shape_desc}]",
-                f"  Message Grid (Row=Source, Col=Target):",
+                "  Message Grid (Row=Source, Col=Target):",
             ]
 
             disp_nodes = min(num_nodes, max_nodes)
@@ -80,8 +83,8 @@ class LinkField:
 
             # Fill the grid
             for i in range(edge_index.shape[1]):
-                src = edge_index[0, i].item()
-                tgt = edge_index[1, i].item()
+                src = int(edge_index[0, i].item())
+                tgt = int(edge_index[1, i].item())
 
                 if src < disp_nodes and tgt < disp_nodes:
                     v = val[i]
@@ -103,10 +106,10 @@ class LinkField:
 
             # Format header
             header_cols = " | ".join(
-                f"{str(c):>{col_widths[c]}}" for c in range(disp_nodes)
+                f"{c!s:>{col_widths[c]}}" for c in range(disp_nodes)
             )
             lines.append(f"      tgt | {header_cols}")
-            lines.append(f"  src     |")
+            lines.append("  src     |")
 
             sep_line = "  --------+" + "-" * (len(header_cols) + 2)
             lines.append(sep_line)
@@ -120,7 +123,8 @@ class LinkField:
 
             if num_nodes > max_nodes:
                 lines.append(
-                    f"  ... and {num_nodes - max_nodes} more nodes not shown. (Showing top-left {max_nodes}x{max_nodes} corner)"
+                    f"  ... and {num_nodes - max_nodes} more nodes not shown. "
+                    f"(Showing top-left {max_nodes}x{max_nodes} corner)"
                 )
 
             return "\n".join(lines)
@@ -138,10 +142,10 @@ class LinkField:
 
     def _binary(
         self,
-        other: float | Tensor | "LinkField",
+        other: float | Tensor | LinkField,
         op: Callable[[Tensor, Tensor], Tensor],
         op_str: str,
-    ) -> "LinkField":
+    ) -> LinkField:
         other_expr = as_scatter_expr(other)
         return LinkField(
             lambda ctx, edge_index, edge_weight: op(
@@ -155,10 +159,10 @@ class LinkField:
 
     def _rbinary(
         self,
-        other: float | Tensor | "LinkField",
+        other: float | Tensor | LinkField,
         op: Callable[[Tensor, Tensor], Tensor],
         op_str: str,
-    ) -> "LinkField":
+    ) -> LinkField:
         other_expr = as_scatter_expr(other)
         return LinkField(
             lambda ctx, edge_index, edge_weight: op(
@@ -170,31 +174,31 @@ class LinkField:
             _repr=f"({other_expr} {op_str} {self})",
         )
 
-    def __add__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __add__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._binary(other, torch.add, "+")
 
-    def __radd__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __radd__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._rbinary(other, torch.add, "+")
 
-    def __sub__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __sub__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._binary(other, torch.sub, "-")
 
-    def __rsub__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __rsub__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._rbinary(other, torch.sub, "-")
 
-    def __mul__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __mul__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._binary(other, torch.mul, "*")
 
-    def __rmul__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __rmul__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._rbinary(other, torch.mul, "*")
 
-    def __truediv__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __truediv__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._binary(other, torch.div, "/")
 
-    def __rtruediv__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __rtruediv__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._rbinary(other, torch.div, "/")
 
-    def __neg__(self) -> "LinkField":
+    def __neg__(self) -> LinkField:
         return LinkField(
             lambda ctx, edge_index, edge_weight: (
                 -self.evaluate(
@@ -206,7 +210,7 @@ class LinkField:
             _repr=f"(-{self})",
         )
 
-    def abs(self) -> "LinkField":
+    def abs(self) -> LinkField:
         return LinkField(
             lambda ctx, edge_index, edge_weight: (
                 torch.abs(self.evaluate(
@@ -220,10 +224,10 @@ class LinkField:
 
     def _comparison(
         self,
-        other: float | Tensor | "LinkField",
+        other: float | Tensor | LinkField,
         op: Callable[[Tensor, Tensor], Tensor],
         op_str: str,
-    ) -> "LinkField":
+    ) -> LinkField:
         other_expr = as_scatter_expr(other)
         return LinkField(
             lambda ctx, edge_index, edge_weight: op(
@@ -235,24 +239,24 @@ class LinkField:
             _repr=f"({self} {op_str} {other_expr})",
         )
 
-    def __le__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __le__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._comparison(other, torch.le, "<=")
 
-    def __lt__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __lt__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._comparison(other, torch.lt, "<")
 
-    def __ge__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __ge__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._comparison(other, torch.ge, ">=")
 
-    def __gt__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __gt__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._comparison(other, torch.gt, ">")
 
     def _logical(
         self,
-        other: float | Tensor | "LinkField",
+        other: float | Tensor | LinkField,
         op: Callable[[Tensor, Tensor], Tensor],
         op_str: str,
-    ) -> "LinkField":
+    ) -> LinkField:
         other_expr = as_scatter_expr(other)
         return LinkField(
             lambda ctx, edge_index, edge_weight: op(
@@ -264,13 +268,13 @@ class LinkField:
             _repr=f"({self} {op_str} {other_expr})",
         )
 
-    def __and__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __and__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._logical(other, torch.logical_and, "&")
 
-    def __or__(self, other: float | Tensor | "LinkField") -> "LinkField":
+    def __or__(self, other: float | Tensor | LinkField) -> LinkField:
         return self._logical(other, torch.logical_or, "|")
 
-    def pointwise(self) -> "LinkField":
+    def pointwise(self) -> LinkField:
         """Treat this scalar field as a factor for pointwise multiplication with vectors."""
         return LinkField(
             lambda ctx, edge_index, edge_weight: self.evaluate(
@@ -279,7 +283,7 @@ class LinkField:
             _repr=f"pointwise({self})",
         )
 
-    def unsqueeze(self, dim: int) -> "LinkField":
+    def unsqueeze(self, dim: int) -> LinkField:
         return LinkField(
             lambda ctx, edge_index, edge_weight: self.evaluate(
                 ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
@@ -287,7 +291,7 @@ class LinkField:
             _repr=f"unsqueeze({self}, {dim})",
         )
 
-    def norm(self, dim: int = -1, keepdim: bool = False) -> "LinkField":
+    def norm(self, dim: int = -1, keepdim: bool = False) -> LinkField:
         return LinkField(
             lambda ctx, edge_index, edge_weight: self.evaluate(
                 ctx=ctx, edge_index=edge_index, edge_weight=edge_weight

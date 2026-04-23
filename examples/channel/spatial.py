@@ -16,12 +16,21 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield.sim import SimulationEngine, SnapshotRecorder, SpatialScenario
-from diffield.dsl import branch
-from diffield.dsl import field
-from diffield.utils import get_device
-from channel.core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes
-from shared.plotting.common import LineCollection, plt, save_gif
+from channel.core import (  # noqa: E402
+    CHANNEL_THRESHOLD,
+    build_snapshot_payloads,
+    channel_body,
+    count_channel_nodes,
+)
+from shared.plotting.common import LineCollection, plt, save_gif  # noqa: E402
+
+from diffield.dsl import branch, field  # noqa: E402
+from diffield.sim import (  # noqa: E402
+    SimulationEngine,
+    SnapshotRecorder,
+    SpatialScenario,
+)
+from diffield.utils import get_device  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -57,7 +66,10 @@ def parse_args():
     )
     parser.add_argument("--num-nodes", type=int, default=150)
     parser.add_argument("--rounds", type=int, default=100)
-    parser.add_argument("--radius", type=float, default=None, help="Connectivity radius (auto-computed if not set)")
+    parser.add_argument(
+        "--radius", type=float, default=None,
+        help="Connectivity radius (auto-computed if not set)",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--source", type=int, default=-1)
     parser.add_argument("--dest", type=int, default=-1)
@@ -97,7 +109,7 @@ def _edge_segments(
             (float(positions[src, 0]), float(positions[src, 1])),
             (float(positions[tgt, 0]), float(positions[tgt, 1])),
         )
-        for src, tgt in zip(edge_index[0], edge_index[1])
+        for src, tgt in zip(edge_index[0], edge_index[1], strict=False)
     ]
 
 
@@ -245,7 +257,10 @@ def build_record_rounds(total_rounds: int, requested_every: int) -> set[int]:
     }
 
 
-def _finalize_axes(ax, title: str, *, legend_loc: str = "upper left", show_legend: bool = False) -> None:
+def _finalize_axes(
+    ax, title: str, *, legend_loc: str = "upper left",
+    show_legend: bool = False,
+) -> None:
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
@@ -444,7 +459,7 @@ def create_obstacle_mask(
     y_coords = positions[:, 1]
 
     ratio = float(obstacle_ratio)
-    wall_count = max(2, min(6, 2 + int(round(ratio * 12.0))))
+    wall_count = max(2, min(6, 2 + round(ratio * 12.0)))
     wall_width = 0.04
     gap_size = 0.02
     margin = 0.02
@@ -750,7 +765,9 @@ def export_channel_gif(
         print(f"Failed to export GIF: {exc}")
 
 
-def _select_destination_index(scenario: SpatialScenario, source_idx: int, requested_dest: int) -> int:
+def _select_destination_index(
+    scenario: SpatialScenario, source_idx: int, requested_dest: int,
+) -> int:
     if requested_dest != -1:
         return requested_dest
 
@@ -780,7 +797,7 @@ def _select_source_index(positions: torch.Tensor, requested_source: int) -> int:
     return source_idx
 
 
-def main():
+def main():  # noqa: PLR0915
     args = parse_args()
     device = get_device(args.device)
     torch.manual_seed(args.seed)
@@ -833,7 +850,7 @@ def main():
         )
 
     start_time = time.perf_counter()
-    output, runtime = engine.run(
+    _output, _runtime = engine.run(
         rounds=args.rounds,
         program=program,
         signals={"source": source, "dest": dest, "obstacle": obstacle},
@@ -843,8 +860,8 @@ def main():
 
     snapshots = build_snapshot_payloads(recorder.records, num_nodes=args.num_nodes)
     values_by_round = {round_idx: payload["channel"] for round_idx, payload in snapshots.items()}
-    positions_by_round = {round_idx: scenario.positions for round_idx in snapshots}
-    edge_index_by_round = {round_idx: scenario.edge_index for round_idx in snapshots}
+    positions_by_round = dict.fromkeys(snapshots, scenario.positions)
+    edge_index_by_round = dict.fromkeys(snapshots, scenario.edge_index)
 
     final_step = args.rounds - 1
     final = snapshots.get(final_step, snapshots[max(snapshots)])

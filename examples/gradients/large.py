@@ -19,16 +19,17 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
-from shared.plotting import save_grid_simulation_gif
+from shared.plotting import save_grid_simulation_gif  # noqa: E402
+
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
 
 try:
-    from .domain.program import auto_rounds, run_gradient_program
+    from .domain.program import auto_rounds, run_gradient_program  # noqa: F401
 except ImportError:
-    from gradients.domain.program import auto_rounds, run_gradient_program
+    from gradients.domain.program import auto_rounds
 
-from diffield.dsl import mux, scatter, iterate, scatter_range, gather_min, field
-from diffield.utils import get_device
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():
@@ -118,7 +119,7 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         .view(args.rows, args.cols)
         .clone()
         for round_idx, payload in recorder.records.items()
-        if not (not args.no_gif) or (round_idx + 1) in record_at
+        if args.no_gif or (round_idx + 1) in record_at
     }
 
     if device.type == "cuda":
@@ -168,7 +169,8 @@ def main():
     device = get_device(args.device)
 
     print(
-        f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows * args.cols} nodes) ==="
+        f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, "
+        f"{args.rows * args.cols} nodes) ==="
     )
     print(f"Device: {device}")
 
@@ -178,7 +180,7 @@ def main():
     graph_time = time.time() - start_time
     print(f"Graph built in {graph_time:.4f}s (Edges: {scenario.edge_index.shape[1]})")
 
-    output, weight, snapshots, _, rounds = run_large_gradient(
+    output, weight, snapshots, _, _rounds = run_large_gradient(
         args, scenario, source, device
     )
 

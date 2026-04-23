@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import math
-from pathlib import Path
+from typing import TYPE_CHECKING
+
 import numpy as np
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 try:
     import matplotlib.pyplot as plt
@@ -16,7 +20,7 @@ def _finite_pairs(xs: list[float], ys: list[float]) -> tuple[list[float], list[f
     """Filter pairs of values to include only finite ones."""
     out_x = []
     out_y = []
-    for x_val, y_val in zip(xs, ys):
+    for x_val, y_val in zip(xs, ys, strict=False):
         if math.isfinite(y_val):
             out_x.append(x_val)
             out_y.append(y_val)
@@ -220,7 +224,7 @@ def plot_parameter_recovery(
     ax.legend()
     ax.grid(axis="y", alpha=0.25)
 
-    for index, name in enumerate(names):
+    for index, _name in enumerate(names):
         teacher_val = teacher_vals[index]
         learned_val = learned_vals[index]
         rel_err = abs(learned_val - teacher_val) / max(abs(teacher_val), 1e-9)

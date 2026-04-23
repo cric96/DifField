@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
+
 import torch
+
+from diffield.dsl import AggregateContext, field, gather_min, iterate, mux, scatter
 from diffield.sim import SpatialScenario
-from diffield.dsl import mux, scatter, iterate, gather_min
-from diffield.dsl import AggregateContext, field
+
 from ..domain.moving_logic import MAX_DIST
 
 try:
@@ -20,7 +22,7 @@ if TYPE_CHECKING:
 
 @torch.no_grad()
 def render_moving_gradient_evolution(
-    model: "LearnableMovingGradient",
+    model: LearnableMovingGradient,
     rounds: int,
     output_path: str,
     title: str = "Moving Nodes Gradient Evolution",

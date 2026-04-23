@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
+
 from ..domain.grid import build_corner_source_grid
 from ..domain.program import auto_rounds
 from ..model.distance_model import GradientModel

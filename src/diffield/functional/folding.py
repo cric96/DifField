@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import operator
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from ..constants import FILL_VALUE_MIN, LOG_EPSILON
 from ..pyg_backend import scatter_hard
@@ -80,7 +83,9 @@ def scatter_min_by_first(
     logits = torch.where(finite, logits_raw, torch.full_like(cost, float("-inf")))
     bucket_max = scatter_hard(logits, index, num_nodes, aggr="max", fill_value=float("-inf"))
     safe_bucket_max = torch.where(finite, bucket_max[index], torch.zeros_like(cost))
-    shifted = torch.where(finite, logits_raw - safe_bucket_max, torch.full_like(cost, float("-inf")))
+    shifted = torch.where(
+        finite, logits_raw - safe_bucket_max, torch.full_like(cost, float("-inf"))
+    )
     score = torch.where(finite, shifted.exp(), torch.zeros_like(cost))
     score_sum = scatter_hard(score, index, num_nodes, aggr="sum", fill_value=0.0)
 
@@ -163,7 +168,7 @@ def _expand_bucket_init(
     device: torch.device,
     dtype: torch.dtype,
 ) -> Tensor:
-    full_shape = (num_nodes,) + feature_shape
+    full_shape = (num_nodes, *feature_shape)
 
     if value is None:
         fill = torch.zeros(full_shape, device=device, dtype=dtype)

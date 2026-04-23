@@ -21,13 +21,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield.sim import SimulationEngine, SpatialScenario
-from diffield.dsl import branch
-from diffield.dsl import field
-from diffield.utils import get_device
-from channel.core import CHANNEL_THRESHOLD, channel_body
-from channel.spatial import create_obstacle_mask
-from shared.training import parse_int_csv
+from channel.core import CHANNEL_THRESHOLD, channel_body  # noqa: E402
+from channel.spatial import create_obstacle_mask  # noqa: E402
+from shared.training import parse_int_csv  # noqa: E402
+
+from diffield.dsl import branch, field  # noqa: E402
+from diffield.sim import SimulationEngine, SpatialScenario  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 try:
     import matplotlib.pyplot as plt
@@ -168,7 +168,10 @@ def aggregate_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     aggregated: list[dict[str, Any]] = []
     for (num_nodes, k_neighbors), rows in sorted(grouped.items()):
-        successful = [row for row in rows if row["status"] == "ok" and math.isfinite(float(row["time_seconds"]))]
+        successful = [
+            row for row in rows
+            if row["status"] == "ok" and math.isfinite(float(row["time_seconds"]))
+        ]
         times = [float(row["time_seconds"]) for row in successful]
         mean_degree_values = [float(row["mean_degree"]) for row in successful]
         edge_count_values = [float(row["edge_count"]) for row in successful]
@@ -188,11 +191,26 @@ def aggregate_rows(raw_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "median_time_seconds": statistics.median(times) if times else math.nan,
                 "min_time_seconds": min(times) if times else math.nan,
                 "max_time_seconds": max(times) if times else math.nan,
-                "mean_degree": statistics.fmean(mean_degree_values) if mean_degree_values else math.nan,
-                "mean_edge_count": statistics.fmean(edge_count_values) if edge_count_values else math.nan,
-                "mean_channel_nodes": statistics.fmean(channel_nodes_values) if channel_nodes_values else math.nan,
-                "mean_obstacle_fraction": statistics.fmean(obstacle_values) if obstacle_values else math.nan,
-                "target_on_channel_rate": statistics.fmean(target_rate_values) if target_rate_values else 0.0,
+                "mean_degree": (
+                    statistics.fmean(mean_degree_values)
+                    if mean_degree_values else math.nan
+                ),
+                "mean_edge_count": (
+                    statistics.fmean(edge_count_values)
+                    if edge_count_values else math.nan
+                ),
+                "mean_channel_nodes": (
+                    statistics.fmean(channel_nodes_values)
+                    if channel_nodes_values else math.nan
+                ),
+                "mean_obstacle_fraction": (
+                    statistics.fmean(obstacle_values)
+                    if obstacle_values else math.nan
+                ),
+                "target_on_channel_rate": (
+                    statistics.fmean(target_rate_values)
+                    if target_rate_values else 0.0
+                ),
             }
         )
     return aggregated
@@ -211,7 +229,11 @@ def build_fixed_k_growth_rows(aggregated_rows: list[dict[str, Any]]) -> list[dic
         baseline_nodes = int(baseline["num_nodes"])
         for row in ordered:
             current_time = float(row["mean_time_seconds"])
-            time_ratio = current_time / baseline_time if baseline_time > 0.0 and math.isfinite(current_time) else math.nan
+            time_ratio = (
+                current_time / baseline_time
+                if baseline_time > 0.0 and math.isfinite(current_time)
+                else math.nan
+            )
             growth_rows.append(
                 {
                     "sweep": "fixed_k_neighbors",
@@ -222,8 +244,14 @@ def build_fixed_k_growth_rows(aggregated_rows: list[dict[str, Any]]) -> list[dic
                     "mean_time_seconds": current_time,
                     "baseline_time_seconds": baseline_time,
                     "time_ratio_vs_baseline": time_ratio,
-                    "time_delta_vs_baseline": current_time - baseline_time if math.isfinite(current_time) else math.nan,
-                    "percent_increase_vs_baseline": (time_ratio - 1.0) * 100.0 if math.isfinite(time_ratio) else math.nan,
+                    "time_delta_vs_baseline": (
+                        current_time - baseline_time
+                        if math.isfinite(current_time) else math.nan
+                    ),
+                    "percent_increase_vs_baseline": (
+                        (time_ratio - 1.0) * 100.0
+                        if math.isfinite(time_ratio) else math.nan
+                    ),
                 }
             )
     return growth_rows
@@ -243,7 +271,11 @@ def build_fixed_node_growth_rows(aggregated_rows: list[dict[str, Any]]) -> list[
         baseline_degree = float(baseline["mean_degree"])
         for row in ordered:
             current_time = float(row["mean_time_seconds"])
-            time_ratio = current_time / baseline_time if baseline_time > 0.0 and math.isfinite(current_time) else math.nan
+            time_ratio = (
+                current_time / baseline_time
+                if baseline_time > 0.0 and math.isfinite(current_time)
+                else math.nan
+            )
             growth_rows.append(
                 {
                     "sweep": "fixed_num_nodes",
@@ -255,8 +287,14 @@ def build_fixed_node_growth_rows(aggregated_rows: list[dict[str, Any]]) -> list[
                     "mean_time_seconds": current_time,
                     "baseline_time_seconds": baseline_time,
                     "time_ratio_vs_baseline": time_ratio,
-                    "time_delta_vs_baseline": current_time - baseline_time if math.isfinite(current_time) else math.nan,
-                    "percent_increase_vs_baseline": (time_ratio - 1.0) * 100.0 if math.isfinite(time_ratio) else math.nan,
+                    "time_delta_vs_baseline": (
+                        current_time - baseline_time
+                        if math.isfinite(current_time) else math.nan
+                    ),
+                    "percent_increase_vs_baseline": (
+                        (time_ratio - 1.0) * 100.0
+                        if math.isfinite(time_ratio) else math.nan
+                    ),
                 }
             )
     return growth_rows
@@ -290,7 +328,9 @@ def format_markdown_table(rows: list[dict[str, Any]], columns: list[tuple[str, s
     return "\n".join(lines) + "\n"
 
 
-def build_runtime_matrix(aggregated_rows: list[dict[str, Any]]) -> tuple[list[int], list[int], np.ndarray, np.ndarray]:
+def build_runtime_matrix(
+    aggregated_rows: list[dict[str, Any]],
+) -> tuple[list[int], list[int], np.ndarray, np.ndarray]:
     node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
     k_values = sorted({int(row["k_neighbors"]) for row in aggregated_rows})
     matrix = np.full((len(node_counts), len(k_values)), np.nan, dtype=float)
@@ -349,8 +389,10 @@ def write_report_markdown(aggregated_rows: list[dict[str, Any]], output_path: Pa
     text += "## Runtime Matrix\n\n"
     text += format_runtime_matrix_markdown(aggregated_rows)
     text += (
-        "\nI plot principali usano asse x logaritmico sui nodi e asse y lineare stretto sui tempi, "
-        "cosi si vede meglio che la crescita resta contenuta anche quando il numero di nodi aumenta molto.\n"
+        "\nI plot principali usano asse x logaritmico sui nodi e asse y"
+        " lineare stretto sui tempi, "
+        "cosi si vede meglio che la crescita resta contenuta anche quando"
+        " il numero di nodi aumenta molto.\n"
     )
     output_path.write_text(text, encoding="utf-8")
 
@@ -382,8 +424,8 @@ def plot_scaling_trend(aggregated_rows: list[dict[str, Any]], output_path: Path)
         )
         ax.fill_between(
             nodes,
-            [m - s for m, s in zip(times, stds)],
-            [m + s for m, s in zip(times, stds)],
+            [m - s for m, s in zip(times, stds, strict=False)],
+            [m + s for m, s in zip(times, stds, strict=False)],
             color=line.get_color(),
             alpha=0.15,
         )
@@ -455,7 +497,7 @@ def plot_runtime_matrix_table(aggregated_rows: list[dict[str, Any]], output_path
     table.auto_set_font_size(False)
     table.set_fontsize(10)
     table.scale(1.0, 1.35)
-    for (row_idx, col_idx), cell in table.get_celld().items():
+    for (row_idx, _col_idx), cell in table.get_celld().items():
         cell.set_edgecolor("#d8ccb8")
         if row_idx == 0:
             cell.set_facecolor("#ead9b6")
@@ -493,12 +535,13 @@ def plot_relative_scaling(aggregated_rows: list[dict[str, Any]], output_path: Pa
         baseline_std = stds[0]
 
         ratios = [t / baseline if baseline > 0 else 0.0 for t in times]
-        # Uncertainty propagation for ratio R = T/T0: sigma_R = R * sqrt((sigma_T/T)^2 + (sigma_T0/T0)^2)
+        # Uncertainty propagation for ratio R = T/T0:
+        # sigma_R = R * sqrt((sigma_T/T)^2 + (sigma_T0/T0)^2)
         ratio_stds = [
             r * math.sqrt((s / t) ** 2 + (baseline_std / baseline) ** 2)
             if t > 0 and baseline > 0
             else 0.0
-            for r, t, s in zip(ratios, times, stds)
+            for r, t, s in zip(ratios, times, stds, strict=False)
         ]
 
         all_ratios.extend(ratios)
@@ -511,8 +554,8 @@ def plot_relative_scaling(aggregated_rows: list[dict[str, Any]], output_path: Pa
         )
         ax.fill_between(
             nodes,
-            [r - rs for r, rs in zip(ratios, ratio_stds)],
-            [r + rs for r, rs in zip(ratios, ratio_stds)],
+            [r - rs for r, rs in zip(ratios, ratio_stds, strict=False)],
+            [r + rs for r, rs in zip(ratios, ratio_stds, strict=False)],
             color=line.get_color(),
             alpha=0.15,
         )
@@ -558,11 +601,14 @@ def plot_runtime_heatmap(aggregated_rows: list[dict[str, Any]], output_path: Pat
     ax.set_xticks(np.arange(len(node_counts)), labels=[str(value) for value in node_counts])
     ax.set_yticks(np.arange(len(k_values)), labels=[str(value) for value in k_values])
 
-    for row_index, k_value in enumerate(k_values):
-        for col_index, node_count in enumerate(node_counts):
+    for row_index, _k_value in enumerate(k_values):
+        for col_index, _node_count in enumerate(node_counts):
             value = matrix[col_index, row_index]
             label = "nan" if not math.isfinite(value) else f"{value:.3f}"
-            ax.text(col_index, row_index, label, ha="center", va="center", color="#1f1b18", fontsize=9)
+            ax.text(
+                col_index, row_index, label, ha="center", va="center",
+                color="#1f1b18", fontsize=9,
+            )
 
     fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Mean runtime (s)")
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -571,7 +617,9 @@ def plot_runtime_heatmap(aggregated_rows: list[dict[str, Any]], output_path: Pat
     plt.close(fig)
 
 
-def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+def plot_3d_bar_time(  # noqa: PLR0915
+    aggregated_rows: list[dict[str, Any]], output_path: Path,
+) -> None:
     if plt is None or not aggregated_rows:
         return
 
@@ -592,10 +640,10 @@ def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -
     x = x[mask]
     y = y[mask]
     top = top[mask]
-    
+
     max_z = 2.0
     top_capped = np.minimum(top, max_z)
-    
+
     bottom = np.zeros_like(top)
     width = depth = 0.8  # Increased width to reduce gaps between bars
 
@@ -605,8 +653,12 @@ def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -
 
     # Use x - width/2 and y - depth/2 so the bars are centered on the ticks
     # Adding black edges helps distinguish the bars
-    ax.bar3d(x - width/2, y - depth/2, bottom, width, depth, top_capped, shade=True, color=colors, edgecolor='black', linewidth=0.1, alpha=0.95)
-    
+    ax.bar3d(
+        x - width / 2, y - depth / 2, bottom, width, depth, top_capped,
+        shade=True, color=colors, edgecolor="black",
+        linewidth=0.1, alpha=0.95,
+    )
+
     ax.set_title("Runtime Scaling (3D)")
     ax.set_xlabel("k nearest neighbors")
     ax.set_ylabel("Number of nodes")
@@ -618,12 +670,12 @@ def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -
     ax.set_yticklabels([str(n) for n in node_counts])
 
     ax.set_zlim(0, max_z)
-    
+
     # Adjust viewing angle to make smaller bars in front
     ax.view_init(elev=25, azim=-50)
 
     ax.bar3d(x, y, bottom, width, depth, top, shade=True, color=colors)
-    
+
     ax.set_title("Runtime Scaling (3D)")
     ax.set_xlabel("k nearest neighbors")
     ax.set_ylabel("Number of nodes")
@@ -635,13 +687,13 @@ def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -
     ax.set_yticklabels([str(n) for n in node_counts])
 
     ax.set_zlim(0, 2.0)
-    
+
     ax.view_init(elev=30, azim=-60)
-    
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
-    
+
     variation_path = output_path.with_name(output_path.stem + "_variation" + output_path.suffix)
     ax.view_init(elev=20, azim=45)
     plt.savefig(variation_path, dpi=160)
@@ -655,27 +707,27 @@ def plot_linearity(aggregated_rows: list[dict[str, Any]], output_path: Path) -> 
     rows_k32 = [row for row in aggregated_rows if int(row["k_neighbors"]) == 32]
     if not rows_k32:
         return
-        
+
     ordered = sorted(rows_k32, key=lambda row: int(row["num_nodes"]))
     nodes = np.array([int(row["num_nodes"]) for row in ordered])
     times = np.array([float(row["mean_time_seconds"]) for row in ordered])
-    
+
     fig, ax = plt.subplots(figsize=(8, 5))
     fig.patch.set_facecolor("#fbf7ef")
     ax.set_facecolor("#fffdf8")
-    
+
     ax.plot(nodes, times, marker="o", linewidth=2.0, label="Actual runtime (k=32)")
-    
+
     if len(nodes) >= 2:
         m, c = np.polyfit(nodes, times, 1)
         ax.plot(nodes, m * nodes + c, linestyle="--", color="gray", label="Linear fit")
-        
+
     ax.set_title("Linearity Check for k=32")
     ax.set_xlabel("Number of nodes")
     ax.set_ylabel("Mean runtime (s)")
     ax.grid(alpha=0.25)
     ax.legend(frameon=True)
-    
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     plt.tight_layout()
     plt.savefig(output_path, dpi=160)
@@ -721,11 +773,15 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     args = parse_args()
     node_counts = parse_int_csv(args.node_counts)
     k_neighbors_values = parse_int_csv(args.k_neighbors)
-    seeds = parse_int_csv(args.seeds) if args.seeds.strip() else default_seeds(args.repetitions, args.seed_start)
+    seeds = (
+        parse_int_csv(args.seeds)
+        if args.seeds.strip()
+        else default_seeds(args.repetitions, args.seed_start)
+    )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -766,7 +822,8 @@ def main() -> None:
     benchmark_start = time.perf_counter()
     for index, config in enumerate(configs, start=1):
         print(
-            f"[{index}/{len(configs)}] nodes={config.num_nodes} k={config.k_neighbors} seed={config.seed}"
+            f"[{index}/{len(configs)}] nodes={config.num_nodes}"
+            f" k={config.k_neighbors} seed={config.seed}"
         )
         row = run_single_trial(config)
         raw_rows.append(row)
@@ -826,7 +883,10 @@ def main() -> None:
             "trial_count": len(configs),
             "successful_trial_count": sum(1 for row in raw_rows if row["status"] == "ok"),
         },
-        "artifacts": {key: str(value) if value is not None else None for key, value in asdict(artifacts).items()},
+        "artifacts": {
+            key: str(value) if value is not None else None
+            for key, value in asdict(artifacts).items()
+        },
     }
     artifacts.summary_json.write_text(json.dumps(summary_payload, indent=2), encoding="utf-8")
 

@@ -13,14 +13,14 @@ except ImportError:
     mpatches = None
     plt = None
 
-from shared.plotting import draw_markers, draw_obstacles, to_grid, save_grid_simulation_gif
+from shared.plotting import draw_markers, draw_obstacles, save_grid_simulation_gif, to_grid
 
 
 def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="generated/channel"):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel setup plot")
         return
-    fig, ax = plt.subplots(figsize=(7, 7))
+    _fig, ax = plt.subplots(figsize=(7, 7))
     grid_rgb = np.full((rows, cols, 3), 0.92)
     obstacle_cpu = obstacle.detach().cpu().numpy()
     for row in range(rows):
@@ -53,7 +53,10 @@ def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="gener
     print(f"Saved {output_path}")
 
 
-def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_path="generated/channel_evolution.gif", fps=10):
+def plot_channel_gif(
+    rows, cols, snapshots, src_pos, dst_pos, obstacle,
+    output_path="generated/channel_evolution.gif", fps=10,
+):
     if plt is None:
         print("matplotlib not available; skipping channel GIF")
         return
@@ -74,7 +77,10 @@ def plot_channel_gif(rows, cols, snapshots, src_pos, dst_pos, obstacle, output_p
     )
 
 
-def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, viz_prefix="generated/channel"):
+def plot_channel_evolution(
+    rows, cols, snapshots, src_pos, dst_pos, obstacle,
+    viz_prefix="generated/channel",
+):
     if plt is None:
         print("matplotlib not available; skipping channel evolution plot")
         return
@@ -88,8 +94,11 @@ def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, vi
         "Channel",
     ]
     num_steps = len(snapshot_steps)
-    fig, axes = plt.subplots(len(field_keys), num_steps, figsize=(3.2 * num_steps, 3.1 * len(field_keys)))
-    for row_idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels)):
+    fig, axes = plt.subplots(
+        len(field_keys), num_steps,
+        figsize=(3.2 * num_steps, 3.1 * len(field_keys)),
+    )
+    for row_idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels, strict=False)):
         for col_idx, step in enumerate(snapshot_steps):
             ax = axes[row_idx, col_idx]
             grid = to_grid(snapshots[step][field_key], rows, cols, obstacle)
@@ -114,7 +123,10 @@ def plot_channel_evolution(rows, cols, snapshots, src_pos, dst_pos, obstacle, vi
     print(f"Saved {output_path}")
 
 
-def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rounds, viz_prefix="generated/channel"):
+def plot_channel_final_fields(
+    rows, cols, final, src_pos, dst_pos, obstacle, rounds,
+    viz_prefix="generated/channel",
+):
     if plt is None:
         print("matplotlib not available; skipping channel final fields plot")
         return
@@ -128,7 +140,7 @@ def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rou
     ]
     fig, axes = plt.subplots(2, 3, figsize=(16, 10))
     axes_flat = axes.flatten()
-    for idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels)):
+    for idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels, strict=False)):
         ax = axes_flat[idx]
         data = final[field_key]
         grid = to_grid(data, rows, cols, obstacle)
@@ -147,7 +159,10 @@ def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rou
                     value = data[node_id].item()
                     if not obstacle[node_id] and np.isfinite(value):
                         colour = "white" if value > 18 else "black"
-                        ax.text(col, row, f"{value:.0f}", ha="center", va="center", fontsize=5, color=colour)
+                        ax.text(
+                            col, row, f"{value:.0f}", ha="center",
+                            va="center", fontsize=5, color=colour,
+                        )
     axes_flat[-1].set_visible(False)
     fig.suptitle(f"Channel with Obstacles - Converged (t = {rounds})", fontsize=14)
     plt.tight_layout(rect=[0, 0, 1, 0.96])
@@ -157,11 +172,14 @@ def plot_channel_final_fields(rows, cols, final, src_pos, dst_pos, obstacle, rou
     print(f"Saved {output_path}")
 
 
-def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist, viz_prefix="generated/channel"):
+def plot_channel_overlay(
+    rows, cols, final, src_pos, dst_pos, obstacle, sd_dist,
+    viz_prefix="generated/channel",
+):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping channel overlay plot")
         return
-    fig, ax = plt.subplots(figsize=(8, 8))
+    _fig, ax = plt.subplots(figsize=(8, 8))
     overlay = np.full((rows, cols, 4), [0.92, 0.92, 0.92, 1.0])
     channel = final["channel"].detach().cpu().numpy()
     obstacle_cpu = obstacle.detach().cpu().numpy()
@@ -180,7 +198,11 @@ def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist,
     for col in range(cols + 1):
         ax.axvline(col - 0.5, color="white", lw=0.3)
     draw_markers(ax, src_pos, dst_pos, ms=14)
-    ax.set_title(f"Shortest-path channel around obstacle  (distance = {sd_dist:.0f} hops)", fontsize=12)
+    ax.set_title(
+        f"Shortest-path channel around obstacle"
+        f"  (distance = {sd_dist:.0f} hops)",
+        fontsize=12,
+    )
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -201,12 +223,15 @@ def plot_channel_overlay(rows, cols, final, src_pos, dst_pos, obstacle, sd_dist,
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, viz_prefix="generated/channel_large"):
+def plot_channel_large_setup(
+    rows, cols, num_nodes, src_pos, dst_pos, obstacle,
+    viz_prefix="generated/channel_large",
+):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel setup plot")
         return
     obstacle_np = obstacle.detach().cpu().numpy().reshape(rows, cols)
-    fig, ax = plt.subplots(figsize=(18, 14))
+    _fig, ax = plt.subplots(figsize=(18, 14))
     grid_rgb = np.full((rows, cols, 3), 0.92)
     grid_rgb[obstacle_np] = [0.12, 0.12, 0.12]
     grid_rgb[src_pos] = [0.0, 0.8, 0.0]
@@ -234,7 +259,11 @@ def plot_channel_large_setup(rows, cols, num_nodes, src_pos, dst_pos, obstacle, 
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot_labels, num_nodes, rounds, elapsed, obstacle, viz_prefix="generated/channel_large"):
+def plot_channel_large_evolution(
+    rows, cols, snapshots, snapshot_steps, snapshot_labels,
+    num_nodes, rounds, elapsed, obstacle,
+    viz_prefix="generated/channel_large",
+):
     if plt is None:
         print("matplotlib not available; skipping large channel evolution plot")
         return
@@ -246,13 +275,16 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
         figsize=(3.5 * len(snapshot_steps) + 0.7, 2.5 * len(field_keys)),
         gridspec_kw={"width_ratios": [1.0] * len(snapshot_steps) + [0.035]},
     )
-    for row_idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels)):
+    for row_idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels, strict=False)):
         row_image = None
         for col_idx, step in enumerate(snapshot_steps):
             ax = axes[row_idx, col_idx]
             grid = to_grid(snapshots[step][field_key], rows, cols, obstacle)
             if field_key == "channel":
-                image = ax.imshow(grid, cmap="Oranges", vmin=0, vmax=1, interpolation="nearest", aspect="equal")
+                image = ax.imshow(
+                    grid, cmap="Oranges", vmin=0, vmax=1,
+                    interpolation="nearest", aspect="equal",
+                )
             else:
                 image = ax.imshow(grid, cmap="viridis", interpolation="nearest", aspect="equal")
             row_image = image
@@ -264,7 +296,8 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
         color_ax = axes[row_idx, -1]
         fig.colorbar(row_image, cax=color_ax)
     fig.suptitle(
-        f"Large-scale channel evolution - {rows}x{cols}, {num_nodes} devices, {rounds} rounds, {elapsed:.1f}s",
+        f"Large-scale channel evolution - {rows}x{cols},"
+        f" {num_nodes} devices, {rounds} rounds, {elapsed:.1f}s",
         fontsize=12,
         y=0.995,
     )
@@ -275,7 +308,11 @@ def plot_channel_large_evolution(rows, cols, snapshots, snapshot_steps, snapshot
     print(f"Saved {output_path}")
 
 
-def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, channel_threshold, num_nodes, rounds, elapsed, sd_dist, channel_nodes, viz_prefix="generated/channel_large"):
+def plot_channel_large_final(
+    rows, cols, final, src_pos, dst_pos, obstacle,
+    channel_threshold, num_nodes, rounds, elapsed, sd_dist,
+    channel_nodes, viz_prefix="generated/channel_large",
+):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel final plot")
         return
@@ -291,12 +328,14 @@ def plot_channel_large_final(rows, cols, final, src_pos, dst_pos, obstacle, chan
                 overlay[row, col] = [1.0, 0.55, 0.0, 0.95]
     overlay[src_pos] = [0.0, 0.80, 0.0, 1.0]
     overlay[dst_pos] = [0.85, 0.0, 0.0, 1.0]
-    fig, ax = plt.subplots(figsize=(18, 14))
+    _fig, ax = plt.subplots(figsize=(18, 14))
     ax.imshow(overlay, interpolation="nearest", aspect="equal")
     ax.plot(src_pos[1], src_pos[0], "g^", ms=15, mec="white", mew=1.5)
     ax.plot(dst_pos[1], dst_pos[0], "rv", ms=15, mec="white", mew=1.5)
     ax.set_title(
-        f"Converged channel path - distance={sd_dist:.0f}, channel_nodes={channel_nodes}, {rounds} rounds in {elapsed:.1f}s",
+        f"Converged channel path - distance={sd_dist:.0f},"
+        f" channel_nodes={channel_nodes},"
+        f" {rounds} rounds in {elapsed:.1f}s",
         fontsize=14,
     )
     ax.set_xlabel("Column")

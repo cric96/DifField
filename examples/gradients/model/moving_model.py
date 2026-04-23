@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
+
+from diffield.dsl import AggregateContext, field, gather_min, iterate, mux, scatter
 from diffield.sim import SpatialScenario
-from diffield.dsl import mux, scatter, iterate, gather_min
-from diffield.dsl import AggregateContext, field
+
 from ..domain.moving_logic import MAX_DIST
 
 

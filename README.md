@@ -1,6 +1,6 @@
 <div align="center">
     <h1>DifField</h1>
-    <img src="docs/dif-field.png" alt="DifField Architecture" width="300"/>
+    <img src="docs/dif-field.png" alt="DifField Architecture" width="30%"/>
 </div>
 
 **Differentiable Field Programming for Self-Organizing Systems**

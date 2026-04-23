@@ -68,10 +68,7 @@ def get_grid_distances(
         for c in range(cols):
             dr = abs(r - src_r)
             dc = abs(c - src_c)
-            if connectivity == 4:
-                dist = dr + dc  # Manhattan
-            else:
-                dist = max(dr, dc)  # Chebyshev
+            dist = dr + dc if connectivity == 4 else max(dr, dc)
             target[r * cols + c] = float(dist)
     return target
 

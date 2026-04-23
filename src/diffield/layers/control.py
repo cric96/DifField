@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 
 from ..constants import DEFAULT_TAU_BRANCH
 from ..core import RoundContext, resolve_context, sub_context
@@ -98,7 +97,7 @@ class BranchLayer(nn.Module):
                 )
             elif state_after_true is not None:
                 ctx.state.update(state_after_true, name=key)
-            else:
+            elif state_after_false is not None:
                 ctx.state.update(state_after_false, name=key)
 
         return field_where(

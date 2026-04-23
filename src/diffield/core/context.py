@@ -14,6 +14,16 @@ from .state import StateManager
 class RoundContext:
     """Holds the graph topology and per-round execution state."""
 
+    edge_index: Tensor
+    edge_weight: Tensor
+    message_weight: Tensor | None
+    num_nodes: int
+    data: object
+    round_num: int
+    state: StateManager
+    exports: dict[str, Tensor]
+    _neighbor_message_overrides: dict[str, Tensor]
+
     def __init__(
         self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None
     ) -> None:

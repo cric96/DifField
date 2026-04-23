@@ -1,9 +1,9 @@
 """Shared plotting layer: grid and moving node visualizations."""
 
-from .grid import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers
-from .moving import plot_moving_snapshots, export_moving_gif, plot_node_trajectories
-from .comparison import plot_trajectory_comparison
 from .common import save_gif
+from .comparison import plot_trajectory_comparison
+from .grid import draw_markers, draw_obstacles, save_grid_simulation_gif, to_grid
+from .moving import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
 
 __all__ = [
     "draw_markers",

@@ -6,19 +6,17 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import torch
-from diffield.utils import get_device
+from diffield.utils import get_device  # noqa: E402
 
 try:
-    from .core import channel_body
     from .specs import ChannelProgramSpec, GridSpec, SmallChannelSpec
     from .workflow import SmallChannelWorkflow
 except ImportError:
-    from core import channel_body
     from specs import ChannelProgramSpec, GridSpec, SmallChannelSpec
     from workflow import SmallChannelWorkflow
 

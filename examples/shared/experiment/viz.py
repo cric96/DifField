@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, TYPE_CHECKING
+from typing import TYPE_CHECKING
+
 import torch
 
+from ..plotting.comparison import plot_trajectory_comparison
 from ..plotting.moving import (
+    export_moving_gif,
     plot_moving_snapshots,
     plot_node_trajectories,
-    export_moving_gif,
 )
-from ..plotting.comparison import plot_trajectory_comparison
 
 if TYPE_CHECKING:
-    from ..plotting.common import Axes
+    from collections.abc import Callable
 
 
 @dataclass(frozen=True)

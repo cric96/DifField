@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
 
 from diffield.sim import GridScenario
 from diffield.utils import get_grid_distances
+
+if TYPE_CHECKING:
+    import torch
 
 
 def build_corner_source_grid(

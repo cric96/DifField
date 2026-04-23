@@ -16,7 +16,7 @@ class MetricHistory:
     _data: dict[str, list[float]]
 
     @classmethod
-    def from_keys(cls, keys: list[str]) -> "MetricHistory":
+    def from_keys(cls, keys: list[str]) -> MetricHistory:
         """Initialize an empty history with a set of known keys."""
         unique_keys = list(dict.fromkeys(keys))
         return cls({key: [] for key in unique_keys})

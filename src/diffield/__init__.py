@@ -12,15 +12,12 @@ from .core import (
 from .pyg_backend import HAS_PYG
 
 __all__ = [
-    # Core
+    "HAS_PYG",
     "AggregateContext",
     "DeviceContext",
     "RoundContext",
     "StateManager",
-    # Mode configuration
     "get_default_mode",
     "set_default_mode",
     "with_mode",
-    # Backend
-    "HAS_PYG",
 ]

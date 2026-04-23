@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield.dsl import broadcast, gather_min, mux, scatter, scatter_range, iterate
-from diffield.dsl import field
+from diffield.dsl import broadcast, field, gather_min, iterate, mux, scatter, scatter_range
 
 CHANNEL_THRESHOLD = 0.5
 

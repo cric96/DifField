@@ -2,8 +2,10 @@
 """Standalone script to regenerate boids plots from saved evaluation data."""
 
 import argparse
-from pathlib import Path
+import math
 import sys
+from pathlib import Path
+
 import torch
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,33 +14,34 @@ if str(ROOT / "src") not in sys.path:
 if str(ROOT / "examples") not in sys.path:
     sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
-from shared.plotting.moving import _draw_trajectory_on_ax, _get_identity_colors
-import numpy as np
+import matplotlib  # noqa: E402
 
-try:
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pyplot as plt
-except ImportError:
-    plt = None
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt  # noqa: E402
+from shared.metrics import mean, std  # noqa: E402
+from shared.plotting import (  # noqa: E402
+    export_moving_gif,
+    plot_moving_snapshots,
+    plot_node_trajectories,
+)
+from shared.plotting.moving import _draw_trajectory_on_ax, _get_identity_colors  # noqa: E402
 
-import sys
-from shared.metrics import mean, std
 
 def _plot_band(ax, x_vals, mean_vals, std_vals, label, color=None):
-    import math
     valid_indices = [i for i, v in enumerate(mean_vals) if not math.isnan(v)]
     if not valid_indices:
         return
     x_valid = [x_vals[i] for i in valid_indices]
     m_valid = [mean_vals[i] for i in valid_indices]
     s_valid = [std_vals[i] for i in valid_indices]
-    
-    line, = ax.plot(x_valid, m_valid, linewidth=2.0, label=label, marker="o", markersize=3, color=color)
+
+    line, = ax.plot(
+        x_valid, m_valid, linewidth=2.0, label=label,
+        marker="o", markersize=3, color=color,
+    )
     if len(x_valid) > 1:
-        lower = [v - d for v, d in zip(m_valid, s_valid)]
-        upper = [v + d for v, d in zip(m_valid, s_valid)]
+        lower = [v - d for v, d in zip(m_valid, s_valid, strict=False)]
+        upper = [v + d for v, d in zip(m_valid, s_valid, strict=False)]
         ax.fill_between(x_valid, lower, upper, alpha=0.18, color=line.get_color())
 
 def plot_train_val_metrics(
@@ -53,14 +56,21 @@ def plot_train_val_metrics(
         return
 
     def series_mean_std(key: str):
-        series = [h[key] for h in histories if key in h and h[key]]
+        series = [h[key] for h in histories if h.get(key)]
         if not series:
             return None
         min_len = min(len(v) for v in series)
         trimmed = [v[:min_len] for v in series]
-        import math
-        return [mean([v[i] for v in trimmed]) if not all(math.isnan(v[i]) for v in trimmed) else float("nan") for i in range(min_len)], \
-               [std([v[i] for v in trimmed]) if not all(math.isnan(v[i]) for v in trimmed) else float("nan") for i in range(min_len)]
+
+        def _compute(agg_fn):
+            return [
+                agg_fn([v[i] for v in trimmed])
+                if not all(math.isnan(v[i]) for v in trimmed)
+                else float("nan")
+                for i in range(min_len)
+            ]
+
+        return _compute(mean), _compute(std)
 
     # --- Training Metrics ---
     train_loss = series_mean_std("total_loss")
@@ -78,11 +88,17 @@ def plot_train_val_metrics(
     fig, ax = plt.subplots(figsize=(7, 4))
     if train_loss:
         min_len = min(len(epochs), len(train_loss[0]))
-        _plot_band(ax, epochs[:min_len], train_loss[0][:min_len], train_loss[1][:min_len], "train", color="tab:blue")
+        _plot_band(
+            ax, epochs[:min_len], train_loss[0][:min_len],
+            train_loss[1][:min_len], "train", color="tab:blue",
+        )
     if val_loss:
         min_len = min(len(epochs), len(val_loss[0]))
-        _plot_band(ax, epochs[:min_len], val_loss[0][:min_len], val_loss[1][:min_len], "val", color="tab:orange")
-    
+        _plot_band(
+            ax, epochs[:min_len], val_loss[0][:min_len],
+            val_loss[1][:min_len], "val", color="tab:orange",
+        )
+
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Total Loss")
     ax.grid(alpha=0.25, which="both")
@@ -97,10 +113,16 @@ def plot_train_val_metrics(
     fig, ax = plt.subplots(figsize=(7, 4))
     if train_pos_err:
         min_len = min(len(epochs), len(train_pos_err[0]))
-        _plot_band(ax, epochs[:min_len], train_pos_err[0][:min_len], train_pos_err[1][:min_len], "train", color="tab:blue")
+        _plot_band(
+            ax, epochs[:min_len], train_pos_err[0][:min_len],
+            train_pos_err[1][:min_len], "train", color="tab:blue",
+        )
     if val_pos_err:
         min_len = min(len(epochs), len(val_pos_err[0]))
-        _plot_band(ax, epochs[:min_len], val_pos_err[0][:min_len], val_pos_err[1][:min_len], "val", color="tab:orange")
+        _plot_band(
+            ax, epochs[:min_len], val_pos_err[0][:min_len],
+            val_pos_err[1][:min_len], "val", color="tab:orange",
+        )
 
     ax.set_xlabel("Epoch")
     ax.set_ylabel("Position Error (L2)")
@@ -111,7 +133,7 @@ def plot_train_val_metrics(
     fig.savefig(str(output_path), dpi=150)
     plt.close(fig)
     print(f"Saved {output_path}")
-    
+
     # Reset font size
     plt.rcParams.update({'font.size': 10})
 
@@ -140,12 +162,12 @@ def plot_parameter_recovery_bands(
         if abs_key not in histories[0] or rel_key not in histories[0]:
             continue
 
-        abs_series = [h[abs_key] for h in histories if abs_key in h and h[abs_key]]
-        rel_series = [h[rel_key] for h in histories if rel_key in h and h[rel_key]]
+        abs_series = [h[abs_key] for h in histories if h.get(abs_key)]
+        rel_series = [h[rel_key] for h in histories if h.get(rel_key)]
         if not abs_series or not rel_series:
             continue
 
-        min_len = min(min(len(v) for v in abs_series), min(len(v) for v in rel_series))
+        min_len = min(*(len(v) for v in abs_series), *(len(v) for v in rel_series))
         abs_trimmed = [v[:min_len] for v in abs_series]
         rel_trimmed = [v[:min_len] for v in rel_series]
 
@@ -185,16 +207,19 @@ def plot_parameter_recovery_bands(
 
     plt.rcParams.update({'font.size': 10})
 
-def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool, links_alpha: float, links_width: float, gif_fps: int):
+def generate_boids_plots(  # noqa: PLR0915
+    data: dict, seed: int, seed_dir: Path, hide_links: bool,
+    links_alpha: float, links_width: float, gif_fps: int,
+):
     pred_pos = data["pred_pos"]
     pred_vel = data["pred_vel"]
     eval_trace_pos = data["eval_trace_pos"]
     pred_edge_seq = data["pred_edge_seq"]
     highlight_idx = data["highlight_node"]
     rounds = data["rounds"]
-    
+
     positions_over_time = [pred_pos[r] for r in range(rounds)]
-    
+
     plot_node_trajectories(
         positions_over_time=positions_over_time,
         source_idx=highlight_idx,
@@ -240,11 +265,11 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
     if "eval_trajectories" in data and plt is not None:
         eval_trajectories = data["eval_trajectories"]
         epochs = sorted(eval_trajectories.keys())
-        
+
         if len(epochs) > 0:
             start_ep = epochs[0]
             end_ep = epochs[-1]
-            
+
             # Find a middle epoch
             mid_ep = epochs[(epochs[-1] - epochs[0]) // 15]
             if len(epochs) >= 3:
@@ -252,19 +277,19 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
                 print(len(epochs))
             elif len(epochs) == 2:
                 mid_ep = epochs[0]
-                
+
             # Progression plots: grid and line versions
             id_colors = _get_identity_colors(data["num_nodes"])
-            
+
             def _plot_panel(ax, pos_seq, title, bg_color="white"):
                 traj = pos_seq.numpy()
                 _draw_trajectory_on_ax(
-                    ax, traj, 
-                    num_rounds=rounds, 
-                    num_nodes=data["num_nodes"], 
-                    id_colors=id_colors, 
-                    color_by_id=True, 
-                    show_source=False, 
+                    ax, traj,
+                    num_rounds=rounds,
+                    num_nodes=data["num_nodes"],
+                    id_colors=id_colors,
+                    color_by_id=True,
+                    show_source=False,
                     source_idx=highlight_idx
                 )
                 ax.set_title(title, fontsize=20, fontweight="bold")
@@ -279,7 +304,7 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
             _plot_panel(axes_grid[0, 1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
             _plot_panel(axes_grid[1, 0], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
             _plot_panel(axes_grid[1, 1], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
-            
+
             fig_grid.tight_layout()
             out_path_grid = seed_dir / "progression_trajectories_grid.png"
             fig_grid.savefig(str(out_path_grid), dpi=150)
@@ -291,22 +316,27 @@ def generate_boids_plots(data: dict, seed: int, seed_dir: Path, hide_links: bool
             _plot_panel(axes_line[1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
             _plot_panel(axes_line[2], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
             _plot_panel(axes_line[3], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
-            
+
             fig_line.tight_layout()
             out_path_line = seed_dir / "progression_trajectories_line.png"
             fig_line.savefig(str(out_path_line), dpi=150)
             plt.close(fig_line)
 
 def main():
-    parser = argparse.ArgumentParser(description="Regenerate plots for boids evaluation from extracted data.")
-    parser.add_argument("--data-dir", type=str, default="generated/boids-evaluation", help="Base directory containing seed_X subfolders")
+    parser = argparse.ArgumentParser(
+        description="Regenerate plots for boids evaluation from extracted data.",
+    )
+    parser.add_argument(
+        "--data-dir", type=str, default="generated/boids-evaluation",
+        help="Base directory containing seed_X subfolders",
+    )
     parser.add_argument("--hide-links", action="store_true")
     parser.add_argument("--links-alpha", type=float, default=0.15)
     parser.add_argument("--links-width", type=float, default=0.6)
     parser.add_argument("--gif-fps", type=int, default=8)
-    
+
     args = parser.parse_args()
-    
+
     base_dir = Path(args.data_dir)
     if not base_dir.exists():
         print(f"Directory {base_dir} does not exist.")
@@ -317,7 +347,7 @@ def main():
     if not data_files:
         print(f"No eval_data.pt files found in {base_dir}.")
         return
-        
+
     print(f"Found {len(data_files)} data files.")
     all_histories = []
     teacher_params = None
@@ -327,10 +357,10 @@ def main():
         # Try to extract seed from folder name, e.g., "seed_5"
         seed_str = seed_dir.name.replace("seed_", "")
         seed = int(seed_str) if seed_str.isdigit() else 0
-        
+
         print(f"Processing {data_path}...")
         data = torch.load(data_path, map_location="cpu", weights_only=False)
-        
+
         if "history" in data:
             all_histories.append(data["history"])
         if "teacher_params" in data and teacher_params is None:

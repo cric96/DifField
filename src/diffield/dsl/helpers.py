@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 from torch import Tensor
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .scattering import LinkField
@@ -69,7 +70,7 @@ def unpack_cast_state(
     payload_flat = packed[:, 1:]
     if not payload_shape:
         return distance, payload_flat[:, 0]
-    return distance, payload_flat.reshape((packed.shape[0],) + payload_shape)
+    return distance, payload_flat.reshape(packed.shape[0], *payload_shape)
 
 
 def validate_cast_mode(mode: str) -> None:
@@ -79,10 +80,10 @@ def validate_cast_mode(mode: str) -> None:
 
 
 def resolve_edge_cost(
-    weight: Tensor | "LinkField" | None, ctx: RoundContext
+    weight: Tensor | LinkField | None, ctx: RoundContext
 ) -> Tensor:
     """Resolve an edge cost tensor from various input types."""
-    from .scattering import LinkField
+    from .scattering import LinkField  # noqa: PLC0415
 
     if weight is None:
         if ctx.edge_weight is not None:

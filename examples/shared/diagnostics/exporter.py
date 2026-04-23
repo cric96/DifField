@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 from .plots import (
     plot_loss_curves,
-    plot_parameter_trajectories,
-    plot_training_health,
     plot_parameter_errors,
     plot_parameter_recovery,
+    plot_parameter_trajectories,
+    plot_training_health,
 )
 
 

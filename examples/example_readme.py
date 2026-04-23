@@ -17,8 +17,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from diffield.dsl import iterate, field, gather_min, scatter_range, scatter, mux
-from diffield.sim import GridScenario, SimulationEngine
+from diffield.dsl import field, gather_min, iterate, mux, scatter, scatter_range  # noqa: E402
+from diffield.sim import GridScenario, SimulationEngine  # noqa: E402
+
 
 def program(runtime):
     src = runtime.signals["source"]

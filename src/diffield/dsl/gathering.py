@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
-import torch.nn as nn
-from typing import Callable
-from torch import Tensor
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from torch import Tensor
+
+    from .scattering import LinkField
 
 from .primitives import gather
-from .scattering import LinkField
 
 __all__ = [
-    "gather_min",
-    "gather_max",
-    "gather_sum",
     "gather_avg",
+    "gather_max",
+    "gather_min",
+    "gather_sum",
 ]
 
 

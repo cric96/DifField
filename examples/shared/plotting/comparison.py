@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import torch
+
 from .common import plt
 
 
@@ -31,7 +32,7 @@ def plot_trajectory_comparison(
     _, num_nodes, _ = predicted.shape
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharex=True, sharey=True)
     for ax, (traj, panel_title) in zip(
-        axes, ((predicted, "Predicted"), (teacher, "Teacher"))
+        axes, ((predicted, "Predicted"), (teacher, "Teacher")), strict=False
     ):
         for node_idx in range(num_nodes):
             linewidth = 2.2 if node_idx == source_idx else 0.8

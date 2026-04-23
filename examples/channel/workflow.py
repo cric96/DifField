@@ -2,39 +2,51 @@
 
 from __future__ import annotations
 
-import time
+from typing import TYPE_CHECKING
 
 import torch
 
+from diffield.dsl import branch, field
 from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
-from diffield.dsl import branch
-from diffield.dsl import field
+
+if TYPE_CHECKING:
+    from .specs import LargeChannelSpec, SmallChannelSpec
 
 try:
-    from .core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes, distance_src_to_dst
-    from .specs import LargeChannelSpec, SmallChannelSpec
+    from .core import (
+        CHANNEL_THRESHOLD,
+        build_snapshot_payloads,
+        channel_body,
+        count_channel_nodes,
+        distance_src_to_dst,
+    )
     from .viz import (
         plot_channel_evolution,
         plot_channel_final_fields,
+        plot_channel_gif,
         plot_channel_large_evolution,
         plot_channel_large_final,
         plot_channel_large_setup,
         plot_channel_overlay,
         plot_channel_setup,
-        plot_channel_gif,
     )
 except ImportError:
-    from core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body, count_channel_nodes, distance_src_to_dst
-    from specs import LargeChannelSpec, SmallChannelSpec
+    from core import (
+        CHANNEL_THRESHOLD,
+        build_snapshot_payloads,
+        channel_body,
+        count_channel_nodes,
+        distance_src_to_dst,
+    )
     from viz import (
         plot_channel_evolution,
         plot_channel_final_fields,
+        plot_channel_gif,
         plot_channel_large_evolution,
         plot_channel_large_final,
         plot_channel_large_setup,
         plot_channel_overlay,
         plot_channel_setup,
-        plot_channel_gif,
     )
 
 
@@ -50,7 +62,9 @@ class SmallChannelWorkflow:
         viz_prefix: str = "generated/channel_small",
         gif_fps: int = 10,
     ) -> None:
-        scenario, source, dest, obstacle, noise, src_pos, dst_pos, wall_col = self._build_scenario(device=device)
+        scenario, source, dest, obstacle, noise, src_pos, dst_pos, wall_col = (
+            self._build_scenario(device=device)
+        )
         recorder = self._run_simulation(scenario, source, dest, obstacle, noise, record_all=gif)
         snapshots = build_snapshot_payloads(recorder.records, num_nodes=scenario.num_nodes)
 
@@ -59,13 +73,19 @@ class SmallChannelWorkflow:
         sd_dist = distance_src_to_dst(final, dst_pos, self.spec.grid.cols)
 
         print("=== Channel with Obstacles ===")
-        print(f"Grid: {self.spec.grid.rows}x{self.spec.grid.cols}   Source: {src_pos}   Dest: {dst_pos}")
+        print(
+            f"Grid: {self.spec.grid.rows}x{self.spec.grid.cols}"
+            f"   Source: {src_pos}   Dest: {dst_pos}"
+        )
         print(f"Wall: column {wall_col}")
         print(f"Distance source->dest: {sd_dist:.2f}")
         print(f"Channel nodes: {count_channel_nodes(final)}")
 
         if viz:
-            self._plot_results(snapshots, final, src_pos, dst_pos, obstacle, sd_dist, gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps)
+            self._plot_results(
+                snapshots, final, src_pos, dst_pos, obstacle, sd_dist,
+                gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
+            )
 
     def _build_scenario(self, device: torch.device | None = None):
         rows, cols = self.spec.grid.rows, self.spec.grid.cols
@@ -128,7 +148,10 @@ class SmallChannelWorkflow:
         viz_prefix: str = "generated/channel_small",
         gif_fps: int = 10,
     ):
-        plot_channel_setup(self.spec.grid.rows, self.spec.grid.cols, src_pos, dst_pos, obstacle, viz_prefix=viz_prefix)
+        plot_channel_setup(
+            self.spec.grid.rows, self.spec.grid.cols, src_pos, dst_pos,
+            obstacle, viz_prefix=viz_prefix,
+        )
         plot_channel_final_fields(
             self.spec.grid.rows,
             self.spec.grid.cols,
@@ -140,7 +163,8 @@ class SmallChannelWorkflow:
             viz_prefix=viz_prefix,
         )
         plot_channel_overlay(
-            self.spec.grid.rows, self.spec.grid.cols, final, src_pos, dst_pos, obstacle, sd_dist, viz_prefix=viz_prefix
+            self.spec.grid.rows, self.spec.grid.cols, final, src_pos,
+            dst_pos, obstacle, sd_dist, viz_prefix=viz_prefix,
         )
 
         # Only plot evolution for the selected snapshot rounds
@@ -161,7 +185,8 @@ class SmallChannelWorkflow:
             evolution_snapshots = {k: v for k, v in snapshots.items() if k in snapshot_steps}
 
         plot_channel_evolution(
-            self.spec.grid.rows, self.spec.grid.cols, evolution_snapshots, src_pos, dst_pos, obstacle, viz_prefix=viz_prefix
+            self.spec.grid.rows, self.spec.grid.cols, evolution_snapshots,
+            src_pos, dst_pos, obstacle, viz_prefix=viz_prefix,
         )
 
 
@@ -180,19 +205,25 @@ class LargeChannelWorkflow:
         scenario, source, dest, obstacle, src_pos, dst_pos = self._build_scenario(device=device)
         recorder = self._run_simulation(scenario, source, dest, obstacle, record_all=gif)
         snapshots = build_snapshot_payloads(recorder.records, num_nodes=scenario.num_nodes)
-        
+
         final_step = self.spec.program.rounds - 1
         final = snapshots[final_step]
         sd_dist = distance_src_to_dst(final, dst_pos, self.spec.grid.cols)
 
         print("=== Large-Scale Channel ===")
-        print(f"Grid: {self.spec.grid.rows}x{self.spec.grid.cols}   Source: {src_pos}   Dest: {dst_pos}")
+        print(
+            f"Grid: {self.spec.grid.rows}x{self.spec.grid.cols}"
+            f"   Source: {src_pos}   Dest: {dst_pos}"
+        )
         print(f"Obstacle cells: {obstacle.sum().item()}")
         print(f"Distance source->dest: {sd_dist:.2f}")
         print(f"Channel nodes: {count_channel_nodes(final)}")
 
         if viz:
-            self._plot_results(snapshots, final, src_pos, dst_pos, obstacle, sd_dist, gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps)
+            self._plot_results(
+                snapshots, final, src_pos, dst_pos, obstacle, sd_dist,
+                gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
+            )
 
     def _build_scenario(self, device: torch.device | None = None):
         rows, cols = self.spec.grid.rows, self.spec.grid.cols
@@ -206,13 +237,15 @@ class LargeChannelWorkflow:
 
         return scenario, source, dest, obstacle, src_pos, dst_pos
 
-    def _build_obstacles(self, rows: int, cols: int, device: torch.device | None = None) -> torch.Tensor:
+    def _build_obstacles(
+        self, rows: int, cols: int, device: torch.device | None = None,
+    ) -> torch.Tensor:
         obstacle = torch.zeros(rows * cols, dtype=torch.bool, device=device)
         for row in range(0, min(40, rows)):
-            if 25 < cols:
+            if cols > 25:
                 obstacle[row * cols + 25] = True
         for row in range(10, rows):
-            if 55 < cols:
+            if cols > 55:
                 obstacle[row * cols + 55] = True
         return obstacle
 
@@ -262,7 +295,9 @@ class LargeChannelWorkflow:
         gif_fps: int = 10,
     ):
         plot_channel_large_setup(
-            self.spec.grid.rows, self.spec.grid.cols, self.spec.grid.num_nodes, src_pos, dst_pos, obstacle, viz_prefix=viz_prefix
+            self.spec.grid.rows, self.spec.grid.cols,
+            self.spec.grid.num_nodes, src_pos, dst_pos, obstacle,
+            viz_prefix=viz_prefix,
         )
         plot_channel_large_final(
             self.spec.grid.rows,
@@ -279,13 +314,13 @@ class LargeChannelWorkflow:
             count_channel_nodes(final),
             viz_prefix=viz_prefix,
         )
-        
+
         # Only plot evolution for the selected snapshot rounds
         evolution_snapshots = snapshots
         snapshot_steps = [10, 50, 100, 200, self.spec.program.rounds - 1]
         snapshot_steps = [s for s in snapshot_steps if s in snapshots]
         snapshot_labels = [f"t={s + 1}" for s in snapshot_steps]
-        
+
         if gif:
             plot_channel_gif(
                 self.spec.grid.rows,
@@ -299,7 +334,7 @@ class LargeChannelWorkflow:
             )
             # Filter snapshots for the evolution plot to avoid overcrowding
             evolution_snapshots = {k: v for k, v in snapshots.items() if k in snapshot_steps}
-            
+
         plot_channel_large_evolution(
             self.spec.grid.rows,
             self.spec.grid.cols,

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-import torch
-from diffield.dsl import gather, mux, scatter, iterate
-from diffield.dsl import field
+from typing import TYPE_CHECKING
+
+from diffield.dsl import field, gather, iterate, mux, scatter
 from diffield.sim import SimulationEngine
+
+if TYPE_CHECKING:
+    import torch
 
 try:
     from diffield.sim import SnapshotRecorder

@@ -5,8 +5,8 @@ from .gather import GatherLayer
 from .iterate import IterateLayer
 
 __all__ = [
-    "IterateLayer",
-    "GatherLayer",
     "BranchLayer",
+    "GatherLayer",
+    "IterateLayer",
     "MuxLayer",
 ]

@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ..core import RoundContext
+
 from ..constants import BROADCAST_NEAR_ZERO, DEFAULT_TAU_SOFT_AGGR
-from ..core import RoundContext
 from ..core.mode import get_default_mode
-from ..functional import field_where, scatter_binary_fold, scatter_min_by_first
+from ..functional import scatter_binary_fold, scatter_min_by_first
+from .gathering import gather_min
 from .helpers import (
     broadcast_like,
     edge_sources_targets,
@@ -24,9 +29,8 @@ from .helpers import (
     unpack_cast_state,
     validate_cast_mode,
 )
+from .primitives import field, iterate, mux
 from .scattering import LinkField, scatter, scatter_range
-from .primitives import field, mux, iterate
-from .gathering import gather_min
 
 
 def gradient(

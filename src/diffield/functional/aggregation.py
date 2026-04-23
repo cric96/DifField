@@ -15,7 +15,7 @@ def scatter_aggr(
     num_nodes: int,
     aggr: str = "sum",
     mode: str = "hard",
-    tau: float = 1.0,
+    tau: float | Tensor = 1.0,
     fill_value: float = FILL_VALUE_DEFAULT,
 ) -> Tensor:
     """Aggregate *src* values into *num_nodes* buckets given by *index*."""
@@ -60,12 +60,18 @@ def _scatter_max(
     return _scatter_softmax(src, index, num_nodes, tau, fill_value)
 
 
-def _scatter_softmin(src: Tensor, index: Tensor, num_nodes: int, tau: float, fill_value: float) -> Tensor:
+def _scatter_softmin(
+    src: Tensor,
+    index: Tensor,
+    num_nodes: int,
+    tau: float,
+    fill_value: float,
+) -> Tensor:
     r"""Differentiable soft-min per bucket using the logsumexp trick."""
     finite = torch.isfinite(src)
     safe_src = torch.where(finite, src, torch.zeros_like(src))
     neg_src_scaled = torch.where(finite, -safe_src / tau, torch.full_like(src, float("-inf")))
-    shape = (num_nodes,) + src.shape[1:]
+    shape = (num_nodes, *src.shape[1:])
 
     bucket_max = scatter_hard(
         neg_src_scaled,
@@ -105,6 +111,12 @@ def _scatter_softmin(src: Tensor, index: Tensor, num_nodes: int, tau: float, fil
     return torch.where(is_isolated, fill, result)
 
 
-def _scatter_softmax(src: Tensor, index: Tensor, num_nodes: int, tau: float, fill_value: float) -> Tensor:
+def _scatter_softmax(
+    src: Tensor,
+    index: Tensor,
+    num_nodes: int,
+    tau: float,
+    fill_value: float,
+) -> Tensor:
     r"""Differentiable soft-max per bucket."""
     return -_scatter_softmin(-src, index, num_nodes, tau, -fill_value)

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
-import torch.nn as nn
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from torch import nn
 
 
 def parse_int_csv(seed_csv: str) -> list[int]:

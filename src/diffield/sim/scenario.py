@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 import torch
 
@@ -260,7 +263,12 @@ class SpatialScenario:
         if refresh_topology:
             self.refresh_topology()
 
-    def step_positions(self, velocities: torch.Tensor, dt: float = 1.0, refresh_topology: bool = True) -> None:
+    def step_positions(
+        self,
+        velocities: torch.Tensor,
+        dt: float = 1.0,
+        refresh_topology: bool = True,
+    ) -> None:
         if velocities.shape != self.positions.shape:
             raise ValueError("velocities shape mismatch")
         self.positions = self.positions + velocities.to(self.device, dtype=torch.float32) * dt
@@ -395,7 +403,9 @@ def build_relaxed_radius_graph(
         dtype=positions.dtype,
         name="edge_radius",
     )
-    smooth_excess = relaxation_tau * torch.nn.functional.softplus((edge_dist - radius) / relaxation_tau)
+    smooth_excess = relaxation_tau * torch.nn.functional.softplus(
+        (edge_dist - radius) / relaxation_tau
+    )
     edge_weight = base_weight + penalty_strength * smooth_excess
     return edge_index.long(), edge_weight.float()
 
@@ -462,7 +472,12 @@ class RelaxedRadiusScenario:
         if refresh_topology:
             self.refresh_topology()
 
-    def step_positions(self, velocities: torch.Tensor, dt: float = 1.0, refresh_topology: bool = True) -> None:
+    def step_positions(
+        self,
+        velocities: torch.Tensor,
+        dt: float = 1.0,
+        refresh_topology: bool = True,
+    ) -> None:
         if velocities.shape != self.positions.shape:
             raise ValueError("velocities shape mismatch")
         self.positions = self.positions + velocities.to(self.device, dtype=torch.float32) * dt
@@ -493,7 +508,7 @@ def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:
     src = edge_index[0]
     tgt = edge_index[1]
     neighbors = [set() for _ in range(num_nodes)]
-    for s, t in zip(src.tolist(), tgt.tolist()):
+    for s, t in zip(src.tolist(), tgt.tolist(), strict=False):
         neighbors[s].add(t)
         neighbors[t].add(s)
 
@@ -520,7 +535,12 @@ def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:
     }
 
 
-def _merge_edge_sets(radius_edges: torch.Tensor, knn_edges: torch.Tensor, num_nodes: int, device: torch.device) -> torch.Tensor:
+def _merge_edge_sets(
+    radius_edges: torch.Tensor,
+    knn_edges: torch.Tensor,
+    num_nodes: int,
+    device: torch.device,
+) -> torch.Tensor:
     if radius_edges.numel() == 0 and knn_edges.numel() == 0:
         return torch.zeros((2, 0), dtype=torch.long, device=device)
 
@@ -557,7 +577,11 @@ def build_well_connected_init_graph(
     if num_nodes == 0:
         empty_edges = torch.zeros((2, 0), dtype=torch.long, device=positions.device)
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
-        return empty_edges, empty_weights, {"num_edges": 0.0, "min_degree": 0.0, "num_components": 0.0}
+        return empty_edges, empty_weights, {
+            "num_edges": 0.0,
+            "min_degree": 0.0,
+            "num_components": 0.0,
+        }
 
     radius_edges, _ = build_spatial_graph(
         positions,

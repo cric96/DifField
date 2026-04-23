@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import inspect
-from typing import Callable
+from typing import TYPE_CHECKING
 
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from ..core import RoundContext, resolve_context
 from .common import register_callable
@@ -18,7 +20,9 @@ class IterateLayer(nn.Module):
     def __init__(
         self,
         init_value: Tensor,
-        update_fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | nn.Module,
+        update_fn: Callable[[Tensor, Tensor, RoundContext], Tensor]
+        | Callable[[Tensor], Tensor]
+        | nn.Module,
         *,
         name: str,
     ) -> None:
@@ -27,21 +31,24 @@ class IterateLayer(nn.Module):
         self.init_value = init_value
         register_callable(self, "update_fn", update_fn, "_update_fn")
 
-        try:
-            target = (
-                self.update_fn.forward
-                if isinstance(self.update_fn, nn.Module)
-                else self.update_fn
-            )
-            signature = inspect.signature(target)
-            self._num_positional_params = len(
-                [
-                    param
-                    for param in signature.parameters.values()
-                    if param.default is inspect.Parameter.empty
-                ]
-            )
-        except (ValueError, TypeError):
+        target = (
+            self.update_fn.forward
+            if isinstance(self.update_fn, nn.Module)
+            else self.update_fn
+        )
+        if callable(target):
+            try:
+                signature = inspect.signature(target)
+                self._num_positional_params = len(
+                    [
+                        param
+                        for param in signature.parameters.values()
+                        if param.default is inspect.Parameter.empty
+                    ]
+                )
+            except (ValueError, TypeError):
+                self._num_positional_params = 3
+        else:
             self._num_positional_params = 3
 
     def forward(self, x: Tensor, ctx: RoundContext | None = None) -> Tensor:
@@ -50,11 +57,11 @@ class IterateLayer(nn.Module):
         state = ctx.state.get_or_init(self.init_value, name=self.name)
 
         if self._num_positional_params <= 1:
-            new_state = self.update_fn(state)
+            new_state = self.update_fn(state)  # type: ignore[operator]
         elif self._num_positional_params == 2:
-            new_state = self.update_fn(state, x)
+            new_state = self.update_fn(state, x)  # type: ignore[operator]
         else:
-            new_state = self.update_fn(state, x, ctx)
+            new_state = self.update_fn(state, x, ctx)  # type: ignore[operator]
 
         ctx.state.update(new_state, name=self.name)
         return new_state

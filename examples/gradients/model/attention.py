@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
 from torch_geometric.utils import scatter as pyg_scatter
 from torch_geometric.utils import softmax as pyg_softmax
 

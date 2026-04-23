@@ -10,12 +10,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-import torch
-from diffield.utils import get_device
+import torch  # noqa: E402
+
+from diffield.utils import get_device  # noqa: E402
 
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield.sim import (
+from shared.plotting import (  # noqa: E402
+    export_moving_gif,
+    plot_moving_snapshots,
+    plot_node_trajectories,
+)
+
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.sim import (  # noqa: E402
     EventSchedule,
     ScheduledEvent,
     SimulationEngine,
@@ -25,12 +33,6 @@ from diffield.sim import (
     bounce_in_box,
     limit_speed,
     normalize_vectors,
-)
-from diffield.dsl import mux, scatter, iterate, gather_min, field
-from shared.plotting import (
-    export_moving_gif,
-    plot_moving_snapshots,
-    plot_node_trajectories,
 )
 
 
@@ -200,7 +202,8 @@ def main():
         f"motion={args.motion} nodes={args.num_nodes} rounds={args.rounds} radius={args.radius}"
     )
     print(
-        f"source={args.source} center-nearest-node={closest_idx} dist={output[closest_idx].item():.3f}"
+        f"source={args.source} center-nearest-node={closest_idx} "
+        f"dist={output[closest_idx].item():.3f}"
     )
     print(f"final_edges={runtime.scenario.edge_index.shape[1]}")
     print("recorded rounds:", sorted(recorder.records.keys()))
