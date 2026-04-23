@@ -9,9 +9,9 @@ It lets you write spatial programs using high-level and composable operations �
 
 <div align="center" width="100%">
     <table><tr>
-        <td align="center"><img src="pics/boids_flocking.gif" width="280"/><br/><sub><b>Boids Flocking</b> — learned emergent behavior</sub></td>
-        <td align="center"><img src="pics/spatial_channel.gif" width="280"/><br/><sub><b>Spatial Channel</b> — routing around obstacles</sub></td>
-        <td align="center"><img src="pics/gradient_large.gif" width="280"/><br/><sub><b>Large-Scale Gradient</b> — 250K nodes diffusion</sub></td>
+        <td align="center"><img src="pics/boids_flocking.gif" width="100%"/><br/><sub><b>Boids Flocking</b> — learned emergent behavior</sub></td>
+        <td align="center"><img src="pics/spatial_channel.gif" width="80%"/><br/><sub><b>Spatial Channel</b> — routing around obstacles</sub></td>
+        <td align="center"><img src="pics/gradient_large.gif" width="80%"/><br/><sub><b>Large-Scale Gradient</b> — 250K nodes diffusion</sub></td>
     </tr></table>
 </div>
 
