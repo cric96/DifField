@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 
+from conftest import assert_finite_gradients, field_with_overrides
 from diffield import AggregateContext
 from diffield.dsl import (
+    broadcast,
     collect_cast,
+    field,
+    gather_min,
     gradient,
     gradient_cast,
-    broadcast,
-    scatter_range,
     iterate,
     mux,
-    gather_min,
     scatter,
-    field,
+    scatter_range,
 )
-from conftest import assert_finite_gradients, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
     LINE_SOURCE,
@@ -45,6 +44,7 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([w])
+        assert w.grad is not None
         assert w.grad.item() > 0
 
     def test_soft_gradient_differentiability(self, triangle_topology):
@@ -61,6 +61,7 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([w])
+        assert w.grad is not None
         assert w.grad.item() != 0.0
 
     def test_gradient_cast_differentiability(self, line_ctx):
@@ -118,6 +119,7 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([value])
+        assert value.grad is not None
         assert value.grad.item() > 0.0
 
 

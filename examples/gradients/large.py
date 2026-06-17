@@ -198,6 +198,7 @@ def main():
     loss.backward()
     backward_time = time.time() - start_time
     print(f"Backward pass in {backward_time:.4f}s")
+    assert weight.grad is not None  # noqa: S101
     print(f"d(loss)/dw = {weight.grad.item():.1f}")
 
     plot_results(dist, snapshots, args)

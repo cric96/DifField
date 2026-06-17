@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 from torch import Tensor
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from ..constants import FILL_VALUE_DEFAULT, LOG_EPSILON
 from ..pyg_backend import scatter_hard
@@ -13,7 +18,7 @@ def scatter_aggr(
     src: Tensor,
     index: Tensor,
     num_nodes: int,
-    aggr: str = "sum",
+    aggr: str | Callable = "sum",
     mode: str = "hard",
     tau: float | Tensor = 1.0,
     fill_value: float = FILL_VALUE_DEFAULT,
@@ -39,7 +44,7 @@ def _scatter_min(
     index: Tensor,
     num_nodes: int,
     mode: str,
-    tau: float,
+    tau: float | Tensor,
     fill_value: float,
 ) -> Tensor:
     if mode == "hard":
@@ -52,7 +57,7 @@ def _scatter_max(
     index: Tensor,
     num_nodes: int,
     mode: str,
-    tau: float,
+    tau: float | Tensor,
     fill_value: float,
 ) -> Tensor:
     if mode == "hard":
@@ -64,7 +69,7 @@ def _scatter_softmin(
     src: Tensor,
     index: Tensor,
     num_nodes: int,
-    tau: float,
+    tau: float | Tensor,
     fill_value: float,
 ) -> Tensor:
     r"""Differentiable soft-min per bucket using the logsumexp trick."""
@@ -115,7 +120,7 @@ def _scatter_softmax(
     src: Tensor,
     index: Tensor,
     num_nodes: int,
-    tau: float,
+    tau: float | Tensor,
     fill_value: float,
 ) -> Tensor:
     r"""Differentiable soft-max per bucket."""

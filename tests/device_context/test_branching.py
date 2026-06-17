@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
 
-from diffield.dsl import branch, gather_max, scatter, iterate, gather_sum, DeviceContext
+from diffield.dsl import DeviceContext, branch, gather_max, gather_sum, iterate, scatter
+
+if TYPE_CHECKING:
+    import torch
 
 from .support import (
     FALSE_BRANCH_VALUE,

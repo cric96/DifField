@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Generate README showcase assets by running examples and collecting outputs to pics/."""
 
-import subprocess
 import shutil
+import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -15,7 +15,7 @@ def run(cmd, description):
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd, cwd=str(ROOT))
+    result = subprocess.run(cmd, cwd=str(ROOT), check=False)  # noqa: S603
     if result.returncode != 0:
         print(f"WARNING: {description} failed with return code {result.returncode}")
     return result.returncode == 0

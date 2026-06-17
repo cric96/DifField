@@ -7,15 +7,15 @@ import torch
 
 from diffield import AggregateContext
 from diffield.dsl import (
+    DeviceContext,
+    field,
+    gather_min,
+    gather_sum,
     gradient,
+    iterate,
     mux,
     scatter,
     scatter_range,
-    iterate,
-    gather_min,
-    gather_sum,
-    DeviceContext,
-    field,
 )
 
 from .support import (
@@ -85,11 +85,11 @@ class TestDeviceContextBasic:
         )
 
         for round_index in range(GLOBAL_SYNC_ROUNDS):
-            neighbor_exports = None
+            neighbor_exports: dict[str, list[float] | torch.Tensor] | None = None
             if round_index > 0:
                 neighbor_exports = {
                     GRADIENT_STATE: [
-                        global_states[round_index - 1][upstream_neighbor_id].item()
+                        float(global_states[round_index - 1][upstream_neighbor_id].item())
                     ]
                 }
             with device.round(neighbor_exports=neighbor_exports):
@@ -153,11 +153,11 @@ class TestDeviceContextBasic:
         upstream_neighbor_id = 1
 
         for round_index in range(GLOBAL_SYNC_ROUNDS):
-            neighbor_exports = None
+            neighbor_exports: dict[str, list[float] | torch.Tensor] | None = None
             if round_index > 0:
                 neighbor_exports = {
                     GRADIENT_EXPORT: [
-                        global_states[round_index - 1][upstream_neighbor_id].item()
+                        float(global_states[round_index - 1][upstream_neighbor_id].item())
                     ]
                 }
             with device.round(

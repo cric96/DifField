@@ -8,7 +8,7 @@ import math
 def is_finite_number(value: object) -> bool:
     """Check if a value is a finite float or integer."""
     try:
-        fval = float(value)
+        fval = float(value)  # type: ignore[arg-type]
         return math.isfinite(fval)
     except (TypeError, ValueError):
         return False

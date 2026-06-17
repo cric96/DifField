@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable
@@ -22,7 +22,7 @@ def _resolve_static_edge_weight(
     edge_weight: torch.Tensor | float | None,
     *,
     num_edges: int,
-    device: torch.device,
+    device: torch.device | str,
 ) -> torch.Tensor:
     if edge_weight is None:
         return torch.ones(num_edges, device=device, dtype=torch.float32)
@@ -42,7 +42,7 @@ def _resolve_static_edge_weight(
 def _resolve_scalar_metric(
     value: torch.Tensor | float,
     *,
-    device: torch.device,
+    device: torch.device | str,
     dtype: torch.dtype,
     name: str,
 ) -> torch.Tensor:
@@ -148,7 +148,8 @@ class GridScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        ew = cast("torch.Tensor | None", self.edge_weight)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
 
 
 @dataclass
@@ -202,7 +203,8 @@ class FullyConnectedScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        ew = cast("torch.Tensor | None", self.edge_weight)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
 
 
 @dataclass
@@ -306,7 +308,8 @@ class SpatialScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        ew = cast("torch.Tensor | None", self.edge_weight)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
 
 
 def build_spatial_graph(
@@ -498,7 +501,8 @@ class RelaxedRadiusScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        ew = cast("torch.Tensor | None", self.edge_weight)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
 
 
 def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:

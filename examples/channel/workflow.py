@@ -87,9 +87,9 @@ class SmallChannelWorkflow:
                 gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
             )
 
-    def _build_scenario(self, device: torch.device | None = None):
+    def _build_scenario(self, device: torch.device | str | None = None):
         rows, cols = self.spec.grid.rows, self.spec.grid.cols
-        scenario = GridScenario(rows, cols, connectivity=8, device=device)
+        scenario = GridScenario(rows, cols, connectivity=8, device=device or "cpu")
 
         src_pos = (rows // 2, 2)
         dst_pos = (rows // 2, cols - 3)
@@ -225,9 +225,9 @@ class LargeChannelWorkflow:
                 gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
             )
 
-    def _build_scenario(self, device: torch.device | None = None):
+    def _build_scenario(self, device: torch.device | str | None = None):
         rows, cols = self.spec.grid.rows, self.spec.grid.cols
-        scenario = GridScenario(rows, cols, connectivity=8, device=device)
+        scenario = GridScenario(rows, cols, connectivity=8, device=device or "cpu")
         src_pos = (rows // 2, 5)
         dst_pos = (rows // 2, cols - 6)
         source = scenario.marker(src_pos[0], src_pos[1])
@@ -238,7 +238,7 @@ class LargeChannelWorkflow:
         return scenario, source, dest, obstacle, src_pos, dst_pos
 
     def _build_obstacles(
-        self, rows: int, cols: int, device: torch.device | None = None,
+        self, rows: int, cols: int, device: torch.device | str | None = None,
     ) -> torch.Tensor:
         obstacle = torch.zeros(rows * cols, dtype=torch.bool, device=device)
         for row in range(0, min(40, rows)):

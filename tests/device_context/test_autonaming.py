@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield.dsl import gather_min, scatter, iterate, gather_sum, DeviceContext
+from diffield.dsl import DeviceContext, gather_min, gather_sum, iterate, scatter
 
 from .support import (
     BRANCH_STATE,
@@ -147,8 +147,8 @@ class TestDeviceContextAutoNamed:
                 min_neighbor = gather_min(scatter(x))
             return device.result(x).item(), device.result(min_neighbor).item()
 
-        xa1, min_a1 = run_min(dev_a, None)
-        xb1, min_b1 = run_min(dev_b, None)
+        xa1, _min_a1 = run_min(dev_a, None)
+        xb1, _min_b1 = run_min(dev_b, None)
         assert (xa1, xb1) == (1.0, 1.0)
 
         xa2, min_a2 = run_min(dev_a, iterated(xb1, THREE_NEIGHBORS))

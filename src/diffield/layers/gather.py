@@ -34,7 +34,7 @@ class _PyGMessagePassing(MessagePassing):
             and owner.aggr in {"sum", "mean"}
         )
         super().__init__(
-            aggr=owner.aggr if use_builtin else None,
+            aggr=owner.aggr if use_builtin else None,  # type: ignore[arg-type]
             flow="source_to_target",
             node_dim=0,
         )

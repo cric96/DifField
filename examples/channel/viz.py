@@ -116,7 +116,7 @@ def plot_channel_evolution(
             if col_idx == num_steps - 1:
                 plt.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
     fig.suptitle("Channel with Obstacles - Field Evolution", fontsize=13, y=0.99)
-    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    plt.tight_layout(rect=(0, 0, 1, 0.97))
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
@@ -165,7 +165,7 @@ def plot_channel_final_fields(
                         )
     axes_flat[-1].set_visible(False)
     fig.suptitle(f"Channel with Obstacles - Converged (t = {rounds})", fontsize=14)
-    plt.tight_layout(rect=[0, 0, 1, 0.96])
+    plt.tight_layout(rect=(0, 0, 1, 0.96))
     output_path = f"{viz_prefix}_final.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
@@ -294,14 +294,14 @@ def plot_channel_large_evolution(
             ax.set_xticks([])
             ax.set_yticks([])
         color_ax = axes[row_idx, -1]
-        fig.colorbar(row_image, cax=color_ax)
+        fig.colorbar(row_image, cax=color_ax)  # type: ignore[arg-type]
     fig.suptitle(
         f"Large-scale channel evolution - {rows}x{cols},"
         f" {num_nodes} devices, {rounds} rounds, {elapsed:.1f}s",
         fontsize=12,
         y=0.995,
     )
-    plt.tight_layout(rect=[0, 0, 1, 0.98])
+    plt.tight_layout(rect=(0, 0, 1, 0.98))
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=160)

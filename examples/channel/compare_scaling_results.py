@@ -127,7 +127,7 @@ def main():  # noqa: PLR0915
 
     # Force Z axis to show the full range clearly
     ax.set_zlim(0, max(2.0, top.max() * 1.1))
-    ax.tick_params(axis='z', labelsize=16)
+    ax.tick_params(axis='z', labelsize=16)  # type: ignore[arg-type]
 
     # Add a colorbar to make the speedup values explicit
     #mappable = plt.cm.ScalarMappable(norm=norm, cmap=cmap)

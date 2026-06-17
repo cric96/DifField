@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import torch
 
-from diffield.dsl import branch, mux, scatter, iterate, gather_max, gather_sum, field
 from conftest import field_zeros
+from diffield.dsl import branch, field, gather_max, gather_sum, iterate, mux, scatter
 from tests.aggregate.support import ROUNDS, flags, values
 
 
@@ -82,10 +82,10 @@ class TestMultipleAssignmentsComposition:
                 x = iterate(field.zeros(), lambda s: s + 1.0)
                 y = branch(
                     cond,
-                    lambda: iterate(field.zeros(), lambda s: gather_sum(scatter(s)) + x),
-                    lambda: iterate(field.zeros(), lambda s: gather_max(scatter(s)) + x * 2),
+                    lambda: iterate(field.zeros(), lambda s: gather_sum(scatter(s)) + x),  # noqa: B023
+                    lambda: iterate(field.zeros(), lambda s: gather_max(scatter(s)) + x * 2),  # noqa: B023
                 )
-                z = iterate(field.zeros(), lambda s: gather_sum(scatter(s + y)))
+                z = iterate(field.zeros(), lambda s: gather_sum(scatter(s + y)))  # noqa: B023
 
             results_x.append(x.clone())
             results_y.append(y.clone())

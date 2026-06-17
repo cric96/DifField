@@ -192,10 +192,12 @@ def main():
         schedule=schedule,
     )
 
-    center = torch.tensor([0.5, 0.5], device=runtime.scenario.device)
-    closest_idx = torch.argmin(
-        torch.norm(runtime.scenario.positions - center, dim=1)
-    ).item()
+    scenario = runtime.scenario
+    assert isinstance(scenario, SpatialScenario)  # noqa: S101
+    center = torch.tensor([0.5, 0.5], device=scenario.device)
+    closest_idx = int(torch.argmin(
+        torch.norm(scenario.positions - center, dim=1)
+    ).item())
 
     print("=== Moving Nodes Gradient ===")
     print(
@@ -205,7 +207,7 @@ def main():
         f"source={args.source} center-nearest-node={closest_idx} "
         f"dist={output[closest_idx].item():.3f}"
     )
-    print(f"final_edges={runtime.scenario.edge_index.shape[1]}")
+    print(f"final_edges={scenario.edge_index.shape[1]}")
     print("recorded rounds:", sorted(recorder.records.keys()))
 
     if not args.no_viz:

@@ -7,8 +7,14 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from diffield.functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from diffield.functional import scatter_min_by_first
+from diffield import get_default_mode, with_mode
+from diffield.functional import (
+    field_where,
+    mask_edges,
+    mask_edges_for_partition,
+    scatter_aggr,
+    scatter_min_by_first,
+)
 
 
 class TestScatterAggr:
@@ -110,7 +116,7 @@ class TestScatterAggr:
         out = scatter_aggr(src, idx, num_nodes, aggr="sum")
 
         expected = torch.zeros(num_nodes)
-        for i, val in zip(idx.tolist(), src.tolist()):
+        for i, val in zip(idx.tolist(), src.tolist(), strict=False):
             expected[i] += val
 
         assert torch.allclose(out, expected, atol=1e-4)
@@ -157,8 +163,6 @@ class TestFieldWhere:
         assert cond.grad.abs().item() > 0.0
 
     def test_default_mode_uses_global(self):
-        from diffield import get_default_mode, set_default_mode, with_mode
-
         assert get_default_mode() == "hard"
         cond = torch.tensor([0.5])
         x = torch.tensor([1.0])
@@ -204,6 +208,7 @@ class TestMaskEdges:
             mode="hard",
         )
 
+        assert ew_out is not None and mw_out is not None
         assert torch.equal(ei_out, torch.tensor([[0, 1], [1, 0]], dtype=torch.long))
         assert torch.allclose(ew_out, torch.tensor([1.0, 1.0]))
         assert torch.allclose(mw_out, torch.tensor([10.0, 11.0]))

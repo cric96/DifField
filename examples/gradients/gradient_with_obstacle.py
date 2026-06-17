@@ -220,7 +220,7 @@ def plot_evolution(
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     fig.suptitle("Gradient Evolution with Obstacles", fontsize=13, y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout(rect=(0, 0, 1, 0.95))
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)

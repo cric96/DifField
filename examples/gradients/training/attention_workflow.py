@@ -70,7 +70,7 @@ class AttentionGradientWorkflow:
                 self.spec.grid.rows,
                 self.spec.grid.cols,
                 f"{viz_prefix}_evolution.gif",
-                aggr=model.attn_aggr,
+                aggr=model.attn_aggr,  # type: ignore[arg-type]
                 title="Attention Gradient Evolution (post-training)",
                 fps=gif_fps,
             )

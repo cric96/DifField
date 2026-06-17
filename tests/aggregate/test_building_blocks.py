@@ -1,36 +1,35 @@
-"""Tests for higher-order aggregate building blocks: gradient, gradient_cast, broadcast, collect_cast."""
+"""Tests for higher-order aggregate building blocks: gradient, gradient_cast, broadcast, collect_cast."""  # noqa: E501
 
 import torch
 
+from conftest import assert_finite_gradients, field_from_values, field_with_overrides
 from diffield import AggregateContext
 from diffield.dsl import (
+    broadcast,
     collect_cast,
+    field,
+    gather_min,
     gradient,
     gradient_cast,
-    broadcast,
-    scatter_range,
     iterate,
     mux,
-    gather_min,
     scatter,
-    field,
+    scatter_range,
 )
-from conftest import assert_finite_gradients, field_from_values, field_with_overrides
+from diffield.utils import make_grid_graph
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
-    PROPAGATION_ROUNDS,
     LINE_SOURCE,
-    WEIGHTED_SOURCES,
-    SOFT_MATCH_TAU,
+    PROPAGATION_ROUNDS,
     SOFT_MATCH_ATOL,
+    SOFT_MATCH_TAU,
+    WEIGHTED_SOURCES,
     values,
 )
 
 
 class TestGradient:
     def test_fixed_hop_count(self):
-        from diffield.utils import make_grid_graph
-
         rows, cols = 5, 5
         edge_index, n = make_grid_graph(rows, cols)
         w = torch.tensor(1.0)
@@ -132,6 +131,7 @@ class TestGradientCast:
         loss.backward()
 
         assert_finite_gradients([step])
+        assert step.grad is not None
         assert step.grad.item() != 0.0
 
     def test_soft_matches_hard_on_line(self, line_topology):
@@ -248,6 +248,7 @@ class TestCollectCast:
         output[0].backward()
 
         assert_finite_gradients([local])
+        assert local.grad is not None
         assert torch.allclose(local.grad, torch.ones(line_ctx.num_nodes))
 
     def test_soft_backpropagates_through_potential(self, line_ctx):
@@ -270,6 +271,7 @@ class TestCollectCast:
         output[0].backward()
 
         assert_finite_gradients([potential])
+        assert potential.grad is not None
         assert potential.grad.abs().sum().item() > 0.0
 
     def test_weighted_collect_uses_shortest_path_parents(

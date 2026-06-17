@@ -73,8 +73,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--source", type=int, default=-1)
     parser.add_argument("--dest", type=int, default=-1)
-    parser.add_argument("--tolerance", type=float, default=0.01)
-    parser.add_argument("--obstacle-ratio", type=float, default=0.18)
+    parser.add_argument("--tolerance", type=float, default=0.02)
+    parser.add_argument("--obstacle-ratio", type=float, default=0.0)
     parser.add_argument("--record-every", type=int, default=20)
     parser.add_argument("--viz-prefix", type=str, default="generated/channel_random")
     parser.add_argument("--gif-fps", type=int, default=10)
@@ -462,7 +462,7 @@ def create_obstacle_mask(
     wall_count = max(2, min(6, 2 + round(ratio * 12.0)))
     wall_width = 0.04
     gap_size = 0.02
-    margin = 0.02
+    margin = 0.99
     wall_centers = torch.linspace(
         0.18,
         0.82,
@@ -481,7 +481,6 @@ def create_obstacle_mask(
         else:
             blocked_segment = y_coords < (1.0 - margin - gap_size)
         obstacle |= in_wall_band & blocked_segment
-
     return obstacle
 
 
@@ -773,7 +772,7 @@ def _select_destination_index(
 
     pos = scenario.positions.detach().cpu()
     corner_score = (1.0 - pos[:, 0]) + pos[:, 1]
-    dest_idx = torch.argmin(corner_score).item()
+    dest_idx = int(torch.argmin(corner_score).item())
     dest_pos = pos[dest_idx]
     print(
         "Auto-selected destination node: "
@@ -788,7 +787,7 @@ def _select_source_index(positions: torch.Tensor, requested_source: int) -> int:
 
     pos = positions.detach().cpu()
     corner_score = pos[:, 0] - pos[:, 1]
-    source_idx = torch.argmin(corner_score).item()
+    source_idx = int(torch.argmin(corner_score).item())
     source_pos = pos[source_idx]
     print(
         "Auto-selected source node: "
@@ -807,7 +806,7 @@ def main():  # noqa: PLR0915
     if args.radius is None:
         # Heuristic: aim for average degree ~22 in a unit square
         # k = n * pi * r^2  => r = sqrt(k / (n * pi))
-        args.radius = float(np.sqrt(18.0 / (args.num_nodes * np.pi)))
+        args.radius = float(np.sqrt(40.0 / (args.num_nodes * np.pi)))
         print(f"Auto-computed radius: {args.radius:.4f} (targeting average degree ~22)")
 
     scenario = SpatialScenario(

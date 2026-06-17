@@ -82,7 +82,7 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
                 ]
             }
 
-        with device.round(neighbor_exports=neighbor_exports):
+        with device.round(neighbor_exports=neighbor_exports):  # type: ignore[arg-type]
             d_local = gradient(source_local, scatter(local_weight), name="dist")
 
         local_value = device.result(d_local).item()

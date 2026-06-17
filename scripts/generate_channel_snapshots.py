@@ -1,5 +1,6 @@
-import subprocess
 import os
+import subprocess
+
 
 def run_experiment(nodes, rounds=2000, seed=30):
     prefix = f"generated/channels/{seed}/channel_spatial_{nodes}"
@@ -11,9 +12,9 @@ def run_experiment(nodes, rounds=2000, seed=30):
         "--seed", str(seed),
         "--viz-prefix", prefix
     ]
-    
+
     print(f"Running: {' '.join(command)}")
-    result = subprocess.run(command)
+    result = subprocess.run(command, check=False)  # noqa: S603
     if result.returncode != 0:
         print(f"Error running for {nodes} nodes")
 
@@ -21,7 +22,7 @@ if __name__ == "__main__":
     node_counts = [1000, 5000, 10000, 20000]
     seeds = [1]
     os.makedirs("generated/channels", exist_ok=True)
-    
+
     for nodes in node_counts:
         for seed in seeds:
             run_experiment(nodes, seed=seed)

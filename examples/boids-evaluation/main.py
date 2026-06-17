@@ -126,7 +126,7 @@ def teacher_rollout(
     w_sep: float,
     w_align: float,
     w_cohesion: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[torch.Tensor]]:
     scenario = SpatialScenario(
         positions=positions0,
         edge_radius=radius,

@@ -2,17 +2,20 @@ import subprocess
 import sys
 
 
-def run_script(script_path, args=[]):
-    cmd = ["uv", "run", "python", script_path] + args
+def run_script(script_path, args=None):
+    if args is None:
+        args = []
+    cmd = ["uv", "run", "python", script_path, *args]
     print(f"Running: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
-        print(f"SUCCESS: {script_path}")
-        return True, result.stdout
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # noqa: S603
     except subprocess.CalledProcessError as e:
         print(f"FAILED: {script_path}")
         print(f"Error:\n{e.stderr}")
         return False, e.stderr
+    else:
+        print(f"SUCCESS: {script_path}")
+        return True, result.stdout
 
 
 def main():

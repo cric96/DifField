@@ -4,18 +4,17 @@ from __future__ import annotations
 
 import torch
 
+from conftest import field_from_values
 from diffield import AggregateContext
 from diffield.dsl import (
     branch,
+    field,
     gather_max,
-    gather_min,
     gather_sum,
     iterate,
     mux,
     scatter,
-    field,
 )
-from conftest import field_from_values, field_zeros
 from tests.aggregate.support import ROUNDS, flags, values
 
 
@@ -62,7 +61,7 @@ class TestBranch:
                     lambda: gather_max(scatter(x)),
                     branch_name="inner",
                 ),
-                lambda: field.zeros(),
+                field.zeros,
                 branch_name="outer",
             )
 
@@ -140,7 +139,8 @@ class TestBranch:
         # After switch:
         # Nodes 0,1: stayed T -> 5.0 + 5.0 = 10.0
         # Nodes 2,3: switched T->F -> reset to 0.0, then +1.0 = 1.0
-        assert torch.allclose(line_ctx.get_state(name="reset_iterate"), values(10.0, 10.0, 1.0, 1.0))
+        expected = values(10.0, 10.0, 1.0, 1.0)
+        assert torch.allclose(line_ctx.get_state(name="reset_iterate"), expected)
 
 
 class TestMux:

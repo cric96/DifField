@@ -233,8 +233,8 @@ def plot_moving_snapshots(
     )
     fig.suptitle(title, fontsize=20, fontweight="bold")
     if mappable is not None:
-        cax = fig.add_axes([0.90, 0.14, 0.018, 0.70])
-        fig.colorbar(mappable, cax=cax)
+        cax = fig.add_axes((0.90, 0.14, 0.018, 0.70))
+        fig.colorbar(mappable, cax=cax)  # type: ignore[arg-type]
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
@@ -252,7 +252,7 @@ def _draw_trajectory_on_ax(
 ) -> None:
     for node_idx in range(num_nodes):
         is_source = show_source and node_idx == source_idx
-        color = id_colors[node_idx] if color_by_id else ("crimson" if is_source else "steelblue")
+        color = id_colors[node_idx] if color_by_id else ("crimson" if is_source else "steelblue")  # type: ignore[index]
         alpha_base = 0.9 if is_source else 0.7
 
         # Use segments for gradient trails
@@ -263,7 +263,7 @@ def _draw_trajectory_on_ax(
         widths = np.linspace(0.6, 3.5 if is_source else 2.5, num_rounds - 1)
         alphas = np.linspace(0.1, alpha_base, num_rounds - 1)
 
-        lc = LineCollection(segments, linewidths=widths, colors=color, alpha=alphas, zorder=2)
+        lc = LineCollection(segments, linewidths=widths, colors=color, alpha=alphas, zorder=2)  # type: ignore[arg-type]
         ax.add_collection(lc)
 
         # Final position marker
@@ -461,7 +461,7 @@ def _update_gif_ax(
             p_finite = np.isfinite(p_vals)
             artists["trails"][i].set_offsets(p_pos[p_finite])
             if color_by_id:
-                artists["trails"][i].set_color(id_colors[p_finite])
+                artists["trails"][i].set_color(id_colors[p_finite])  # type: ignore[index]
             else:
                 artists["trails"][i].set_array(p_vals[p_finite])
         else:
@@ -469,7 +469,7 @@ def _update_gif_ax(
 
     artists["main"].set_offsets(pos[finite])
     if color_by_id:
-        artists["main"].set_color(id_colors[finite])
+        artists["main"].set_color(id_colors[finite])  # type: ignore[index]
     else:
         artists["main"].set_array(vals[finite])
     artists["unreachable"].set_offsets(pos[~finite])
@@ -479,7 +479,7 @@ def _update_gif_ax(
         artists["links"].set_segments(segs)
         if color_by_id:
             edges = edge_data[round_idx].detach().cpu().numpy()
-            artists["links"].set_colors(id_colors[edges[0]])
+            artists["links"].set_colors(id_colors[edges[0]])  # type: ignore[index]
         else:
             artists["links"].set_colors("black")
 
@@ -526,13 +526,13 @@ def export_moving_gif(
 
     _setup_gif_ax(ax_pred, "Learned Model" if is_split else title)
     if is_split:
-        _setup_gif_ax(ax_ref, "Teacher Reference")
+        _setup_gif_ax(ax_ref, "Teacher Reference")  # type: ignore[arg-type]
 
     pred_artists = _create_gif_artists(
         ax_pred, trail_length, show_links, links_width, links_alpha,
     )
     ref_artists = _create_gif_artists(
-        ax_ref, trail_length, show_links, links_width, links_alpha,
+        ax_ref, trail_length, show_links, links_width, links_alpha,  # type: ignore[arg-type]
     ) if is_split else None
 
     def update(frame_idx: int):
@@ -543,9 +543,9 @@ def export_moving_gif(
             rounds, id_colors, color_by_id, trail_length,
         )
         if is_split:
-            ref_pos_data = {r: phantom_pos_seq[r] for r in rounds}
+            ref_pos_data = {r: phantom_pos_seq[r] for r in rounds}  # type: ignore[index]
             res += _update_gif_ax(
-                round_idx, ref_artists, ref_pos_data,
+                round_idx, ref_artists, ref_pos_data,  # type: ignore[arg-type]
                 values_by_round, edge_index_by_round, frame_idx,
                 rounds, id_colors, color_by_id, trail_length,
             )

@@ -858,12 +858,12 @@ def main() -> None:  # noqa: PLR0915
 
     if not args.skip_plots and plt is not None:
         try:
-            plot_runtime_matrix_table(aggregated_rows, artifacts.runtime_matrix_plot)
-            plot_scaling_trend(aggregated_rows, artifacts.scaling_trend_plot)
-            plot_relative_scaling(aggregated_rows, artifacts.relative_scaling_plot)
-            plot_runtime_heatmap(aggregated_rows, artifacts.heatmap_plot)
-            plot_3d_bar_time(aggregated_rows, artifacts.plot_3d_bar_plot)
-            plot_linearity(aggregated_rows, artifacts.plot_linearity_plot)
+            plot_runtime_matrix_table(aggregated_rows, artifacts.runtime_matrix_plot)  # type: ignore[arg-type]
+            plot_scaling_trend(aggregated_rows, artifacts.scaling_trend_plot)  # type: ignore[arg-type]
+            plot_relative_scaling(aggregated_rows, artifacts.relative_scaling_plot)  # type: ignore[arg-type]
+            plot_runtime_heatmap(aggregated_rows, artifacts.heatmap_plot)  # type: ignore[arg-type]
+            plot_3d_bar_time(aggregated_rows, artifacts.plot_3d_bar_plot)  # type: ignore[arg-type]
+            plot_linearity(aggregated_rows, artifacts.plot_linearity_plot)  # type: ignore[arg-type]
         except Exception as e:
             print(f"Warning: failed to generate plots: {e}")
 

@@ -4,21 +4,21 @@ from __future__ import annotations
 
 import torch
 
+from conftest import field_from_values, field_with_overrides
 from diffield import AggregateContext
 from diffield.dsl import (
     branch,
+    field,
+    gather,
+    gather_max,
+    gather_min,
+    gather_sum,
+    iterate,
     mux,
     scatter,
     scatter_range,
-    iterate,
-    gather,
-    gather_min,
-    gather_max,
-    gather_sum,
-    field,
 )
 from diffield.dsl.scattering import LinkField
-from conftest import field_from_values, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
     ROUNDS,

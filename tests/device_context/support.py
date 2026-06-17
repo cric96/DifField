@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import torch
 from torch import Tensor
 
-from diffield import AggregateContext
-from diffield.dsl import branch, iterate, DeviceContext
+from diffield.dsl import DeviceContext, branch, iterate
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping, Sequence
+
+    from diffield import AggregateContext
 
 ABS_TOL = 1e-6
 
@@ -56,18 +60,21 @@ def _neighbor_list(values: Sequence[float] | Tensor) -> list[float]:
 
 def maybe_exports(
     name: str, values: Sequence[float] | Tensor | None
-) -> dict[str, list[float]] | None:
+) -> dict[str, list[float] | Tensor] | None:
     if values is None:
         return None
-    return {name: _neighbor_list(values)}
+    return cast("dict[str, list[float] | Tensor]", {name: _neighbor_list(values)})
 
 
 def maybe_export_map(
-    values_by_name: dict[str, Sequence[float] | Tensor] | None,
-) -> dict[str, list[float]] | None:
+    values_by_name: Mapping[str, Sequence[float] | Tensor] | None,
+) -> dict[str, list[float] | Tensor] | None:
     if values_by_name is None:
         return None
-    return {name: _neighbor_list(values) for name, values in values_by_name.items()}
+    return cast(
+        "dict[str, list[float] | Tensor]",
+        {name: _neighbor_list(vals) for name, vals in values_by_name.items()},
+    )
 
 
 def device_value(device: DeviceContext, tensor: Tensor) -> float:
@@ -86,9 +93,9 @@ def run_round(
     device: DeviceContext,
     program: Callable[[], Any],
     *,
-    neighbor_exports: dict[str, Sequence[float] | Tensor] | None = None,
-    neighbor_messages: dict[str, Sequence[float] | Tensor] | None = None,
-    neighbor_ranges: float | Sequence[float] | Tensor | None = None,
+    neighbor_exports: Mapping[str, Sequence[float] | Tensor] | None = None,
+    neighbor_messages: Mapping[str, Sequence[float] | Tensor] | None = None,
+    neighbor_ranges: float | list[float] | Tensor | None = None,
 ) -> Any:
     with device.round(
         neighbor_exports=maybe_export_map(neighbor_exports),
@@ -105,7 +112,7 @@ def run_named_iterate(
     update: Callable[[Tensor], Tensor],
     init: float = 0.0,
     neighbor_values: Sequence[float] | Tensor | None = None,
-    neighbor_ranges: float | Sequence[float] | Tensor | None = None,
+    neighbor_ranges: float | list[float] | Tensor | None = None,
 ) -> float:
     return run_round(
         device,
