@@ -19,7 +19,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting import save_grid_simulation_gif  # noqa: E402
+from shared.plotting import apply_paper_style, panel_label, save_grid_simulation_gif  # noqa: E402
+
+apply_paper_style()
 
 from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
 
@@ -139,10 +141,11 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     fig, axes = plt.subplots(1, len(snapshots), figsize=(20, 4))
     if len(snapshots) == 1:
         axes = [axes]
+    letters = "abcdefghijklmnopqrstuvwxyz"
     for index, (round_idx, snapshot) in enumerate(sorted(snapshots.items())):
         im = axes[index].imshow(snapshot.numpy(), cmap="magma")
-        axes[index].set_title(f"Round {round_idx}")
         axes[index].axis("off")
+        panel_label(axes[index], letters[index % len(letters)])
         fig.colorbar(im, ax=axes[index], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
@@ -154,9 +157,6 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     plt.figure(figsize=(8, 6))
     plt.imshow(dist.numpy(), cmap="magma")
     plt.colorbar(label="Distance")
-    plt.title(
-        f"Final Gradient field on {args.rows}x{args.cols} grid (Source at center)"
-    )
     final_path = f"{args.viz_prefix}.png"
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(final_path)

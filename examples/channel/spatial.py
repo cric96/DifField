@@ -23,6 +23,20 @@ from channel.core import (  # noqa: E402
     count_channel_nodes,
 )
 from shared.plotting.common import LineCollection, plt, save_gif  # noqa: E402
+from shared.plotting.style import (  # noqa: E402
+    BLUE,
+    FIG_WIDTH_1COL,
+    FIG_WIDTH_2COL,
+    GREEN,
+    INK,
+    MUTED,
+    ORANGE,
+    RED,
+    apply_paper_style,
+)
+
+if plt is not None:
+    apply_paper_style()
 
 from diffield.dsl import branch, field  # noqa: E402
 from diffield.sim import (  # noqa: E402
@@ -35,22 +49,25 @@ from diffield.utils import get_device  # noqa: E402
 
 @dataclass(frozen=True)
 class ChannelVizStyle:
-    node_color: str = "steelblue"
+    # shared paper palette: plain nodes blue, the elected channel corridor
+    # orange (highlight), obstacles ink-black (physical walls), source/dest
+    # stars green/red as everywhere else in the repo
+    node_color: str = BLUE
     node_size: int = 50
-    node_alpha: float = 0.7
-    channel_color: str = "orange"
+    node_alpha: float = 0.55
+    channel_color: str = ORANGE
     channel_size: int = 70
-    channel_alpha: float = 0.9
-    obstacle_color: str = "darkred"
+    channel_alpha: float = 0.95
+    obstacle_color: str = INK
     obstacle_size: int = 80
-    obstacle_alpha: float = 0.8
+    obstacle_alpha: float = 0.85
     source_ring_color: str = "white"
     source_ring_size: int = 200
-    source_star_color: str = "green"
+    source_star_color: str = GREEN
     source_star_size: int = 150
     dest_ring_color: str = "white"
     dest_ring_size: int = 200
-    dest_star_color: str = "red"
+    dest_star_color: str = RED
     dest_star_size: int = 150
     edge_color: str = "gray"
     edge_alpha: float = 0.12
@@ -268,7 +285,8 @@ def _finalize_axes(
     ax.set_yticks([])
     for spine in ax.spines.values():
         spine.set_visible(False)
-    ax.set_title(title, fontsize=13)
+    if title:
+        ax.set_title(title, fontsize=10.5, fontweight="normal", color=MUTED)
     if show_legend:
         ax.legend(loc=legend_loc)
 
@@ -499,7 +517,7 @@ def plot_channel_setup(
         print("matplotlib not available; skipping setup plot")
         return
 
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, FIG_WIDTH_1COL))
     _draw_channel_overlay(
         ax,
         positions,
@@ -508,7 +526,7 @@ def plot_channel_setup(
         source_idx,
         dest_idx,
         channel_values=None,
-        title="Channel Setup - Fixed Random Nodes with Obstacles",
+        title="",
         show_links=show_links,
         links_alpha=links_alpha,
         links_width=links_width,
@@ -520,7 +538,7 @@ def plot_channel_setup(
     )
 
     _ensure_parent_dir(output_path)
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.savefig(output_path, dpi=200, bbox_inches="tight")
     print(f"Saved {output_path}")
     plt.close(fig)
 
@@ -541,16 +559,13 @@ def plot_channel_final(
         print("matplotlib not available; skipping final plot")
         return
 
-    fig = plt.figure(figsize=(18.5, 6.8), facecolor="#f5f1e8")
-    grid = fig.add_gridspec(1, 5, width_ratios=[1.0, 1.0, 1.0, 0.045, 0.045], wspace=0.18)
+    fig = plt.figure(figsize=(FIG_WIDTH_2COL, 2.9))
+    grid = fig.add_gridspec(
+        1, 6, width_ratios=[1.0, 1.0, 1.0, 0.05, 0.06, 0.05], wspace=0.18
+    )
     axes = [fig.add_subplot(grid[0, idx]) for idx in range(3)]
-    colorbar_axes = [fig.add_subplot(grid[0, 3]), fig.add_subplot(grid[0, 4])]
-
-    for ax in axes:
-        ax.set_facecolor("#fbf8f3")
-        for spine in ax.spines.values():
-            spine.set_color("#d8d1c2")
-            spine.set_linewidth(1.0)
+    # column 4 is an empty spacer so the two colorbars' tick labels never touch
+    colorbar_axes = [fig.add_subplot(grid[0, 3]), fig.add_subplot(grid[0, 5])]
 
     overlay = _draw_channel_overlay(
         axes[0],
@@ -560,7 +575,7 @@ def plot_channel_final(
         source_idx,
         dest_idx,
         channel_values=final["channel"],
-        title="Channel Corridor",
+        title="channel corridor",
         show_links=show_links,
         links_alpha=links_alpha * 0.5,
         links_width=links_width,
@@ -580,15 +595,14 @@ def plot_channel_final(
         dest_idx,
         final["dist_src"],
         cmap="viridis",
-        title="Weighted Distance From Source",
+        title="distance from source",
         show_links=show_links,
         links_alpha=links_alpha * 0.5,
         links_width=links_width,
     )
     distance_bar = fig.colorbar(source_distance, cax=colorbar_axes[0])
-    distance_bar.set_label("Distance", fontsize=10, color="#3a342b")
-    distance_bar.ax.tick_params(colors="#3a342b")
-    colorbar_axes[0].set_facecolor("#f5f1e8")
+    distance_bar.ax.tick_params(labelsize=8)
+    colorbar_axes[0].set_title("src", fontsize=8, fontweight="normal", color=MUTED)
 
     path_sum = _draw_scalar_field_panel(
         axes[2],
@@ -599,15 +613,15 @@ def plot_channel_final(
         dest_idx,
         final["sum"],
         cmap="plasma",
-        title="Combined Path Distance",
+        title="combined path distance",
         show_links=show_links,
         links_alpha=links_alpha * 0.5,
         links_width=links_width,
     )
     sum_bar = fig.colorbar(path_sum, cax=colorbar_axes[1])
-    sum_bar.set_label("Distance", fontsize=10, color="#3a342b")
-    sum_bar.ax.tick_params(colors="#3a342b")
-    colorbar_axes[1].set_facecolor("#f5f1e8")
+    sum_bar.set_label("distance", fontsize=9)
+    sum_bar.ax.tick_params(labelsize=8)
+    colorbar_axes[1].set_title("s+d", fontsize=8, fontweight="normal", color=MUTED)
 
     legend_handles = []
     legend_labels = []
@@ -626,33 +640,14 @@ def plot_channel_final(
             legend_handles,
             legend_labels,
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.94),
+            bbox_to_anchor=(0.5, 1.04),
             ncol=len(legend_handles),
-            frameon=True,
-            facecolor="#fffaf0",
-            edgecolor="#d8d1c2",
-            fontsize=10,
+            fontsize=9,
         )
 
-    fig.suptitle(
-        "Channel Through Alternating Walls",
-        fontsize=18,
-        fontweight="semibold",
-        color="#2f2a24",
-        y=0.995,
-    )
-    fig.text(
-        0.5,
-        0.955,
-        "Weighted shortest-path distance field through a narrow zig-zag corridor",
-        ha="center",
-        va="center",
-        fontsize=11,
-        color="#6a6155",
-    )
-    fig.subplots_adjust(left=0.04, right=0.98, bottom=0.11, top=0.83)
+    fig.subplots_adjust(left=0.02, right=0.98, bottom=0.04, top=0.88)
     _ensure_parent_dir(output_path)
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
+    plt.savefig(output_path, dpi=200, bbox_inches="tight")
     print(f"Saved {output_path}")
     plt.close(fig)
 
@@ -691,7 +686,7 @@ def plot_channel_evolution(
             source_idx,
             dest_idx,
             channel_values=values_by_round[round_idx],
-            title="Channel Evolution",
+            title="",
             show_links=show_links,
             links_alpha=links_alpha,
             links_width=links_width,
@@ -702,6 +697,10 @@ def plot_channel_evolution(
             source_star_size=120,
             dest_ring_size=150,
             dest_star_size=120,
+        )
+        ax.text(
+            0.03, 0.97, f"t={round_idx + 1}",
+            transform=ax.transAxes, fontsize=9, color=MUTED, ha="left", va="top",
         )
         fig.tight_layout()
         frame_path = out_path / f"frame_{round_idx:04d}.png"
@@ -919,7 +918,7 @@ def main():  # noqa: PLR0915
 
         # Always render the last frame as a standalone image in evolution style
         last_round = max(values_by_round.keys())
-        fig, ax = plt.subplots(figsize=(8, 7))
+        fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, FIG_WIDTH_1COL))
         _draw_channel_overlay(
             ax,
             positions_by_round[last_round],
@@ -942,7 +941,7 @@ def main():  # noqa: PLR0915
             show_legend=False,
         )
         last_frame_path = f"{args.viz_prefix}_last_frame.png"
-        plt.savefig(last_frame_path, dpi=150, bbox_inches="tight")
+        plt.savefig(last_frame_path, dpi=200, bbox_inches="tight")
         plt.close(fig)
         print(f"Saved last frame to {last_frame_path}")
 

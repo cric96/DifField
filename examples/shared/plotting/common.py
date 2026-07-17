@@ -8,12 +8,11 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from matplotlib.axes import Axes
-
 try:
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
     from matplotlib.animation import FuncAnimation, PillowWriter
+    from matplotlib.axes import Axes
     from matplotlib.collections import LineCollection
 except ImportError:
     plt = None
@@ -21,6 +20,7 @@ except ImportError:
     FuncAnimation = None
     PillowWriter = None
     LineCollection = None
+    Axes = None
 
 
 def save_gif(

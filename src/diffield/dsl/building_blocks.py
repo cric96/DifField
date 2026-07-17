@@ -12,10 +12,15 @@ if TYPE_CHECKING:
 
     from ..core import RoundContext
 
-from ..constants import BROADCAST_NEAR_ZERO, DEFAULT_TAU_SOFT_AGGR
+from ..constants import (
+    BROADCAST_NEAR_ZERO,
+    DEFAULT_TAU_SOFT_AGGR,
+    ELECTION_NONE,
+    LOG_EPSILON,
+)
 from ..core.mode import get_default_mode
 from ..functional import scatter_binary_fold, scatter_min_by_first
-from .gathering import gather_min
+from .gathering import gather_max, gather_min, gather_sum
 from .helpers import (
     broadcast_like,
     edge_sources_targets,
@@ -195,3 +200,139 @@ def collect_cast(
         return accumulation(local_field, child_values)
 
     return iterate(local_field, update, name=f"_cc_{name}")
+
+
+def elect(
+    key: Tensor,
+    eligible: Tensor | None = None,
+    *,
+    grain: float = float("inf"),
+    weight: LinkField | None = None,
+    name: str = "elect",
+    mode: str | None = None,
+    tau: float | None = None,
+) -> tuple[Tensor, Tensor]:
+    r"""Distributed leader election — the *S* (sparse-choice) block.
+
+    A faithful transcription of ScaFi's ``BlockS`` (``breakUsingUids`` +
+    ``distanceCompetition``), composed from the DSL's own operators:
+    ``share`` → :func:`iterate`, ``G``/``distanceTo`` → :func:`gradient`,
+    ``minHood(mux(nbr(...)))`` → :func:`gather_min` over a masked
+    :class:`LinkField`, and the competition itself is a :func:`mux` cascade.
+
+    Every node whose ``eligible`` flag is set (all nodes when ``None``) starts
+    as a candidate carrying a scalar ``key`` — lower wins, and keys must be
+    unique per component, so compose them with :func:`mid` (e.g.
+    ``quality * num_nodes + mid()``: quality competes, the id tie-breaks).
+    Keys should be **stable over time** (the literature's ``randomUid`` is
+    drawn once and held): when a winning key changes, the old value lingers
+    as an unsourced ghost until its distance field rises past ``grain``, so a
+    volatile key churns leadership for ~``grain`` rounds per change.
+    Each round a node measures its **gradient** distance ``d`` to the leader
+    it currently believes in, then competes:
+
+    * ``d > grain`` — no leader within reach: candidate itself again;
+    * ``0.5·grain ≤ d ≤ grain`` — buffer zone: abdicate (keeps regions apart);
+    * ``d < 0.5·grain`` — adopt the lowest key among itself and the
+      neighbours whose own distance-plus-hop stays under ``0.5·grain``.
+
+    Self-stabilisation comes from the gradient: when a leader vanishes its
+    distance field rises each round, nodes fall through the buffer zone and
+    re-candidate, and the next-lowest key wins — no ad-hoc TTLs. Leaders are
+    spaced ≥ ``grain`` apart (with ``grain=inf``: one leader per component,
+    but vanished leaders are then never forgotten).
+
+    Returns ``(leader, lead)``: the boolean leader mask and each node's
+    currently-adopted key (:data:`~diffield.constants.ELECTION_NONE` where no
+    leader is within reach). Follow-up fields (e.g. the distance used to
+    *follow* the leader) are the caller's next block: ``gradient(leader)``.
+    """
+    effective_mode = mode if mode is not None else get_default_mode()
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    validate_cast_mode(effective_mode)
+    key_field = require_scalar_field(key, name="key")
+    none_field = field.of(ELECTION_NONE)
+    own = (
+        key_field
+        if eligible is None
+        else mux(eligible, key_field, none_field, mode=effective_mode, tau=effective_tau)
+    )
+    half_grain = 0.5 * grain
+    step = scatter_range() if weight is None else weight
+
+    def compete(lead: Tensor) -> Tensor:
+        held = ((lead - own).abs() < 0.5) & (own < ELECTION_NONE)
+        d = gradient(
+            held.float(),
+            weight=weight,
+            name=f"_S_{name}",
+            mode=effective_mode,
+            tau=effective_tau,
+        )
+        # minHood over neighbours still inside the half-grain disc: an offer
+        # from a neighbour whose distance-plus-hop leaves the disc is pushed
+        # past ELECTION_NONE, so gather_min ignores it (ScaFi's nbr-mux).
+        in_disc = (scatter(d) + step) < half_grain
+        offer = scatter(lead) + (1.0 - in_disc) * ELECTION_NONE
+        nbr_best = gather_min(
+            offer,
+            fill_value=ELECTION_NONE,
+            mode=effective_mode,
+            tau=effective_tau,
+        )
+        best = mux(
+            (d < half_grain) & (lead <= nbr_best),
+            lead,
+            nbr_best,
+            mode=effective_mode,
+            tau=effective_tau,
+        )
+        return mux(
+            d > grain,
+            own,
+            mux(d >= half_grain, none_field, best, mode=effective_mode, tau=effective_tau),
+            mode=effective_mode,
+            tau=effective_tau,
+        )
+
+    lead = iterate(own, compete, name=f"_elect_{name}")
+    leader = ((lead - own).abs() < 0.5) & (own < ELECTION_NONE)
+    return leader, lead
+
+
+def descend(
+    potential: Tensor,
+    toward: Tensor,
+    *,
+    tau: float | None = None,
+) -> Tensor:
+    r"""Soft steepest-descent direction on a potential field.
+
+    For each node, neighbours are weighted by a softmax over
+    ``-potential_j / tau`` and the result is the weighted mean of
+    ``toward_j - toward_i`` — with ``toward`` = positions, the movement
+    direction toward the neighbourhood's lowest-potential node (the read-out
+    used to *follow* a :func:`gradient` field). Composed entirely from
+    neighbourhood folds: :func:`gather_max` provides the numerically-stable
+    softmax shift, the exponential runs edge-wise on the
+    :class:`LinkField`, and :func:`gather_sum` folds weights and weighted
+    offsets. Non-finite potentials get zero weight (``exp(-inf) = 0``), so
+    unreached regions contribute nothing and isolated nodes return zero.
+
+    The result is differentiable through ``toward``; pass a detached
+    ``potential`` to keep the routing field out of the gradient path (the
+    usual routing/steering autograd split).
+    """
+    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    pot = require_scalar_field(potential, name="potential")
+    toward_field = ensure_field(toward)
+    logits = -pot / effective_tau
+    peak = gather_max(scatter(logits), fill_value=float("-inf"))
+    peak_safe = torch.where(torch.isfinite(peak), peak, torch.zeros_like(peak))
+    excite = (scatter(logits) - peak_safe).exp()
+    total = gather_sum(excite, fill_value=0.0)
+    pull = gather_sum(
+        excite.pointwise() * (scatter(toward_field) - toward_field),
+        fill_value=0.0,
+    )
+    return pull / (total + LOG_EPSILON).unsqueeze(-1)

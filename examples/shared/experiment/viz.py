@@ -102,7 +102,6 @@ class MovingGraphVisualizationPipeline:
             values_by_round=values_by_round,
             source_idx=highlight_idx,
             output_path=f"{prefix}_pred_snapshots.png",
-            title=f"{title_prefix} predicted speed snapshots",
             edge_index_by_round=edge_index_by_round,
             show_links=spec.show_links,
             links_alpha=spec.links_alpha,
@@ -112,7 +111,6 @@ class MovingGraphVisualizationPipeline:
             positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
             source_idx=highlight_idx,
             output_path=f"{prefix}_pred_trajectories.png",
-            title=f"{title_prefix} predicted trajectories",
         )
         plot_node_trajectories(
             positions_over_time=[
@@ -120,7 +118,6 @@ class MovingGraphVisualizationPipeline:
             ],
             source_idx=highlight_idx,
             output_path=f"{prefix}_teacher_trajectories.png",
-            title=f"{title_prefix} teacher trajectories",
         )
         if spec.compare_panel_enabled:
             plot_trajectory_comparison(
@@ -132,7 +129,6 @@ class MovingGraphVisualizationPipeline:
                 ],
                 source_idx=highlight_idx,
                 output_path=f"{prefix}_compare_panel.png",
-                title=f"{title_prefix} predicted vs teacher",
             )
         if spec.gif_enabled:
             export_moving_gif(
@@ -189,7 +185,6 @@ class MovingGraphVisualizationPipeline:
         teacher_pos_seq: torch.Tensor,
         highlight_idx: int,
         output_prefix: str,
-        epoch_number: int,
         spec: VizSpec,
     ) -> None:
         """Render a standard visualization suite for a specific checkpoint epoch."""
@@ -205,7 +200,6 @@ class MovingGraphVisualizationPipeline:
             values_by_round=values_by_round,
             source_idx=highlight_idx,
             output_path=f"{output_prefix}_snapshots.png",
-            title=f"Mid-training epoch {epoch_number}: speed snapshots",
             edge_index_by_round=edge_index_by_round,
             show_links=spec.show_links,
             links_alpha=spec.links_alpha,
@@ -215,7 +209,6 @@ class MovingGraphVisualizationPipeline:
             positions_over_time=[pos_seq[idx] for idx in range(available_rounds)],
             source_idx=highlight_idx,
             output_path=f"{output_prefix}_trajectories.png",
-            title=f"Mid-training epoch {epoch_number}: trajectories",
         )
         if spec.compare_panel_enabled:
             plot_trajectory_comparison(
@@ -227,5 +220,4 @@ class MovingGraphVisualizationPipeline:
                 ],
                 source_idx=highlight_idx,
                 output_path=f"{output_prefix}_compare.png",
-                title=f"Mid-training epoch {epoch_number}: predicted vs teacher",
             )

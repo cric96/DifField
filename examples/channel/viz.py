@@ -9,11 +9,16 @@ import numpy as np
 try:
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
+
+    from shared.plotting import apply_paper_style
+
+    apply_paper_style()
 except ImportError:
     mpatches = None
     plt = None
 
 from shared.plotting import draw_markers, draw_obstacles, save_grid_simulation_gif, to_grid
+from shared.plotting.style import MUTED
 
 
 def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="generated/channel"):
@@ -34,7 +39,6 @@ def plot_channel_setup(rows, cols, src_pos, dst_pos, obstacle, viz_prefix="gener
         ax.axhline(row - 0.5, color="white", lw=0.4)
     for col in range(cols + 1):
         ax.axvline(col - 0.5, color="white", lw=0.4)
-    ax.set_title("Grid Layout - Source ▲  Destination ▼  Wall ■", fontsize=12)
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -108,15 +112,15 @@ def plot_channel_evolution(
                 image = ax.imshow(grid, cmap="viridis", vmin=0, vmax=45, interpolation="nearest")
             draw_obstacles(ax, obstacle, rows, cols)
             draw_markers(ax, src_pos, dst_pos, ms=6)
-            ax.set_title(f"t = {step + 1}", fontsize=9)
+            if row_idx == 0:
+                ax.set_title(f"t = {step + 1}", fontsize=9, fontweight="normal", color=MUTED)
             if col_idx == 0:
                 ax.set_ylabel(field_label, fontsize=9)
             ax.set_xticks([])
             ax.set_yticks([])
             if col_idx == num_steps - 1:
                 plt.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
-    fig.suptitle("Channel with Obstacles - Field Evolution", fontsize=13, y=0.99)
-    plt.tight_layout(rect=(0, 0, 1, 0.97))
+    plt.tight_layout()
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
@@ -124,7 +128,7 @@ def plot_channel_evolution(
 
 
 def plot_channel_final_fields(
-    rows, cols, final, src_pos, dst_pos, obstacle, rounds,
+    rows, cols, final, src_pos, dst_pos, obstacle,
     viz_prefix="generated/channel",
 ):
     if plt is None:
@@ -150,7 +154,7 @@ def plot_channel_final_fields(
             image = ax.imshow(grid, cmap="viridis", interpolation="nearest")
         draw_obstacles(ax, obstacle, rows, cols)
         draw_markers(ax, src_pos, dst_pos, ms=11)
-        ax.set_title(field_label, fontsize=13)
+        ax.set_title(field_label, fontsize=10.5, fontweight="normal", color=MUTED)
         plt.colorbar(image, ax=ax, fraction=0.046, pad=0.04)
         if field_key in ("dist_src", "dist_dst"):
             for row in range(rows):
@@ -164,8 +168,7 @@ def plot_channel_final_fields(
                             va="center", fontsize=5, color=colour,
                         )
     axes_flat[-1].set_visible(False)
-    fig.suptitle(f"Channel with Obstacles - Converged (t = {rounds})", fontsize=14)
-    plt.tight_layout(rect=(0, 0, 1, 0.96))
+    plt.tight_layout()
     output_path = f"{viz_prefix}_final.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
@@ -173,7 +176,7 @@ def plot_channel_final_fields(
 
 
 def plot_channel_overlay(
-    rows, cols, final, src_pos, dst_pos, obstacle, sd_dist,
+    rows, cols, final, src_pos, dst_pos, obstacle,
     viz_prefix="generated/channel",
 ):
     if plt is None or mpatches is None:
@@ -198,11 +201,6 @@ def plot_channel_overlay(
     for col in range(cols + 1):
         ax.axvline(col - 0.5, color="white", lw=0.3)
     draw_markers(ax, src_pos, dst_pos, ms=14)
-    ax.set_title(
-        f"Shortest-path channel around obstacle"
-        f"  (distance = {sd_dist:.0f} hops)",
-        fontsize=12,
-    )
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -224,7 +222,7 @@ def plot_channel_overlay(
 
 
 def plot_channel_large_setup(
-    rows, cols, num_nodes, src_pos, dst_pos, obstacle,
+    rows, cols, src_pos, dst_pos, obstacle,
     viz_prefix="generated/channel_large",
 ):
     if plt is None or mpatches is None:
@@ -239,7 +237,6 @@ def plot_channel_large_setup(
     ax.imshow(grid_rgb, interpolation="nearest", aspect="equal")
     ax.plot(src_pos[1], src_pos[0], "g^", ms=14, mec="white", mew=1.5)
     ax.plot(dst_pos[1], dst_pos[0], "rv", ms=14, mec="white", mew=1.5)
-    ax.set_title(f"Large-scale channel - {rows}x{cols} grid ({num_nodes} devices)", fontsize=14)
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -261,7 +258,7 @@ def plot_channel_large_setup(
 
 def plot_channel_large_evolution(
     rows, cols, snapshots, snapshot_steps, snapshot_labels,
-    num_nodes, rounds, elapsed, obstacle,
+    obstacle,
     viz_prefix="generated/channel_large",
 ):
     if plt is None:
@@ -288,20 +285,17 @@ def plot_channel_large_evolution(
             else:
                 image = ax.imshow(grid, cmap="viridis", interpolation="nearest", aspect="equal")
             row_image = image
-            ax.set_title(snapshot_labels[col_idx], fontsize=8)
+            if row_idx == 0:
+                ax.set_title(
+                    snapshot_labels[col_idx], fontsize=8, fontweight="normal", color=MUTED
+                )
             if col_idx == 0:
                 ax.set_ylabel(field_label, fontsize=8)
             ax.set_xticks([])
             ax.set_yticks([])
         color_ax = axes[row_idx, -1]
         fig.colorbar(row_image, cax=color_ax)  # type: ignore[arg-type]
-    fig.suptitle(
-        f"Large-scale channel evolution - {rows}x{cols},"
-        f" {num_nodes} devices, {rounds} rounds, {elapsed:.1f}s",
-        fontsize=12,
-        y=0.995,
-    )
-    plt.tight_layout(rect=(0, 0, 1, 0.98))
+    plt.tight_layout()
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=160)
@@ -310,8 +304,7 @@ def plot_channel_large_evolution(
 
 def plot_channel_large_final(
     rows, cols, final, src_pos, dst_pos, obstacle,
-    channel_threshold, num_nodes, rounds, elapsed, sd_dist,
-    channel_nodes, viz_prefix="generated/channel_large",
+    channel_threshold, viz_prefix="generated/channel_large",
 ):
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping large channel final plot")
@@ -332,12 +325,6 @@ def plot_channel_large_final(
     ax.imshow(overlay, interpolation="nearest", aspect="equal")
     ax.plot(src_pos[1], src_pos[0], "g^", ms=15, mec="white", mew=1.5)
     ax.plot(dst_pos[1], dst_pos[0], "rv", ms=15, mec="white", mew=1.5)
-    ax.set_title(
-        f"Converged channel path - distance={sd_dist:.0f},"
-        f" channel_nodes={channel_nodes},"
-        f" {rounds} rounds in {elapsed:.1f}s",
-        fontsize=14,
-    )
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(

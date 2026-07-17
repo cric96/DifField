@@ -83,7 +83,7 @@ class SmallChannelWorkflow:
 
         if viz:
             self._plot_results(
-                snapshots, final, src_pos, dst_pos, obstacle, sd_dist,
+                snapshots, final, src_pos, dst_pos, obstacle,
                 gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
             )
 
@@ -143,7 +143,6 @@ class SmallChannelWorkflow:
         src_pos,
         dst_pos,
         obstacle,
-        sd_dist,
         gif: bool = False,
         viz_prefix: str = "generated/channel_small",
         gif_fps: int = 10,
@@ -159,12 +158,11 @@ class SmallChannelWorkflow:
             src_pos,
             dst_pos,
             obstacle,
-            self.spec.program.rounds,
             viz_prefix=viz_prefix,
         )
         plot_channel_overlay(
             self.spec.grid.rows, self.spec.grid.cols, final, src_pos,
-            dst_pos, obstacle, sd_dist, viz_prefix=viz_prefix,
+            dst_pos, obstacle, viz_prefix=viz_prefix,
         )
 
         # Only plot evolution for the selected snapshot rounds
@@ -221,7 +219,7 @@ class LargeChannelWorkflow:
 
         if viz:
             self._plot_results(
-                snapshots, final, src_pos, dst_pos, obstacle, sd_dist,
+                snapshots, final, src_pos, dst_pos, obstacle,
                 gif=gif, viz_prefix=viz_prefix, gif_fps=gif_fps,
             )
 
@@ -289,14 +287,13 @@ class LargeChannelWorkflow:
         src_pos,
         dst_pos,
         obstacle,
-        sd_dist,
         gif: bool = False,
         viz_prefix: str = "generated/channel_large",
         gif_fps: int = 10,
     ):
         plot_channel_large_setup(
             self.spec.grid.rows, self.spec.grid.cols,
-            self.spec.grid.num_nodes, src_pos, dst_pos, obstacle,
+            src_pos, dst_pos, obstacle,
             viz_prefix=viz_prefix,
         )
         plot_channel_large_final(
@@ -307,11 +304,6 @@ class LargeChannelWorkflow:
             dst_pos,
             obstacle,
             CHANNEL_THRESHOLD,
-            self.spec.grid.num_nodes,
-            self.spec.program.rounds,
-            0.0,  # elapsed time not tracked in this workflow
-            sd_dist,
-            count_channel_nodes(final),
             viz_prefix=viz_prefix,
         )
 
@@ -341,9 +333,6 @@ class LargeChannelWorkflow:
             evolution_snapshots,
             snapshot_steps,
             snapshot_labels,
-            self.spec.grid.num_nodes,
-            self.spec.program.rounds,
-            0.0,  # elapsed time not tracked
             obstacle,
             viz_prefix=viz_prefix,
         )

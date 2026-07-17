@@ -22,6 +22,15 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
 from shared.plotting.common import LineCollection, plt  # noqa: E402
+from shared.plotting.style import (  # noqa: E402
+    FIG_WIDTH_1COL,
+    FIG_WIDTH_2COL,
+    MUTED,
+    apply_paper_style,
+    savefig,
+)
+
+apply_paper_style()
 
 from diffield.dsl import collect_cast, field, gradient  # noqa: E402
 from diffield.sim import SimulationEngine, SpatialScenario  # noqa: E402
@@ -333,13 +342,13 @@ def plot_evolution_separate(
                 links_width=links_width,
                 node_size=node_size,
             )
+            axes[col_idx].set_title(
+                f"t = {actual_round}", fontsize=9.5, fontweight="normal", color=MUTED
+            )
 
-        fig.tight_layout()
         out_path = Path(output_dir) / f"collect_cast_evolution_N{n_nodes}.png"
         _ensure_parent_dir(str(out_path))
-        plt.savefig(out_path, dpi=150, bbox_inches="tight")
-        print(f"Saved evolution N={n_nodes:,} to {out_path}")
-        plt.close(fig)
+        savefig(fig, out_path)
 
 
 def plot_convergence(
@@ -348,41 +357,84 @@ def plot_convergence(
     *,
     rounds: int,
 ):
+    """One panel, one curve per density: true-node ratio over rounds.
+
+    Density is ordinal, so the curves use a sequential (viridis) ramp — the
+    same family as the field heatmaps elsewhere in the repo.
+    """
     if plt is None:
         print("matplotlib not available; skipping convergence plot")
         return
 
-    fig, axes = plt.subplots(1, len(results), figsize=(5 * len(results), 4))
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, 2.4))
+    cmap = plt.get_cmap("viridis")
+    shades = [cmap(v) for v in np.linspace(0.15, 0.8, len(results))]
+    markers = ("o", "s", "D", "^", "v", "P")
 
     for idx, (n_nodes, res) in enumerate(sorted(results.items())):
         recorder = res["recorder"]
         snapshots = recorder.records
         sorted_rounds = sorted(snapshots.keys())
-
-        true_counts = []
-        for r in sorted_rounds:
-            output_val = _to_numpy(snapshots[r]["output"])
-            true_counts.append(int((output_val > 0.5).sum()))
-
-        ratios = [c / n_nodes for c in true_counts]
-
-        axes[idx].plot(sorted_rounds, ratios, "o-", color="#FFD700", markersize=3, linewidth=1)
-        axes[idx].axhline(
-            ratios[-1], color="gray", linestyle="--", alpha=0.5,
-            label=f"Final: {ratios[-1]:.1%}",
+        ratios = [
+            int((_to_numpy(snapshots[r]["output"]) > 0.5).sum()) / n_nodes
+            for r in sorted_rounds
+        ]
+        ax.plot(
+            sorted_rounds, ratios,
+            color=shades[idx], marker=markers[idx % len(markers)],
+            markersize=4, markevery=max(1, len(sorted_rounds) // 10),
+            linewidth=1.8, label=f"N = {n_nodes:,}",
         )
-        axes[idx].set_xlabel("Round")
-        axes[idx].set_ylabel("True ratio")
-        axes[idx].set_title(f"{n_nodes:,} nodes")
-        axes[idx].legend(fontsize=9)
-        axes[idx].set_xlim(0, rounds - 1)
 
-    fig.tight_layout()
+    ax.set_xlabel("round")
+    ax.set_ylabel("true-node ratio")
+    ax.set_xlim(0, rounds - 1)
+    ax.legend()
+    ax.grid(True, alpha=0.5)
 
     _ensure_parent_dir(output_path)
-    plt.savefig(output_path, dpi=150, bbox_inches="tight")
-    print(f"Saved convergence plot to {output_path}")
-    plt.close(fig)
+    savefig(fig, Path(output_path))
+
+
+def plot_density_row(
+    results: dict[int, dict],
+    output_path: str,
+    *,
+    show_links: bool,
+    links_alpha: float,
+    links_width: float,
+):
+    """Paper composite: the final collected region at every density, one row.
+
+    The visual argument of the example — the boolean OR collect-cast converges
+    to the ideal continuous region as density grows — in a single full-width
+    figure instead of four separate files.
+    """
+    if plt is None:
+        print("matplotlib not available; skipping density row")
+        return
+
+    n_panels = len(results)
+    panel_w = FIG_WIDTH_2COL / n_panels
+    fig, axes = plt.subplots(1, n_panels, figsize=(FIG_WIDTH_2COL, panel_w * 1.25))
+
+    for ax, (n_nodes, res) in zip(axes, sorted(results.items()), strict=True):
+        node_size = _compute_node_size(n_nodes, panel_size_inches=panel_w)
+        _draw_collect_cast_result(
+            ax,
+            res["positions"],
+            res["edge_index"],
+            res["output"],
+            res["sink_idx"],
+            show_links=show_links,
+            links_alpha=links_alpha,
+            links_width=links_width,
+            node_size=node_size,
+        )
+        ax.set_title(f"N = {n_nodes:,}", fontsize=9.5, fontweight="normal", color=MUTED)
+
+    _ensure_parent_dir(output_path)
+    savefig(fig, Path(output_path))
 
 
 def main():
@@ -437,6 +489,14 @@ def main():
             links_alpha=args.links_alpha,
             links_width=args.links_width,
             snapshot_rounds=snapshot_rounds,
+        )
+
+        plot_density_row(
+            results,
+            str(out_dir / "collect_cast_density.png"),
+            show_links=not args.hide_links,
+            links_alpha=args.links_alpha,
+            links_width=args.links_width,
         )
 
         plot_convergence(

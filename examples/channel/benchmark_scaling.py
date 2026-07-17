@@ -30,9 +30,34 @@ from diffield.sim import SimulationEngine, SpatialScenario  # noqa: E402
 from diffield.utils import get_device  # noqa: E402
 
 try:
+    import matplotlib
+
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    from matplotlib.colors import LogNorm
+    from matplotlib.ticker import FuncFormatter, LogLocator, NullFormatter
+    from shared.plotting.style import (
+        BLUE,
+        FIG_WIDTH_1COL,
+        FIG_WIDTH_2COL,
+        GRID,
+        INK,
+        MUTED,
+        apply_paper_style,
+        savefig,
+    )
+
+    apply_paper_style()
 except ImportError:
+    # Benchmarks still run headless without matplotlib; plots are skipped via
+    # the `plt is None` guards, so give the style names inert fallbacks.
     plt = None
+    LogNorm = FuncFormatter = LogLocator = NullFormatter = None
+    BLUE = GRID = INK = MUTED = "#000000"
+    FIG_WIDTH_1COL, FIG_WIDTH_2COL = 3.4, 7.0
+
+    def savefig(*_args: Any, **_kwargs: Any) -> None:
+        return
 
 
 @dataclass(frozen=True)
@@ -389,78 +414,84 @@ def write_report_markdown(aggregated_rows: list[dict[str, Any]], output_path: Pa
     text += "## Runtime Matrix\n\n"
     text += format_runtime_matrix_markdown(aggregated_rows)
     text += (
-        "\nI plot principali usano asse x logaritmico sui nodi e asse y"
-        " lineare stretto sui tempi, "
-        "cosi si vede meglio che la crescita resta contenuta anche quando"
-        " il numero di nodi aumenta molto.\n"
+        "\nThe main plots use log2 nodes on x and log runtime on y, so"
+        " polynomial scaling reads as a straight line; the relative-scaling"
+        " plot adds an ideal linear-growth reference for direct comparison.\n"
     )
     output_path.write_text(text, encoding="utf-8")
 
 
-def plot_scaling_trend(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
-    if plt is None:
-        return
+# k is ordinal, so it gets a sequential ramp plus a distinct marker per k as the
+# colour-independent channel -- the exact ramp/markers compare_scaling_results.py
+# uses, so the same k renders identically across every channel-scaling figure.
+K_MARKERS = ("o", "s", "D", "^", "v", "P")
 
+
+def k_shades(count: int) -> list[tuple[float, float, float, float]]:
+    if plt is None:
+        return []
+    cmap = plt.get_cmap("viridis")
+    return [cmap(v) for v in np.linspace(0.15, 0.8, count)]
+
+
+def ci95_seconds(row: dict[str, Any]) -> float:
+    trials = max(float(row.get("successful_trials", row.get("trials", 1))), 1.0)
+    return 1.96 * float(row.get("std_time_seconds", 0.0)) / math.sqrt(trials)
+
+
+def group_by_k(aggregated_rows: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
     grouped: dict[int, list[dict[str, Any]]] = {}
     for row in aggregated_rows:
-        grouped.setdefault(int(row["k_neighbors"]), []).append(row)
+        if math.isfinite(float(row["mean_time_seconds"])):
+            grouped.setdefault(int(row["k_neighbors"]), []).append(row)
+    return grouped
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    fig.patch.set_facecolor("#fbf7ef")
-    ax.set_facecolor("#fffdf8")
-    finite_times: list[float] = []
-    for k_neighbors, rows in sorted(grouped.items()):
+
+def style_node_axis(ax, node_counts: list[int]) -> None:
+    ax.set_xscale("log", base=2)
+    ax.set_xticks(node_counts)
+    ax.set_xticklabels([f"{n:,}" for n in node_counts], rotation=45, ha="right", fontsize=8.5)
+    ax.set_xlabel("nodes")
+
+
+def style_log_runtime_axis(ax) -> None:
+    """Plain-decimal 1-2-3-5 ticks: a log axis spanning ~1 decade otherwise
+    gets a single labelled tick (bare 10^0)."""
+    if LogLocator is None or FuncFormatter is None or NullFormatter is None:
+        return
+    ax.yaxis.set_major_locator(LogLocator(base=10, subs=(1.0, 2.0, 3.0, 5.0)))
+    ax.yaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{value:g}"))
+    ax.yaxis.set_minor_formatter(NullFormatter())
+
+
+def plot_scaling_trend(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+    if plt is None or not aggregated_rows:
+        return
+
+    grouped = group_by_k(aggregated_rows)
+    shades = k_shades(len(grouped))
+
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, 2.6))
+    for idx, (k_neighbors, rows) in enumerate(sorted(grouped.items())):
         ordered = sorted(rows, key=lambda row: int(row["num_nodes"]))
         nodes = [int(row["num_nodes"]) for row in ordered]
-        times = [float(row["mean_time_seconds"]) for row in ordered]
-        stds = [float(row.get("std_time_seconds", 0.0)) for row in ordered]
-        finite_times.extend(time for time in times if math.isfinite(time))
-        line, = ax.plot(
-            nodes,
-            times,
-            marker="o",
-            linewidth=2.0,
-            label=f"k={k_neighbors}",
+        means = np.array([float(row["mean_time_seconds"]) for row in ordered])
+        cis = np.array([ci95_seconds(row) for row in ordered])
+        ax.plot(
+            nodes, means, color=shades[idx], marker=K_MARKERS[idx % len(K_MARKERS)],
+            markersize=4, linewidth=1.6, label=f"k = {k_neighbors}",
         )
-        ax.fill_between(
-            nodes,
-            [m - s for m, s in zip(times, stds, strict=False)],
-            [m + s for m, s in zip(times, stds, strict=False)],
-            color=line.get_color(),
-            alpha=0.15,
-        )
+        ax.fill_between(nodes, means - cis, means + cis, color=shades[idx], alpha=0.18, linewidth=0)
 
-    if finite_times:
-        ymin = min(finite_times)
-        ymax = max(finite_times)
-        pad = max((ymax - ymin) * 0.18, ymax * 0.03, 1e-6)
-        ax.set_ylim(max(0.0, ymin - pad), ymax + pad)
-
-    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
-    if len(node_counts) >= 2:
-        ax.set_xscale("log", base=2)
-        ax.set_xticks(node_counts)
-        ax.set_xticklabels([str(value) for value in node_counts])
-
-    ax.set_title("Runtime vs Nodes")
-    ax.set_xlabel("Number of nodes (log2 scale)")
-    ax.set_ylabel("Mean runtime (s)")
-    ax.grid(alpha=0.25)
-    ax.legend(frameon=True)
-    ax.text(
-        0.02,
-        0.98,
-        "Zoomed y-axis to highlight small runtime growth",
-        transform=ax.transAxes,
-        ha="left",
-        va="top",
-        fontsize=9,
-        color="#5c5347",
-    )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
-    plt.close(fig)
+    ax.set_yscale("log")
+    style_log_runtime_axis(ax)
+    style_node_axis(ax, sorted({int(row["num_nodes"]) for row in aggregated_rows}))
+    ax.set_ylabel("runtime (s)")
+    ax.grid(True, which="both", alpha=0.4)
+    # Headroom so the legend sits above the curves even when they are flat (CUDA).
+    ax.set_ylim(top=ax.get_ylim()[1] * 1.9)
+    ax.legend(fontsize=8.5, ncol=2, loc="upper left")
+    savefig(fig, output_path)
 
 
 def plot_runtime_matrix_table(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
@@ -468,24 +499,22 @@ def plot_runtime_matrix_table(aggregated_rows: list[dict[str, Any]], output_path
         return
 
     node_counts, k_values, matrix, std_matrix = build_runtime_matrix(aggregated_rows)
-    headers = ["Nodes", *[f"k={value}" for value in k_values]]
+    headers = ["nodes", *[f"k = {value}" for value in k_values]]
     cells = []
     for row_index, node_count in enumerate(node_counts):
-        row_values = [str(node_count)]
+        row_values = [f"{node_count:,}"]
         for col_index in range(len(k_values)):
             m = matrix[row_index, col_index]
             s = std_matrix[row_index, col_index]
             if not math.isfinite(m):
                 row_values.append("nan")
             else:
-                row_values.append(f"{m:.4f}\n± {s:.4f}")
+                row_values.append(f"{m:.3f} ± {s:.3f}")
         cells.append(row_values)
 
-    figure_height = max(3.0, 0.6 * (len(cells) + 2))
-    figure_width = max(8.0, 1.4 * len(headers) + 1.5)
+    figure_height = max(1.6, 0.32 * (len(cells) + 2))
+    figure_width = max(FIG_WIDTH_2COL, 1.05 * len(headers))
     fig, ax = plt.subplots(figsize=(figure_width, figure_height))
-    fig.patch.set_facecolor("#fbf7ef")
-    ax.set_facecolor("#fffdf8")
     ax.axis("off")
     table = ax.table(
         cellText=cells,
@@ -495,140 +524,117 @@ def plot_runtime_matrix_table(aggregated_rows: list[dict[str, Any]], output_path
         colLoc="center",
     )
     table.auto_set_font_size(False)
-    table.set_fontsize(10)
-    table.scale(1.0, 1.35)
+    table.set_fontsize(9)
+    table.scale(1.0, 1.3)
     for (row_idx, _col_idx), cell in table.get_celld().items():
-        cell.set_edgecolor("#d8ccb8")
+        cell.set_edgecolor(GRID)
+        cell.set_facecolor("white")
         if row_idx == 0:
-            cell.set_facecolor("#ead9b6")
-            cell.set_text_props(weight="bold", color="#1f1b18")
+            cell.set_text_props(weight="semibold", color=INK)
         else:
-            cell.set_facecolor("#fffdf8" if row_idx % 2 else "#f7f0e3")
-            cell.set_text_props(color="#2f2a24")
+            cell.set_text_props(color=INK)
 
-    ax.set_title("Runtime Matrix: nodes x neighborhood", fontsize=14, pad=16)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=170, bbox_inches="tight")
-    plt.close(fig)
+    savefig(fig, output_path)
 
 
 def plot_relative_scaling(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
-    if plt is None:
+    if plt is None or not aggregated_rows:
         return
 
-    grouped: dict[int, list[dict[str, Any]]] = {}
-    for row in aggregated_rows:
-        grouped.setdefault(int(row["k_neighbors"]), []).append(row)
+    grouped = group_by_k(aggregated_rows)
+    shades = k_shades(len(grouped))
+    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    fig.patch.set_facecolor("#fbf7ef")
-    ax.set_facecolor("#fffdf8")
-    all_ratios: list[float] = []
-    for k_neighbors, rows in sorted(grouped.items()):
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, 2.6))
+    # Ideal linear growth (runtime ratio == node ratio): every curve below this
+    # reference scales sub-linearly in the number of nodes.
+    ax.plot(
+        node_counts, [n / node_counts[0] for n in node_counts],
+        color=MUTED, linestyle="--", linewidth=1.2, label="linear growth",
+    )
+    ax.axhline(1.0, color=INK, linewidth=0.8, linestyle=":", alpha=0.7)
+
+    for idx, (k_neighbors, rows) in enumerate(sorted(grouped.items())):
         ordered = sorted(rows, key=lambda row: int(row["num_nodes"]))
         nodes = [int(row["num_nodes"]) for row in ordered]
-        times = [float(row["mean_time_seconds"]) for row in ordered]
-        stds = [float(row.get("std_time_seconds", 0.0)) for row in ordered]
-
-        baseline = times[0]
-        baseline_std = stds[0]
-
-        ratios = [t / baseline if baseline > 0 else 0.0 for t in times]
-        # Uncertainty propagation for ratio R = T/T0:
-        # sigma_R = R * sqrt((sigma_T/T)^2 + (sigma_T0/T0)^2)
-        ratio_stds = [
-            r * math.sqrt((s / t) ** 2 + (baseline_std / baseline) ** 2)
-            if t > 0 and baseline > 0
-            else 0.0
-            for r, t, s in zip(ratios, times, stds, strict=False)
-        ]
-
-        all_ratios.extend(ratios)
-        line, = ax.plot(
-            nodes,
-            ratios,
-            marker="o",
-            linewidth=2.0,
-            label=f"k={k_neighbors}",
+        times = np.array([float(row["mean_time_seconds"]) for row in ordered])
+        cis = np.array([ci95_seconds(row) for row in ordered])
+        if times[0] <= 0:
+            continue
+        ratios = times / times[0]
+        # First-order error propagation for the ratio R = T/T0.
+        ratio_cis = ratios * np.sqrt((cis / times) ** 2 + (cis[0] / times[0]) ** 2)
+        ax.plot(
+            nodes, ratios, color=shades[idx], marker=K_MARKERS[idx % len(K_MARKERS)],
+            markersize=4, linewidth=1.6, label=f"k = {k_neighbors}",
         )
         ax.fill_between(
-            nodes,
-            [r - rs for r, rs in zip(ratios, ratio_stds, strict=False)],
-            [r + rs for r, rs in zip(ratios, ratio_stds, strict=False)],
-            color=line.get_color(),
-            alpha=0.15,
+            nodes, ratios - ratio_cis, ratios + ratio_cis,
+            color=shades[idx], alpha=0.18, linewidth=0,
         )
 
-    node_counts = sorted({int(row["num_nodes"]) for row in aggregated_rows})
-    if len(node_counts) >= 2:
-        ax.set_xscale("log", base=2)
-        ax.set_xticks(node_counts)
-        ax.set_xticklabels([str(value) for value in node_counts])
-
-    if all_ratios:
-        ymin = min(all_ratios)
-        ymax = max(all_ratios)
-        pad = max((ymax - ymin) * 0.15, 0.05)
-        ax.set_ylim(max(0.9, ymin - pad), ymax + pad)
-
-    ax.set_title("Runtime Relative To Smallest Graph")
-    ax.set_xlabel("Number of nodes (log2 scale)")
-    ax.set_ylabel("Runtime / runtime at smallest node count")
-    ax.grid(alpha=0.25)
-    ax.legend(frameon=True)
-    ax.axhline(1.0, color="#8f8577", linestyle="--", linewidth=1.0)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
-    plt.close(fig)
+    ax.set_yscale("log")
+    style_log_runtime_axis(ax)
+    style_node_axis(ax, node_counts)
+    ax.set_ylabel("relative runtime")
+    ax.grid(True, which="both", alpha=0.4)
+    ax.set_ylim(top=ax.get_ylim()[1] * 1.9)
+    ax.legend(fontsize=8, ncol=2, loc="upper left")
+    savefig(fig, output_path)
 
 
 def plot_runtime_heatmap(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
-    if plt is None or not aggregated_rows:
+    if plt is None or LogNorm is None or not aggregated_rows:
         return
 
     node_counts, k_values, matrix, _ = build_runtime_matrix(aggregated_rows)
+    finite = matrix[np.isfinite(matrix)]
+    if finite.size == 0:
+        return
+    vmin = float(finite.min())
+    # Guarantee at least a 2x colour span so a near-uniform matrix (CUDA) is not
+    # stretched into fake heterogeneity by autoscaling.
+    vmax = max(float(finite.max()), vmin * 2.0)
+    norm = LogNorm(vmin=vmin, vmax=vmax)
 
-    masked = np.ma.masked_invalid(matrix.T)
-    fig, ax = plt.subplots(figsize=(9.5, 6.5))
-    fig.patch.set_facecolor("#fbf7ef")
-    ax.set_facecolor("#fffdf8")
-    image = ax.imshow(masked, cmap="YlGnBu", aspect="auto", interpolation="nearest")
-    ax.set_title("Mean Runtime Heatmap")
-    ax.set_xlabel("Number of nodes")
-    ax.set_ylabel("k nearest neighbors")
-    ax.set_xticks(np.arange(len(node_counts)), labels=[str(value) for value in node_counts])
-    ax.set_yticks(np.arange(len(k_values)), labels=[str(value) for value in k_values])
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, 2.8))
+    image = ax.imshow(
+        np.ma.masked_invalid(matrix.T), cmap="viridis", norm=norm,
+        origin="lower", aspect="auto", interpolation="nearest",
+    )
+    ax.set_xticks(np.arange(len(node_counts)))
+    ax.set_xticklabels([f"{n:,}" for n in node_counts], rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(np.arange(len(k_values)))
+    ax.set_yticklabels([str(k) for k in k_values], fontsize=8.5)
+    ax.set_xlabel("nodes")
+    ax.set_ylabel("k neighbours")
+    ax.grid(False)
 
-    for row_index, _k_value in enumerate(k_values):
-        for col_index, _node_count in enumerate(node_counts):
+    for col_index in range(len(node_counts)):
+        for row_index in range(len(k_values)):
             value = matrix[col_index, row_index]
-            label = "nan" if not math.isfinite(value) else f"{value:.3f}"
-            ax.text(
-                col_index, row_index, label, ha="center", va="center",
-                color="#1f1b18", fontsize=9,
-            )
+            if math.isfinite(value):
+                frac = float(norm(value))
+                ax.text(
+                    col_index, row_index, f"{value:.2f}", ha="center", va="center",
+                    fontsize=7, color="white" if frac < 0.6 else INK,
+                )
 
-    fig.colorbar(image, ax=ax, fraction=0.046, pad=0.04, label="Mean runtime (s)")
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=170)
-    plt.close(fig)
+    cbar = fig.colorbar(image, ax=ax, shrink=0.9)
+    cbar.set_label("runtime (s)", fontsize=9)
+    cbar.ax.tick_params(labelsize=8)
+    savefig(fig, output_path)
 
 
-def plot_3d_bar_time(  # noqa: PLR0915
-    aggregated_rows: list[dict[str, Any]], output_path: Path,
-) -> None:
+def plot_3d_bar_time(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
+    """3D bar variant (slides, not paper)."""
     if plt is None or not aggregated_rows:
         return
 
     node_counts, k_values, matrix, _ = build_runtime_matrix(aggregated_rows)
 
-    fig = plt.figure(figsize=(12, 10))
-    fig.patch.set_facecolor("#ffffff")
-    ax = fig.add_subplot(111, projection='3d')
-    ax.set_facecolor("#ffffff")
+    fig = plt.figure(figsize=(6.5, 5.0))
+    ax = fig.add_subplot(111, projection="3d")
 
     _x = np.arange(len(k_values))
     _y = np.arange(len(node_counts))
@@ -637,101 +643,108 @@ def plot_3d_bar_time(  # noqa: PLR0915
 
     top = matrix.ravel()
     mask = np.isfinite(top)
-    x = x[mask]
-    y = y[mask]
-    top = top[mask]
+    x, y, top = x[mask], y[mask], top[mask]
+    if top.size == 0:
+        return
+    width = depth = 0.8
 
-    max_z = 2.0
-    top_capped = np.minimum(top, max_z)
-
-    bottom = np.zeros_like(top)
-    width = depth = 0.8  # Increased width to reduce gaps between bars
-
-    cmap = plt.get_cmap('inferno')
-    norm = plt.Normalize(0, max_z)
-    colors = cmap(norm(top_capped))
-
-    # Use x - width/2 and y - depth/2 so the bars are centered on the ticks
-    # Adding black edges helps distinguish the bars
+    cmap = plt.get_cmap("viridis")
+    norm = plt.Normalize(vmin=0.0, vmax=float(top.max()))
     ax.bar3d(
-        x - width / 2, y - depth / 2, bottom, width, depth, top_capped,
-        shade=True, color=colors, edgecolor="black",
-        linewidth=0.1, alpha=0.95,
+        x - width / 2, y - depth / 2, np.zeros_like(top), width, depth, top,
+        shade=True, color=cmap(norm(top)), edgecolor=INK, linewidth=0.1,
     )
-
-    ax.set_title("Runtime Scaling (3D)")
-    ax.set_xlabel("k nearest neighbors")
-    ax.set_ylabel("Number of nodes")
-    ax.set_zlabel("Mean runtime (s)")
-
+    ax.set_xlabel("k neighbours", labelpad=10)
+    ax.set_ylabel("nodes", labelpad=10)
+    ax.set_zlabel("runtime (s)")
     ax.set_xticks(_x)
-    ax.set_xticklabels([str(k) for k in k_values])
+    ax.set_xticklabels([str(k) for k in k_values], fontsize=8.5)
     ax.set_yticks(_y)
-    ax.set_yticklabels([str(n) for n in node_counts])
-
-    ax.set_zlim(0, max_z)
-
-    # Adjust viewing angle to make smaller bars in front
-    ax.view_init(elev=25, azim=-50)
-
-    ax.bar3d(x, y, bottom, width, depth, top, shade=True, color=colors)
-
-    ax.set_title("Runtime Scaling (3D)")
-    ax.set_xlabel("k nearest neighbors")
-    ax.set_ylabel("Number of nodes")
-    ax.set_zlabel("Mean runtime (s)")
-
-    ax.set_xticks(_x + 0.4)
-    ax.set_xticklabels([str(k) for k in k_values])
-    ax.set_yticks(_y + 0.4)
-    ax.set_yticklabels([str(n) for n in node_counts])
-
-    ax.set_zlim(0, 2.0)
-
-    ax.view_init(elev=30, azim=-60)
+    ax.set_yticklabels([f"{n:,}" for n in node_counts], fontsize=8.5)
+    ax.set_zlim(0, float(top.max()) * 1.05)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
+    ax.view_init(elev=30, azim=-60)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
+    print(f"Saved {output_path}")
 
     variation_path = output_path.with_name(output_path.stem + "_variation" + output_path.suffix)
     ax.view_init(elev=20, azim=45)
-    plt.savefig(variation_path, dpi=160)
+    fig.savefig(variation_path, dpi=200, bbox_inches="tight", pad_inches=0.2)
     plt.close(fig)
+    print(f"Saved {variation_path}")
 
 
 def plot_linearity(aggregated_rows: list[dict[str, Any]], output_path: Path) -> None:
-    if plt is None or not aggregated_rows:
+    if plt is None or FuncFormatter is None or not aggregated_rows:
         return
 
-    rows_k32 = [row for row in aggregated_rows if int(row["k_neighbors"]) == 32]
-    if not rows_k32:
+    # Densest neighbourhood == heaviest workload: where deviations from linear
+    # growth in the node count would show first.
+    k_target = max(int(row["k_neighbors"]) for row in aggregated_rows)
+    ordered = sorted(
+        (
+            row for row in aggregated_rows
+            if int(row["k_neighbors"]) == k_target
+            and math.isfinite(float(row["mean_time_seconds"]))
+        ),
+        key=lambda row: int(row["num_nodes"]),
+    )
+    if not ordered:
         return
-
-    ordered = sorted(rows_k32, key=lambda row: int(row["num_nodes"]))
-    nodes = np.array([int(row["num_nodes"]) for row in ordered])
+    nodes = np.array([int(row["num_nodes"]) for row in ordered], dtype=float)
     times = np.array([float(row["mean_time_seconds"]) for row in ordered])
+    cis = np.array([ci95_seconds(row) for row in ordered])
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    fig.patch.set_facecolor("#fbf7ef")
-    ax.set_facecolor("#fffdf8")
-
-    ax.plot(nodes, times, marker="o", linewidth=2.0, label="Actual runtime (k=32)")
-
+    fig, ax = plt.subplots(figsize=(FIG_WIDTH_1COL, 2.6))
     if len(nodes) >= 2:
-        m, c = np.polyfit(nodes, times, 1)
-        ax.plot(nodes, m * nodes + c, linestyle="--", color="gray", label="Linear fit")
+        slope, intercept = np.polyfit(nodes, times, 1)
+        ax.plot(
+            nodes, slope * nodes + intercept,
+            color=MUTED, linestyle="--", linewidth=1.2, label="linear fit",
+        )
+    ax.plot(nodes, times, color=BLUE, marker="o", markersize=4, linewidth=1.6, label="measured")
+    ax.fill_between(nodes, times - cis, times + cis, color=BLUE, alpha=0.18, linewidth=0)
 
-    ax.set_title("Linearity Check for k=32")
-    ax.set_xlabel("Number of nodes")
-    ax.set_ylabel("Mean runtime (s)")
-    ax.grid(alpha=0.25)
-    ax.legend(frameon=True)
+    ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _pos: f"{int(value):,}"))
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", fontsize=8.5)
+    ax.set_xlabel("nodes")
+    ax.set_ylabel("runtime (s)")
+    ax.text(
+        0.97, 0.04, f"k = {k_target}", transform=ax.transAxes,
+        ha="right", va="bottom", fontsize=9, color=MUTED,
+    )
+    ax.set_ylim(top=ax.get_ylim()[1] * 1.25)
+    ax.legend(fontsize=8.5, loc="upper left")
+    savefig(fig, output_path)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    plt.tight_layout()
-    plt.savefig(output_path, dpi=160)
-    plt.close(fig)
+
+def load_aggregated_csv(csv_path: Path) -> list[dict[str, Any]]:
+    """Load aggregated.csv back into typed rows (for --plots-only reruns)."""
+    int_fields = {"num_nodes", "k_neighbors", "trials", "successful_trials"}
+    rows: list[dict[str, Any]] = []
+    with csv_path.open(encoding="utf-8") as handle:
+        for raw in csv.DictReader(handle):
+            row: dict[str, Any] = {}
+            for key, value in raw.items():
+                if key in int_fields:
+                    row[key] = int(value)
+                else:
+                    try:
+                        row[key] = float(value)
+                    except ValueError:
+                        row[key] = value
+            rows.append(row)
+    return rows
+
+
+def generate_plots(aggregated_rows: list[dict[str, Any]], out_dir: Path) -> None:
+    plot_runtime_matrix_table(aggregated_rows, out_dir / "runtime_matrix.png")
+    plot_scaling_trend(aggregated_rows, out_dir / "scaling_trend.png")
+    plot_relative_scaling(aggregated_rows, out_dir / "relative_scaling.png")
+    plot_runtime_heatmap(aggregated_rows, out_dir / "runtime_heatmap.png")
+    plot_3d_bar_time(aggregated_rows, out_dir / "runtime_3d_bar.png")
+    plot_linearity(aggregated_rows, out_dir / "linearity_check.png")
 
 
 def maybe_warmup(config: BenchmarkConfig) -> None:
@@ -770,6 +783,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", type=str, default="")
     parser.add_argument("--skip-plots", action="store_true")
     parser.add_argument("--skip-warmup", action="store_true")
+    parser.add_argument(
+        "--plots-only",
+        action="store_true",
+        help="Regenerate plots/report from an existing <out-dir>/aggregated.csv (no benchmark)",
+    )
     return parser.parse_args()
 
 
@@ -784,6 +802,17 @@ def main() -> None:  # noqa: PLR0915
     )
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if args.plots_only:
+        csv_path = out_dir / "aggregated.csv"
+        if not csv_path.exists():
+            raise FileNotFoundError(f"--plots-only needs an existing {csv_path}")
+        aggregated_rows = load_aggregated_csv(csv_path)
+        write_report_markdown(aggregated_rows, out_dir / "growth_report.md")
+        print_runtime_matrix("Runtime Matrix", aggregated_rows)
+        generate_plots(aggregated_rows, out_dir)
+        print(f"Regenerated plots in {out_dir}")
+        return
 
     if not node_counts:
         raise ValueError("node-counts must not be empty")
@@ -858,13 +887,10 @@ def main() -> None:  # noqa: PLR0915
 
     if not args.skip_plots and plt is not None:
         try:
-            plot_runtime_matrix_table(aggregated_rows, artifacts.runtime_matrix_plot)  # type: ignore[arg-type]
-            plot_scaling_trend(aggregated_rows, artifacts.scaling_trend_plot)  # type: ignore[arg-type]
-            plot_relative_scaling(aggregated_rows, artifacts.relative_scaling_plot)  # type: ignore[arg-type]
-            plot_runtime_heatmap(aggregated_rows, artifacts.heatmap_plot)  # type: ignore[arg-type]
-            plot_3d_bar_time(aggregated_rows, artifacts.plot_3d_bar_plot)  # type: ignore[arg-type]
-            plot_linearity(aggregated_rows, artifacts.plot_linearity_plot)  # type: ignore[arg-type]
+            generate_plots(aggregated_rows, out_dir)
         except Exception as e:
+            # Never lose a finished benchmark run to a plotting failure; the
+            # CSVs are already on disk and --plots-only can retry the figures.
             print(f"Warning: failed to generate plots: {e}")
 
     summary_payload = {

@@ -17,6 +17,10 @@ from diffield.utils import get_device  # noqa: E402
 
 try:
     import matplotlib.pyplot as plt
+
+    from shared.plotting import apply_paper_style
+
+    apply_paper_style()
 except ImportError:
     plt = None
 
@@ -27,7 +31,7 @@ except ImportError:
     from gradients.domain.grid import build_corner_source_grid
     from gradients.domain.program import auto_rounds, run_gradient_program
 
-from shared.plotting import save_grid_simulation_gif  # noqa: E402
+from shared.plotting import panel_label, save_grid_simulation_gif  # noqa: E402
 
 from diffield.sim import SnapshotRecorder  # noqa: E402
 
@@ -61,11 +65,11 @@ def plot_results(
 
     _fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     im0 = axes[0].imshow(dist.detach().cpu().numpy(), cmap="viridis")
-    axes[0].set_title("Computed (iterate + mux + scatter)")
+    panel_label(axes[0], "a")
     plt.colorbar(im0, ax=axes[0])
 
     im1 = axes[1].imshow(expected.detach().cpu().numpy(), cmap="viridis")
-    axes[1].set_title("Expected (Manhattan)")
+    panel_label(axes[1], "b")
     plt.colorbar(im1, ax=axes[1])
 
     plt.tight_layout()

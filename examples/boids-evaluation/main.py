@@ -35,7 +35,7 @@ from generate_plots import (  # noqa: E402
 )
 from shared.diagnostics.csv import save_history_csv  # noqa: E402
 from shared.metrics import mean  # noqa: E402
-from shared.plotting import export_moving_gif, plot_node_trajectories  # noqa: E402
+from shared.plotting import apply_paper_style, export_moving_gif, plot_node_trajectories  # noqa: E402
 from shared.training import MetricHistory, grad_norm, parse_int_csv  # noqa: E402
 
 from diffield.dsl import AggregateContext, gather_avg, gather_sum, iterate, scatter  # noqa: E402
@@ -50,6 +50,8 @@ try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+
+    apply_paper_style()
 except ImportError:
     plt = None
 
@@ -728,7 +730,6 @@ def _save_validation_gif(
         positions_over_time=[pred_pos_seq[r] for r in range(rounds)],
         source_idx=highlight_node,
         output_path=str(traj_path),
-        title=f"Validation Seed {eval_seed} epoch {epoch + 1} Trajectories",
         show_source=show_source,
         phantom_pos_seq=phantom_pos_seq,
     )
@@ -819,7 +820,6 @@ def main() -> None:  # noqa: PLR0915
         positions_over_time=[eval_trace.pos_seq[r] for r in range(args.rounds)],
         source_idx=args.highlight_node,
         output_path=str(teacher_dir / "teacher_trajectories.png"),
-        title="Teacher Ground Truth Trajectories",
         show_source=False,
     )
     export_moving_gif(

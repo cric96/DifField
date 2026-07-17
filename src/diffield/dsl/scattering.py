@@ -299,6 +299,30 @@ class LinkField:
             _repr=f"norm({self})",
         )
 
+    def sum(self, dim: int = -1, keepdim: bool = False) -> LinkField:
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: self.evaluate(
+                ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+            ).sum(dim=dim, keepdim=keepdim),
+            _repr=f"sum({self})",
+        )
+
+    def relu(self) -> LinkField:
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: torch.relu(
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight)
+            ),
+            _repr=f"relu({self})",
+        )
+
+    def exp(self) -> LinkField:
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: torch.exp(
+                self.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight)
+            ),
+            _repr=f"exp({self})",
+        )
+
 
 def as_scatter_expr(value: float | Tensor | LinkField) -> LinkField:
     """Convert a scalar, tensor, or LinkField into an edge-wise LinkField.

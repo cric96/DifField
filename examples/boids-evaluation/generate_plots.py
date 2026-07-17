@@ -20,14 +20,38 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt  # noqa: E402
 from shared.metrics import mean, std  # noqa: E402
 from shared.plotting import (  # noqa: E402
+    FIG_WIDTH_1COL,
+    apply_paper_style,
     export_moving_gif,
+    panel_label,
     plot_moving_snapshots,
     plot_node_trajectories,
 )
+from shared.plotting import savefig as save_figure  # noqa: E402
 from shared.plotting.moving import _draw_trajectory_on_ax, _get_identity_colors  # noqa: E402
+from shared.plotting.style import AQUA, BLUE, ORANGE  # noqa: E402
+
+apply_paper_style()
+
+FIGSIZE_1COL = (FIG_WIDTH_1COL, 2.4)
+# fixed, CVD-safe style per series (colour + marker + linestyle: two channels)
+SERIES_STYLE = {
+    "train": (BLUE, "o", "-"),
+    "val": (ORANGE, "s", "--"),
+    "w_sep": (BLUE, "o", "-"),
+    "w_align": (ORANGE, "s", "--"),
+    "w_cohesion": (AQUA, "D", "-."),
+}
+SERIES_LABEL = {
+    "train": "train",
+    "val": "validation",
+    "w_sep": "$w_{\\mathrm{sep}}$",
+    "w_align": "$w_{\\mathrm{align}}$",
+    "w_cohesion": "$w_{\\mathrm{coh}}$",
+}
 
 
-def _plot_band(ax, x_vals, mean_vals, std_vals, label, color=None):
+def _plot_band(ax, x_vals, mean_vals, std_vals, series):
     valid_indices = [i for i, v in enumerate(mean_vals) if not math.isnan(v)]
     if not valid_indices:
         return
@@ -35,14 +59,18 @@ def _plot_band(ax, x_vals, mean_vals, std_vals, label, color=None):
     m_valid = [mean_vals[i] for i in valid_indices]
     s_valid = [std_vals[i] for i in valid_indices]
 
+    color, marker, linestyle = SERIES_STYLE.get(series, (None, "o", "-"))
     line, = ax.plot(
-        x_valid, m_valid, linewidth=2.0, label=label,
-        marker="o", markersize=3, color=color,
+        x_valid, m_valid, linewidth=1.8, label=SERIES_LABEL.get(series, series),
+        marker=marker, markersize=4, markevery=max(1, len(x_valid) // 12),
+        linestyle=linestyle, color=color,
     )
     if len(x_valid) > 1:
         lower = [v - d for v, d in zip(m_valid, s_valid, strict=False)]
         upper = [v + d for v, d in zip(m_valid, s_valid, strict=False)]
-        ax.fill_between(x_valid, lower, upper, alpha=0.18, color=line.get_color())
+        ax.fill_between(
+            x_valid, lower, upper, alpha=0.18, color=line.get_color(), linewidth=0,
+        )
 
 def plot_train_val_metrics(
     histories: list[dict[str, list[float]]],
@@ -81,61 +109,27 @@ def plot_train_val_metrics(
     if not (train_loss or val_loss):
         return
 
-    # Use larger fonts globally for these plots
-    plt.rcParams.update({'font.size': 14})
+    fig, ax = plt.subplots(figsize=FIGSIZE_1COL)
+    for series, data in (("train", train_loss), ("val", val_loss)):
+        if data:
+            min_len = min(len(epochs), len(data[0]))
+            _plot_band(ax, epochs[:min_len], data[0][:min_len], data[1][:min_len], series)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("total loss")
+    ax.grid(alpha=0.5, which="both")
+    ax.legend()
+    save_figure(fig, out_dir / "metrics_loss.png")
 
-    # Plot Total Loss separately (rectangular)
-    fig, ax = plt.subplots(figsize=(7, 4))
-    if train_loss:
-        min_len = min(len(epochs), len(train_loss[0]))
-        _plot_band(
-            ax, epochs[:min_len], train_loss[0][:min_len],
-            train_loss[1][:min_len], "train", color="tab:blue",
-        )
-    if val_loss:
-        min_len = min(len(epochs), len(val_loss[0]))
-        _plot_band(
-            ax, epochs[:min_len], val_loss[0][:min_len],
-            val_loss[1][:min_len], "val", color="tab:orange",
-        )
-
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Total Loss")
-    ax.grid(alpha=0.25, which="both")
-    ax.legend(loc="best")
-    fig.tight_layout()
-    output_path = out_dir / "metrics_loss.png"
-    fig.savefig(str(output_path), dpi=150)
-    plt.close(fig)
-    print(f"Saved {output_path}")
-
-    # Plot Position Error separately (rectangular)
-    fig, ax = plt.subplots(figsize=(7, 4))
-    if train_pos_err:
-        min_len = min(len(epochs), len(train_pos_err[0]))
-        _plot_band(
-            ax, epochs[:min_len], train_pos_err[0][:min_len],
-            train_pos_err[1][:min_len], "train", color="tab:blue",
-        )
-    if val_pos_err:
-        min_len = min(len(epochs), len(val_pos_err[0]))
-        _plot_band(
-            ax, epochs[:min_len], val_pos_err[0][:min_len],
-            val_pos_err[1][:min_len], "val", color="tab:orange",
-        )
-
-    ax.set_xlabel("Epoch")
-    ax.set_ylabel("Position Error (L2)")
-    ax.grid(alpha=0.25)
-    ax.legend(loc="best")
-    fig.tight_layout()
-    output_path = out_dir / "metrics_pos_error.png"
-    fig.savefig(str(output_path), dpi=150)
-    plt.close(fig)
-    print(f"Saved {output_path}")
-
-    # Reset font size
-    plt.rcParams.update({'font.size': 10})
+    fig, ax = plt.subplots(figsize=FIGSIZE_1COL)
+    for series, data in (("train", train_pos_err), ("val", val_pos_err)):
+        if data:
+            min_len = min(len(epochs), len(data[0]))
+            _plot_band(ax, epochs[:min_len], data[0][:min_len], data[1][:min_len], series)
+    ax.set_xlabel("epoch")
+    ax.set_ylabel("position error (L2)")
+    ax.grid(alpha=0.5)
+    ax.legend()
+    save_figure(fig, out_dir / "metrics_pos_error.png")
 
 def plot_parameter_recovery_bands(
     histories: list[dict[str, list[float]]],
@@ -149,11 +143,8 @@ def plot_parameter_recovery_bands(
     if not epochs:
         return
 
-    # Use larger fonts globally
-    plt.rcParams.update({'font.size': 14})
-
-    fig_abs, ax_abs = plt.subplots(figsize=(7, 4))
-    fig_rel, ax_rel = plt.subplots(figsize=(7, 4))
+    fig_abs, ax_abs = plt.subplots(figsize=FIGSIZE_1COL)
+    fig_rel, ax_rel = plt.subplots(figsize=FIGSIZE_1COL)
     plotted = False
 
     for name in teacher_params:
@@ -185,27 +176,17 @@ def plot_parameter_recovery_bands(
         plt.close(fig_rel)
         return
 
-    ax_abs.set_xlabel("Epoch")
-    ax_abs.set_ylabel("Absolute Error")
-    ax_abs.grid(alpha=0.25)
-    ax_abs.legend(loc="best")
-    fig_abs.tight_layout()
-    out_abs = out_dir / "param_recovery_abs.png"
-    fig_abs.savefig(str(out_abs), dpi=150)
-    plt.close(fig_abs)
-    print(f"Saved {out_abs}")
+    ax_abs.set_xlabel("epoch")
+    ax_abs.set_ylabel("absolute weight error")
+    ax_abs.grid(alpha=0.5)
+    ax_abs.legend()
+    save_figure(fig_abs, out_dir / "param_recovery_abs.png")
 
-    ax_rel.set_xlabel("Epoch")
-    ax_rel.set_ylabel("Relative Error (%)")
-    ax_rel.grid(alpha=0.25)
-    ax_rel.legend(loc="best")
-    fig_rel.tight_layout()
-    out_rel = out_dir / "param_recovery_rel.png"
-    fig_rel.savefig(str(out_rel), dpi=150)
-    plt.close(fig_rel)
-    print(f"Saved {out_rel}")
-
-    plt.rcParams.update({'font.size': 10})
+    ax_rel.set_xlabel("epoch")
+    ax_rel.set_ylabel("relative weight error (%)")
+    ax_rel.grid(alpha=0.5)
+    ax_rel.legend()
+    save_figure(fig_rel, out_dir / "param_recovery_rel.png")
 
 def generate_boids_plots(  # noqa: PLR0915
     data: dict, seed: int, seed_dir: Path, hide_links: bool,
@@ -224,7 +205,6 @@ def generate_boids_plots(  # noqa: PLR0915
         positions_over_time=positions_over_time,
         source_idx=highlight_idx,
         output_path=str(seed_dir / "trajectories.png"),
-        title=f"Boids trajectories (seed {seed})",
         show_source=False,
         phantom_pos_seq=eval_trace_pos,
     )
@@ -239,7 +219,6 @@ def generate_boids_plots(  # noqa: PLR0915
         edge_index_by_round=edge_index_by_round,
         source_idx=highlight_idx,
         output_path=str(seed_dir / "validation_positions.png"),
-        title=f"Validation position over time (seed {seed})",
         show_links=not hide_links,
         links_alpha=links_alpha,
         links_width=links_width,
@@ -281,7 +260,7 @@ def generate_boids_plots(  # noqa: PLR0915
             # Progression plots: grid and line versions
             id_colors = _get_identity_colors(data["num_nodes"])
 
-            def _plot_panel(ax, pos_seq, title, bg_color="white"):
+            def _plot_panel(ax, pos_seq, tag, bg_color="white"):
                 traj = pos_seq.numpy()
                 _draw_trajectory_on_ax(
                     ax, traj,
@@ -292,30 +271,30 @@ def generate_boids_plots(  # noqa: PLR0915
                     show_source=False,
                     source_idx=highlight_idx
                 )
-                ax.set_title(title, fontsize=20, fontweight="bold")
+                panel_label(ax, tag)
                 ax.set_facecolor(bg_color)
                 # Remove legends to avoid clutter on subplots
                 if ax.get_legend():
                     ax.get_legend().remove()
 
-            # 1. Grid version (2x2)
+            # 1. Grid version (2x2): (a) start, (b) mid, (c) end, (d) teacher reference
             fig_grid, axes_grid = plt.subplots(2, 2, figsize=(10, 10))
-            _plot_panel(axes_grid[0, 0], eval_trajectories[start_ep], f"Epoch {start_ep + 1}")
-            _plot_panel(axes_grid[0, 1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
-            _plot_panel(axes_grid[1, 0], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
-            _plot_panel(axes_grid[1, 1], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
+            _plot_panel(axes_grid[0, 0], eval_trajectories[start_ep], "a")
+            _plot_panel(axes_grid[0, 1], eval_trajectories[mid_ep], "b")
+            _plot_panel(axes_grid[1, 0], eval_trajectories[end_ep], "c")
+            _plot_panel(axes_grid[1, 1], eval_trace_pos, "d", bg_color="#f4f8ff")
 
             fig_grid.tight_layout()
             out_path_grid = seed_dir / "progression_trajectories_grid.png"
             fig_grid.savefig(str(out_path_grid), dpi=150)
             plt.close(fig_grid)
 
-            # 2. Line version (1x4)
+            # 2. Line version (1x4): (a) start, (b) mid, (c) end, (d) teacher reference
             fig_line, axes_line = plt.subplots(1, 4, figsize=(18, 5))
-            _plot_panel(axes_line[0], eval_trajectories[start_ep], f"Epoch {start_ep + 1}")
-            _plot_panel(axes_line[1], eval_trajectories[mid_ep], f"Epoch {mid_ep + 1}")
-            _plot_panel(axes_line[2], eval_trajectories[end_ep], f"Epoch {end_ep + 1}")
-            _plot_panel(axes_line[3], eval_trace_pos, "Teacher", bg_color="#f4f8ff")
+            _plot_panel(axes_line[0], eval_trajectories[start_ep], "a")
+            _plot_panel(axes_line[1], eval_trajectories[mid_ep], "b")
+            _plot_panel(axes_line[2], eval_trajectories[end_ep], "c")
+            _plot_panel(axes_line[3], eval_trace_pos, "d", bg_color="#f4f8ff")
 
             fig_line.tight_layout()
             out_path_line = seed_dir / "progression_trajectories_line.png"

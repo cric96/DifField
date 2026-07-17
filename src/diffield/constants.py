@@ -19,6 +19,14 @@ are treated as *True* (i.e. root nodes).  This heuristic lets a
 gradient field (whose source is 0.0) be used directly as a mask.
 """
 
+ELECTION_NONE: float = 1e9
+"""Sentinel key produced by ``elect()`` where no candidate is within reach.
+
+Election keys must stay well below this value; a node whose adopted key is
+``>= ELECTION_NONE`` currently follows no leader (it abdicated in the
+half-grain buffer zone, or heard no candidate at all).
+"""
+
 # ── Temperature defaults ────────────────────────────────────────────────
 
 DEFAULT_TAU_SOFT_AGGR: float = 1.0

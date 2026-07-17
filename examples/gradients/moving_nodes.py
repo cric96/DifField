@@ -228,7 +228,6 @@ def main():
             values_by_round=values_by_round,
             source_idx=args.source,
             output_path=f"{args.viz_prefix}_snapshots.png",
-            title=f"Moving nodes ({args.motion}) distance snapshots",
             edge_index_by_round=edge_index_by_round,
             show_links=not args.hide_links,
             links_alpha=args.links_alpha,
@@ -238,7 +237,6 @@ def main():
             positions_over_time=positions_over_time,
             source_idx=args.source,
             output_path=f"{args.viz_prefix}_trajectories.png",
-            title=f"Moving nodes ({args.motion}) trajectories",
         )
         if not args.no_gif:
             export_moving_gif(
