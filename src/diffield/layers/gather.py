@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional, TYPE_CHECKING
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 from torch_geometric.nn import MessagePassing
 
 from ..constants import (
@@ -16,8 +16,8 @@ from ..constants import (
     FILL_VALUE_MIN,
 )
 from ..core import RoundContext, resolve_context
-from ..functional import scatter_aggr
 from ..dsl.helpers import edge_sources_targets
+from ..functional import scatter_aggr
 
 if TYPE_CHECKING:
     from ..dsl.scattering import LinkField
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 class _PyGMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper with built-in and custom aggregation paths."""
 
-    def __init__(self, owner: "GatherLayer") -> None:
+    def __init__(self, owner: GatherLayer) -> None:
         use_builtin = (
             isinstance(owner.aggr, str)
             and owner.mode == "hard"
@@ -152,8 +152,8 @@ class GatherLayer(nn.Module):
 
         # Fast path: plain tensor, include_self not set, simple aggr, AND no message weight
         if (
-            self.include_self is None 
-            and not isinstance(src, LinkField) 
+            self.include_self is None
+            and not isinstance(src, LinkField)
             and ctx.message_weight is None
         ):
             return self._mp(src, edge_idx, ctx.num_nodes)
@@ -175,8 +175,8 @@ class GatherLayer(nn.Module):
         ctx: RoundContext,
         edge_idx: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        from ..dsl.scattering import LinkField
         from ..dsl.helpers import scale_messages
+        from ..dsl.scattering import LinkField
 
         source_index, target_index = edge_sources_targets(edge_idx)
         include_self = self.include_self
@@ -190,10 +190,10 @@ class GatherLayer(nn.Module):
                 )
             else:
                 messages = src[source_index]
-            
+
             if ctx.message_weight is not None:
                 messages = scale_messages(messages, ctx.message_weight)
-            
+
             return messages, target_index
 
         # Explicit include_self / exclude_self
@@ -212,7 +212,7 @@ class GatherLayer(nn.Module):
         else:
             kept_source_index = kept_edge_idx[0]
             messages = src[kept_source_index]
-        
+
         if ctx.message_weight is not None:
             messages = scale_messages(messages, ctx.message_weight[keep_mask])
 

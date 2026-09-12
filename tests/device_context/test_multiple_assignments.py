@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from diffield import branch, mux, scatter, iterate, gather_sum
+from diffield import branch, gather_sum, iterate, mux, scatter
 from diffield.dsl import DeviceContext
 
 from .support import (
@@ -27,9 +27,9 @@ NEGATIVE_SENTINEL = -1.0
 
 class TestDeviceContextMultipleAssignments:
     def test_decentralized_multiple_assignments_nested(self):
-        dev_0 = DeviceContext(num_neighbors=ONE_NEIGHBOR)
-        dev_1 = DeviceContext(num_neighbors=TWO_NEIGHBORS)
-        dev_2 = DeviceContext(num_neighbors=ONE_NEIGHBOR)
+        dev_0 = DeviceContext(num_neighbors=ONE_NEIGHBOR, self_loop=True)
+        dev_1 = DeviceContext(num_neighbors=TWO_NEIGHBORS, self_loop=True)
+        dev_2 = DeviceContext(num_neighbors=ONE_NEIGHBOR, self_loop=True)
 
         src_0 = dev_0.local_field(own=1.0, scatter=0.0)
         src_1 = dev_1.local_field(own=0.0, scatter=[1.0, 0.0])
@@ -60,9 +60,13 @@ class TestDeviceContextMultipleAssignments:
             run_device(dev_1, src_1, exports_2[1]),
             run_device(dev_2, src_2, exports_2[2]),
         )
-        assert_tuple_close(round_2[0], (2.0, 9.0, 31.0))
-        assert_tuple_close(round_2[1], (2.0, 100.0, 220.0))
-        assert_tuple_close(round_2[2], (2.0, 100.0, 220.0))
+        # z re-enters the true partition this round. Every device was in the
+        # false partition in round 1 (x = 1.0, below the threshold), so it reads
+        # the true partition's initializer rather than the value the vectorised
+        # evaluation computed for it while it was misaligned.
+        assert_tuple_close(round_2[0], (2.0, 9.0, 19.0))
+        assert_tuple_close(round_2[1], (2.0, 100.0, 110.0))
+        assert_tuple_close(round_2[2], (2.0, 100.0, 110.0))
 
         snapshots = network.snapshot(X_STATE, Y_STATE)
         exports_3 = network.exports(snapshots, *LINE_NEIGHBOR_INDICES)
@@ -71,13 +75,13 @@ class TestDeviceContextMultipleAssignments:
             run_device(dev_1, src_1, exports_3[1]),
             run_device(dev_2, src_2, exports_3[2]),
         )
-        assert_tuple_close(round_3[0], (3.0, 28.0, 69.0))
-        assert_tuple_close(round_3[1], (3.0, 100.0, 330.0))
-        assert_tuple_close(round_3[2], (3.0, 100.0, 330.0))
+        assert_tuple_close(round_3[0], (3.0, 28.0, 57.0))
+        assert_tuple_close(round_3[1], (3.0, 100.0, 220.0))
+        assert_tuple_close(round_3[2], (3.0, 100.0, 220.0))
 
     def test_decentralized_multiple_auto_iterate_no_tags(self):
-        dev_0 = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_1 = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_0 = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_1 = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         src_0 = dev_0.local_field(own=1.0, scatter=0.0)
         src_1 = dev_1.local_field(own=0.0, scatter=1.0)

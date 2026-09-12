@@ -2,35 +2,56 @@
 
 from torch import Tensor
 
+from ..constants import ELECTION_NONE
 from ..core import AggregateContext, DeviceContext
-from .building_blocks import broadcast, collect_cast, gradient, gradient_cast
-from .scattering import LinkField, as_scatter_expr, scatter, scatter_range
-from .primitives import branch, const, field, gather, mid, mux, iterate
-from .gathering import gather_min, gather_max, gather_sum, gather_avg
+from .building_blocks import (
+    broadcast,
+    collect_cast,
+    descend,
+    elect,
+    gradient,
+    gradient_cast,
+)
+from .gathering import (
+    gather_avg,
+    gather_max,
+    gather_min,
+    gather_sum,
+    has_neighbors,
+    nbr_count,
+)
+from .primitives import branch, const, field, gather, iterate, mid, mux
+from .scattering import LinkField, as_scatter_expr, link_cat, scatter, scatter_range
 
 Field = Tensor
 
 __all__ = [
+    "ELECTION_NONE",
     "AggregateContext",
     "DeviceContext",
-    "LinkField",
     "Field",
-    "iterate",
-    "scatter",
-    "gather",
-    "gather_min",
-    "gather_max",
-    "gather_sum",
-    "gather_avg",
+    "LinkField",
     "as_scatter_expr",
-    "scatter_range",
     "branch",
     "broadcast",
-    "gradient_cast",
     "collect_cast",
-    "mux",
     "const",
+    "descend",
+    "elect",
     "field",
+    "gather",
+    "gather_avg",
+    "gather_max",
+    "gather_min",
+    "gather_sum",
     "gradient",
+    "gradient_cast",
+    "has_neighbors",
+    "iterate",
+    "link_cat",
     "mid",
+    "mux",
+    "nbr_count",
+    "scatter",
+    "scatter_range",
 ]

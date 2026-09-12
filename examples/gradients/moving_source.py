@@ -11,22 +11,18 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import torch
-from diffield.utils import get_device
+import torch  # noqa: E402
+from shared.plotting import save_grid_simulation_gif  # noqa: E402
 
-from diffield import (
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.sim import (  # noqa: E402
     EventSchedule,
     GridScenario,
     ScheduledEvent,
     SimulationEngine,
     SnapshotRecorder,
-    mux,
-    scatter,
-    iterate,
-    gather_min,
 )
-from diffield.dsl import field
-from shared.plotting import save_grid_simulation_gif
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():

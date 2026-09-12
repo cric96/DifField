@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
@@ -16,14 +16,28 @@ if TYPE_CHECKING:
 
 
 class DeviceContext:
-    """Run an aggregate program from the perspective of a single device."""
+    """Run an aggregate program from the perspective of a single device.
+
+    A debug and didactic view: the device is node 0 and its neighbours are
+    nodes 1..k, which have no incoming edges of their own.  A program is
+    reproducible here only if every ``gather`` reads a sensor, a constant, or
+    an ``iterate`` state from the previous round; a ``gather`` of a
+    gather-derived field has no neighbour values to read and yields fill
+    values.  ``mid()`` likewise numbers this local view, not the real network.
+
+    ``self_loop`` follows the same convention as the graph builders and is off
+    by default; pass ``include_self=True`` to ``gather`` to fold in the
+    device's own value at range 0.
+    """
 
     def __init__(
         self,
         num_neighbors: int,
         *,
-        self_loop: bool = True,
+        self_loop: bool = False,
         neighbor_ranges: float | list[float] | Tensor = 1.0,
+        device_id: int | None = None,
+        neighbor_ids: list[int] | Tensor | None = None,
     ) -> None:
         self._num_neighbors = num_neighbors
         self._self_loop = self_loop
@@ -44,6 +58,26 @@ class DeviceContext:
         self._agg_ctx = AggregateContext(
             edge_index, num_nodes, edge_weight=self._build_edge_weight(neighbor_ranges)
         )
+        self._set_node_ids(device_id, neighbor_ids)
+
+    def _set_node_ids(
+        self, device_id: int | None, neighbor_ids: list[int] | Tensor | None
+    ) -> None:
+        """Give ``mid()`` the real network ids for this device and its neighbours."""
+        if device_id is None and neighbor_ids is None:
+            return
+        ids = self._agg_ctx._ctx.node_ids.clone()
+        if device_id is not None:
+            ids[0] = float(device_id)
+        if neighbor_ids is not None:
+            tensor = torch.as_tensor(neighbor_ids, dtype=torch.float32).flatten()
+            if tensor.shape[0] != self._num_neighbors:
+                raise ValueError(
+                    f"Expected {self._num_neighbors} neighbour ids, "
+                    f"got {tensor.shape[0]}"
+                )
+            ids[1:] = tensor
+        self._agg_ctx._ctx.node_ids = ids
 
     def _neighbor_range_tensor(
         self, neighbor_ranges: float | list[float] | Tensor
@@ -96,11 +130,41 @@ class DeviceContext:
         return tensor[0]
 
     def get_state(self, name: str) -> float:
-        """Return this device's ``iterate`` state for *name*."""
-        state_tensor = self._agg_ctx._ctx.state.get_state(name=name)
+        """Return this device's ``iterate`` state for *name*.
+
+        *name* may be a full alignment path or a bare label.  A label used in
+        both arms of a ``branch`` is resolved to the arm this device is aligned
+        with, since a single device is only ever in one partition.
+        """
+        manager = self.state
+        try:
+            key = manager.resolve_for_node(name, 0)
+        except KeyError as exc:
+            raise KeyError(f"State '{name}' not found") from exc
+        state_tensor = manager.get_state(name=key)
         if state_tensor is None:
             raise KeyError(f"State '{name}' not found")
         return state_tensor[0].item()
+
+    @property
+    def state(self):
+        """This device's state store, keyed by alignment path."""
+        return self._agg_ctx._ctx.state
+
+    def export_bundle(self) -> dict[str, Tensor]:
+        """This device's own row of every ``iterate`` state slot.
+
+        The outbound message of a decentralised round: keys are alignment
+        paths, which carry no filenames, line numbers or object ids and are
+        identical across processes, so they are usable directly on the wire.
+        Feed the collected bundles of a device's neighbours back as
+        ``neighbor_exports`` on the next round.
+        """
+        manager = self.state
+        return {
+            key: manager.get_state(name=key)[0].detach().clone()
+            for key in manager.keys()
+        }
 
     def reset(self) -> None:
         self._agg_ctx.reset()
@@ -115,13 +179,14 @@ class DeviceContext:
         neighbor_exports: dict[str, list[float] | Tensor],
     ) -> None:
         for name, values in neighbor_exports.items():
-            state = ctx.state.get_state(name=name)
-            if state is None:
-                continue
-            tensor = torch.as_tensor(values, dtype=state.dtype)
-            if tensor.dim() == 0:
-                tensor = tensor.unsqueeze(0)
-            state[1 : 1 + tensor.shape[0]] = tensor
+            for key in ctx.state.resolve_all(name):
+                state = ctx.state.get_state(name=key)
+                if state is None:
+                    continue
+                tensor = torch.as_tensor(values, dtype=state.dtype)
+                if tensor.dim() == 0:
+                    tensor = tensor.unsqueeze(0)
+                state[1 : 1 + tensor.shape[0]] = tensor
 
     def _inject_neighbor_messages(
         self,

@@ -7,25 +7,34 @@ import argparse
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import numpy as np
-import torch
+import numpy as np  # noqa: E402
+import torch  # noqa: E402
 
 try:
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
+    from shared.plotting import apply_paper_style
+
+    apply_paper_style()
 except ImportError:
     mpatches = None
     plt = None
 
-from diffield import GridScenario, SimulationEngine, SnapshotRecorder, branch, gather, mux, scatter, iterate, gather_min
-from diffield.utils import get_device
-from diffield.dsl import field
-from shared.plotting import to_grid, save_grid_simulation_gif, draw_obstacles, draw_markers
+from shared.plotting import (  # noqa: E402
+    draw_markers,
+    draw_obstacles,
+    save_grid_simulation_gif,
+    to_grid,
+)
+from shared.plotting.style import MUTED  # noqa: E402
+
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():
@@ -74,8 +83,8 @@ def run_gradient_with_obstacle(
             iterate(
                 field.inf(),
                 lambda dist_old: mux(
-                    source, 
-                    field.of(0.0), 
+                    source,
+                    field.of(0.0),
                     gather_min(scatter(dist_old + weight_tensor * obstacle_tensor_with_inf))
                 ),
                 name="dist"
@@ -92,13 +101,19 @@ def run_gradient_with_obstacle(
     return output
 
 
-def plot_setup(rows: int, cols: int, src_pos: tuple[int, int], obstacle: torch.Tensor, viz_prefix: str = "generated/gradient_obstacle"):
+def plot_setup(
+    rows: int,
+    cols: int,
+    src_pos: tuple[int, int],
+    obstacle: torch.Tensor,
+    viz_prefix: str = "generated/gradient_obstacle",
+):
     """Plot the initial grid setup with source and obstacles."""
     if plt is None or mpatches is None:
         print("matplotlib not available; skipping setup plot")
         return
 
-    fig, ax = plt.subplots(figsize=(7, 7))
+    _fig, ax = plt.subplots(figsize=(7, 7))
     grid_rgb = np.full((rows, cols, 3), 0.92)
     obstacle_cpu = obstacle.detach().cpu().numpy()
 
@@ -115,7 +130,6 @@ def plot_setup(rows: int, cols: int, src_pos: tuple[int, int], obstacle: torch.T
     for col in range(cols + 1):
         ax.axvline(col - 0.5, color="white", lw=0.4)
 
-    ax.set_title("Grid Layout - Source ▲  Wall ■", fontsize=12)
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -146,14 +160,13 @@ def plot_final_field(
     if plt is None:
         return
 
-    fig, ax = plt.subplots(figsize=(8, 7))
+    _fig, ax = plt.subplots(figsize=(8, 7))
     grid = to_grid(dist, rows, cols, obstacle)
     im = ax.imshow(grid, cmap="viridis", interpolation="nearest")
 
     draw_obstacles(ax, obstacle, rows, cols)
     draw_markers(ax, src_pos, ms=14)
 
-    ax.set_title("Distance Field", fontsize=13)
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # Annotate finite cells with distance values
@@ -166,7 +179,10 @@ def plot_final_field(
                 value = dist_cpu[node_id].item()
                 if np.isfinite(value):
                     color = "white" if value > 15 else "black"
-                    ax.text(col, row, f"{value:.0f}", ha="center", va="center", fontsize=5, color=color)
+                    ax.text(
+                        col, row, f"{value:.0f}",
+                        ha="center", va="center", fontsize=5, color=color,
+                    )
 
     plt.tight_layout()
     output_path = f"{viz_prefix}_final.png"
@@ -200,13 +216,15 @@ def plot_evolution(
         im = ax.imshow(grid, cmap="viridis", interpolation="nearest")
         draw_obstacles(ax, obstacle, rows, cols)
         draw_markers(ax, src_pos, ms=10)
-        ax.set_title("Gradient Evolution", fontsize=10)
+        ax.text(
+            0.03, 0.96, f"t={step}",
+            transform=ax.transAxes, fontsize=9, color=MUTED, ha="left", va="top",
+        )
         ax.set_xticks([])
         ax.set_yticks([])
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    fig.suptitle("Gradient Evolution with Obstacles", fontsize=13, y=0.98)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+    plt.tight_layout()
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
@@ -231,7 +249,7 @@ def main():
     if not args.no_gif:
         recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True)
 
-    print(f"=== Gradient with Obstacles ===")
+    print("=== Gradient with Obstacles ===")
     print(f"Grid: {args.rows}x{args.cols}   Source: {src_pos}")
     print(f"Wall: column {args.cols // 2} (with gap at bottom)")
     print(f"Device: {device}")
@@ -247,7 +265,10 @@ def main():
     # Visualizations
     if not args.no_viz:
         plot_setup(args.rows, args.cols, src_pos, obstacle, viz_prefix=args.viz_prefix)
-        plot_final_field(args.rows, args.cols, dist, src_pos, obstacle, args.rounds, viz_prefix=args.viz_prefix)
+        plot_final_field(
+            args.rows, args.cols, dist, src_pos, obstacle,
+            args.rounds, viz_prefix=args.viz_prefix,
+        )
 
         if recorder and recorder.records:
             # Filter snapshots for evolution plot
@@ -256,7 +277,10 @@ def main():
             if not filtered_records:
                 filtered_records = recorder.records
 
-            plot_evolution(args.rows, args.cols, filtered_records, src_pos, obstacle, viz_prefix=args.viz_prefix)
+            plot_evolution(
+                args.rows, args.cols, filtered_records, src_pos,
+                obstacle, viz_prefix=args.viz_prefix,
+            )
 
             # Generate GIF
             if not args.no_gif:

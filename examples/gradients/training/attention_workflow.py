@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
+
 from ..domain.grid import build_corner_source_grid
 from ..domain.program import auto_rounds
 from ..model.distance_model import AttentionGradientModel
@@ -50,8 +51,11 @@ class AttentionGradientWorkflow:
             optimizer.step()
 
             if (epoch + 1) % 5 == 0:
+                tau_val = model.attn_aggr.tau.item()
+                w_val = model.w.item()
                 print(
-                    f"Epoch {epoch + 1:3d}  loss={loss.item():8.4f}  w={model.w.item():.4f}  tau={model.attn_aggr.tau.item():.4f}"
+                    f"Epoch {epoch + 1:3d}  loss={loss.item():8.4f}  "
+                    f"w={w_val:.4f}  tau={tau_val:.4f}"
                 )
 
         print()
@@ -66,7 +70,7 @@ class AttentionGradientWorkflow:
                 self.spec.grid.rows,
                 self.spec.grid.cols,
                 f"{viz_prefix}_evolution.gif",
-                aggr=model.attn_aggr,
+                aggr=model.attn_aggr,  # type: ignore[arg-type]
                 title="Attention Gradient Evolution (post-training)",
                 fps=gif_fps,
             )

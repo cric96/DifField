@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import torch
+
 from .common import plt
+from .style import panel_label
 
 
 def plot_trajectory_comparison(
@@ -12,9 +14,12 @@ def plot_trajectory_comparison(
     teacher_positions_over_time: list[torch.Tensor],
     source_idx: int,
     output_path: str,
-    title: str = "Predicted vs Teacher Trajectories",
 ) -> None:
-    """Render a side-by-side comparison of predicted and teacher trajectories."""
+    """Render a side-by-side comparison of predicted and teacher trajectories.
+
+    No on-figure title: panels are tagged (a) predicted / (b) teacher, named
+    in the paper caption instead.
+    """
     if plt is None:
         print("matplotlib not available; skipping comparison plot")
         return
@@ -30,8 +35,8 @@ def plot_trajectory_comparison(
 
     _, num_nodes, _ = predicted.shape
     fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharex=True, sharey=True)
-    for ax, (traj, panel_title) in zip(
-        axes, ((predicted, "Predicted"), (teacher, "Teacher"))
+    for ax, (traj, panel_tag) in zip(
+        axes, ((predicted, "a"), (teacher, "b")), strict=False
     ):
         for node_idx in range(num_nodes):
             linewidth = 2.2 if node_idx == source_idx else 0.8
@@ -72,16 +77,15 @@ def plot_trajectory_comparison(
             zorder=10,
             label="source",
         )
-        ax.set_title(panel_title)
         ax.set_xlim(0.0, 1.0)
         ax.set_ylim(0.0, 1.0)
         ax.set_aspect("equal")
         ax.grid(alpha=0.25)
         ax.set_xlabel("x")
         ax.set_ylabel("y")
+        panel_label(ax, panel_tag)
 
     axes[1].legend(loc="upper right")
-    fig.suptitle(title)
     plt.tight_layout()
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")

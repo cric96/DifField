@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from collections.abc import Callable
 
 import torch
-import torch.nn as nn
-from torch import Tensor
-
+from torch import Tensor, nn
 
 # ---------------------------------------------------------------------------
 # Tensor helpers

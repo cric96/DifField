@@ -12,8 +12,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from diffield import DeviceContext, GridScenario, SimulationEngine, gradient, scatter
-from diffield.utils import get_device
+from diffield import DeviceContext  # noqa: E402
+from diffield.dsl import gradient, scatter  # noqa: E402
+from diffield.sim import GridScenario, SimulationEngine  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():
@@ -66,7 +68,8 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
     local_weight = device.local_field(float(weight.item()), scatter=float(weight.item()))
 
     print(
-        f"\n=== Local execution for device {device_id} (K={len(neighbor_ids)} neighbours: {neighbor_ids}) ==="
+        f"\n=== Local execution for device {device_id} "
+        f"(K={len(neighbor_ids)} neighbours: {neighbor_ids}) ==="
     )
 
     for round_idx in range(rounds):
@@ -74,12 +77,12 @@ def run_local(args, edge_index, source_global, global_states, weight, rounds):
             neighbor_exports = None
         else:
             neighbor_exports = {
-                "_grad_dist": [
+                "dist": [
                     global_states[round_idx - 1][node].item() for node in neighbor_ids
                 ]
             }
 
-        with device.round(neighbor_exports=neighbor_exports):
+        with device.round(neighbor_exports=neighbor_exports):  # type: ignore[arg-type]
             d_local = gradient(source_local, scatter(local_weight), name="dist")
 
         local_value = device.result(d_local).item()

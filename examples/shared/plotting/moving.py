@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 from pathlib import Path
+
 import numpy as np
 import torch
-from .common import plt, FuncAnimation, PillowWriter, LineCollection, Axes
+
+from .common import Axes, FuncAnimation, LineCollection, PillowWriter, plt
+from .style import MUTED, panel_label
 
 
 def _to_color_values(values: torch.Tensor) -> np.ndarray:
@@ -63,7 +66,7 @@ def _edge_segments_from_round(
     pos = positions.detach().cpu().numpy()
     edges = edge_index.detach().cpu().numpy()
     segments: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for src, tgt in zip(edges[0], edges[1]):
+    for src, tgt in zip(edges[0], edges[1], strict=False):
         segments.append(
             (
                 (float(pos[src, 0]), float(pos[src, 1])),
@@ -73,13 +76,114 @@ def _edge_segments_from_round(
     return segments
 
 
+def _compute_color_range(
+    rounds: list[int],
+    values_by_round: dict[int, torch.Tensor],
+) -> tuple[float, float]:
+    finite_all = []
+    for round_idx in rounds:
+        arr = _to_color_values(values_by_round[round_idx])
+        finite = arr[np.isfinite(arr)]
+        if finite.size:
+            finite_all.append(finite)
+    if finite_all:
+        flat = np.concatenate(finite_all)
+        return float(flat.min()), float(flat.max())
+    return 0.0, 1.0
+
+
+def _draw_links_on_ax(
+    ax: Axes,
+    round_idx: int,
+    positions_by_round: dict[int, torch.Tensor],
+    edge_index_by_round: dict[int, torch.Tensor],
+    id_colors: np.ndarray | None,
+    color_by_id: bool,
+    links_width: float,
+    links_alpha: float,
+) -> None:
+    if not LineCollection:
+        return
+    if round_idx not in edge_index_by_round:
+        return
+    segments = _edge_segments_from_round(
+        positions_by_round[round_idx], edge_index_by_round[round_idx]
+    )
+    if not segments:
+        return
+    edge_colors: str | np.ndarray = "black"
+    if color_by_id and id_colors is not None:
+        edges = edge_index_by_round[round_idx].detach().cpu().numpy()
+        edge_colors = id_colors[edges[0]]
+    ax.add_collection(
+        LineCollection(
+            segments,
+            colors=edge_colors,
+            linewidths=links_width,
+            alpha=links_alpha,
+            zorder=1,
+        )
+    )
+
+
+def _draw_source_marker(ax: Axes, pos: np.ndarray, source_idx: int) -> None:
+    ax.scatter(
+        pos[source_idx, 0],
+        pos[source_idx, 1],
+        marker="o",
+        s=140,
+        c="white",
+        edgecolors="black",
+        linewidths=0.8,
+        zorder=9,
+    )
+    ax.scatter(
+        pos[source_idx, 0],
+        pos[source_idx, 1],
+        marker="*",
+        s=220,
+        c="red",
+        edgecolors="white",
+        linewidths=1.0,
+        zorder=10,
+    )
+
+
+def _setup_snapshot_ax(
+    ax: Axes,
+    round_idx: int,
+    pos: np.ndarray,
+    vals: np.ndarray,
+    vmin: float,
+    vmax: float,
+    id_colors: np.ndarray | None,
+    show_source: bool,
+    source_idx: int,
+) -> object:
+    scatter = _scatter_with_unreachable(
+        ax, pos, vals, vmin=vmin, vmax=vmax, size=38, color_override=id_colors
+    )
+    if show_source:
+        _draw_source_marker(ax, pos, source_idx)
+    ax.text(
+        0.03, 0.96, f"t={round_idx + 1}",
+        transform=ax.transAxes, fontsize=9, color=MUTED, ha="left", va="top",
+    )
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.2)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    return scatter
+
+
 def plot_moving_snapshots(
     *,
     positions_by_round: dict[int, torch.Tensor],
     values_by_round: dict[int, torch.Tensor],
     source_idx: int,
     output_path: str,
-    title: str = "Moving Nodes Distance Snapshots",
     edge_index_by_round: dict[int, torch.Tensor] | None = None,
     show_links: bool = True,
     links_alpha: float = 0.15,
@@ -105,81 +209,24 @@ def plot_moving_snapshots(
         nrows, ncols, figsize=(4.0 * ncols, 3.8 * nrows), squeeze=False
     )
 
-    finite_all = []
-    for round_idx in rounds:
-        arr = _to_color_values(values_by_round[round_idx])
-        finite = arr[np.isfinite(arr)]
-        if finite.size:
-            finite_all.append(finite)
-    if finite_all:
-        flat = np.concatenate(finite_all)
-        vmin, vmax = float(flat.min()), float(flat.max())
-    else:
-        vmin, vmax = 0.0, 1.0
+    vmin, vmax = _compute_color_range(rounds, values_by_round)
 
     mappable = None
     for index, round_idx in enumerate(rounds):
         ax = axes[index // ncols][index % ncols]
         pos = positions_by_round[round_idx].detach().cpu().numpy()
         vals = _to_color_values(values_by_round[round_idx])
-        if (
-            show_links
-            and edge_index_by_round is not None
-            and round_idx in edge_index_by_round
-            and LineCollection is not None
-        ):
-            segments = _edge_segments_from_round(
-                positions_by_round[round_idx], edge_index_by_round[round_idx]
+        if show_links and edge_index_by_round is not None:
+            _draw_links_on_ax(
+                ax, round_idx, positions_by_round, edge_index_by_round,
+                id_colors, color_by_id, links_width, links_alpha,
             )
-            if segments:
-                edge_colors = "black"
-                if color_by_id:
-                    edges = edge_index_by_round[round_idx].detach().cpu().numpy()
-                    edge_colors = id_colors[edges[0]]
-
-                ax.add_collection(
-                    LineCollection(
-                        segments,
-                        colors=edge_colors,
-                        linewidths=links_width,
-                        alpha=links_alpha,
-                        zorder=1,
-                    )
-                )
-        scatter = _scatter_with_unreachable(
-            ax, pos, vals, vmin=vmin, vmax=vmax, size=38, color_override=id_colors
+        scatter = _setup_snapshot_ax(
+            ax, round_idx, pos, vals, vmin, vmax,
+            id_colors, show_source, source_idx,
         )
         if scatter is not None:
             mappable = scatter
-        
-        if show_source:
-            ax.scatter(
-                pos[source_idx, 0],
-                pos[source_idx, 1],
-                marker="o",
-                s=140,
-                c="white",
-                edgecolors="black",
-                linewidths=0.8,
-                zorder=9,
-            )
-            ax.scatter(
-                pos[source_idx, 0],
-                pos[source_idx, 1],
-                marker="*",
-                s=220,
-                c="red",
-                edgecolors="white",
-                linewidths=1.0,
-                zorder=10,
-            )
-        ax.set_title(f"round {round_idx + 1}", fontsize=16, fontweight="bold")
-        ax.set_xlim(0.0, 1.0)
-        ax.set_ylim(0.0, 1.0)
-        ax.set_aspect("equal")
-        ax.grid(alpha=0.2)
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
 
     for index in range(num_rounds, nrows * ncols):
         axes[index // ncols][index % ncols].set_visible(False)
@@ -187,10 +234,9 @@ def plot_moving_snapshots(
     fig.subplots_adjust(
         left=0.07, right=0.88, bottom=0.08, top=0.88, wspace=0.30, hspace=0.35
     )
-    fig.suptitle(title, fontsize=20, fontweight="bold")
     if mappable is not None:
-        cax = fig.add_axes([0.90, 0.14, 0.018, 0.70])
-        fig.colorbar(mappable, cax=cax)
+        cax = fig.add_axes((0.90, 0.14, 0.018, 0.70))
+        fig.colorbar(mappable, cax=cax)  # type: ignore[arg-type]
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)
     print(f"Saved {output_path}")
@@ -208,18 +254,18 @@ def _draw_trajectory_on_ax(
 ) -> None:
     for node_idx in range(num_nodes):
         is_source = show_source and node_idx == source_idx
-        color = id_colors[node_idx] if color_by_id else ("crimson" if is_source else "steelblue")
+        color = id_colors[node_idx] if color_by_id else ("crimson" if is_source else "steelblue")  # type: ignore[index]
         alpha_base = 0.9 if is_source else 0.7
-        
+
         # Use segments for gradient trails
         points = traj[:, node_idx, :].reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
-        
+
         # Line width and alpha progression
         widths = np.linspace(0.6, 3.5 if is_source else 2.5, num_rounds - 1)
         alphas = np.linspace(0.1, alpha_base, num_rounds - 1)
-        
-        lc = LineCollection(segments, linewidths=widths, colors=color, alpha=alphas, zorder=2)
+
+        lc = LineCollection(segments, linewidths=widths, colors=color, alpha=alphas, zorder=2)  # type: ignore[arg-type]
         ax.add_collection(lc)
 
         # Final position marker
@@ -235,12 +281,24 @@ def _draw_trajectory_on_ax(
 
     # Markers for Start and End (Legend purpose)
     if color_by_id and id_colors is not None:
-        ax.scatter(traj[0, :, 0], traj[0, :, 1], c=id_colors, s=15, alpha=0.25, label="start", zorder=1)
-        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c=id_colors, marker="x", s=55, alpha=1.0, label="end", zorder=10)
+        ax.scatter(
+            traj[0, :, 0], traj[0, :, 1],
+            c=id_colors, s=15, alpha=0.25, label="start", zorder=1,
+        )
+        ax.scatter(
+            traj[-1, :, 0], traj[-1, :, 1],
+            c=id_colors, marker="x", s=55, alpha=1.0, label="end", zorder=10,
+        )
     else:
-        ax.scatter(traj[0, :, 0], traj[0, :, 1], c="black", s=15, alpha=0.25, label="start", zorder=1)
-        ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c="black", marker="x", s=45, alpha=0.8, label="end", zorder=10)
-    
+        ax.scatter(
+            traj[0, :, 0], traj[0, :, 1],
+            c="black", s=15, alpha=0.25, label="start", zorder=1,
+        )
+        ax.scatter(
+            traj[-1, :, 0], traj[-1, :, 1],
+            c="black", marker="x", s=45, alpha=0.8, label="end", zorder=10,
+        )
+
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
@@ -256,7 +314,6 @@ def plot_node_trajectories(
     positions_over_time: list[torch.Tensor],
     source_idx: int,
     output_path: str,
-    title: str = "Node Trajectories",
     color_by_id: bool = True,
     show_source: bool = True,
     phantom_pos_seq: torch.Tensor | None = None,
@@ -275,21 +332,28 @@ def plot_node_trajectories(
     if phantom_pos_seq is not None:
         fig, axes = plt.subplots(1, 2, figsize=(15.0, 7.5))
         phantom = phantom_pos_seq.detach().cpu().numpy()
-        
+
         # Plot Teacher Reference
-        _draw_trajectory_on_ax(axes[0], phantom, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        axes[0].set_title("Teacher Ground Truth", fontsize=20, fontweight="bold")
-        
+        _draw_trajectory_on_ax(
+            axes[0], phantom, num_rounds, num_nodes,
+            id_colors, color_by_id, show_source, source_idx,
+        )
+        panel_label(axes[0], "a")
+
         # Plot Prediction
-        _draw_trajectory_on_ax(axes[1], traj, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        axes[1].set_title("Learned Model", fontsize=20, fontweight="bold")
-        
-        fig.suptitle(title, fontsize=24, fontweight="bold")
+        _draw_trajectory_on_ax(
+            axes[1], traj, num_rounds, num_nodes,
+            id_colors, color_by_id, show_source, source_idx,
+        )
+        panel_label(axes[1], "b")
+
         axes[1].legend(loc="upper right")
     else:
         fig, ax = plt.subplots(figsize=(8.0, 7.5))
-        _draw_trajectory_on_ax(ax, traj, num_rounds, num_nodes, id_colors, color_by_id, show_source, source_idx)
-        ax.set_title(title, fontsize=22, fontweight="bold")
+        _draw_trajectory_on_ax(
+            ax, traj, num_rounds, num_nodes,
+            id_colors, color_by_id, show_source, source_idx,
+        )
         ax.legend(loc="upper right")
 
     plt.tight_layout()
@@ -319,15 +383,109 @@ def _draw_snap_on_ax(
                 edges = edge_index.detach().cpu().numpy()
                 edge_colors = id_colors[edges[0]]
             ax.add_collection(
-                LineCollection(segments, colors=edge_colors, linewidths=links_width, alpha=links_alpha, zorder=1)
+                LineCollection(
+                    segments, colors=edge_colors,
+                    linewidths=links_width, alpha=links_alpha, zorder=1,
+                )
             )
-    _scatter_with_unreachable(ax, pos, vals, vmin=vmin, vmax=vmax, size=38, color_override=id_colors)
+    _scatter_with_unreachable(
+        ax, pos, vals, vmin=vmin, vmax=vmax,
+        size=38, color_override=id_colors,
+    )
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
     ax.grid(alpha=0.2)
     ax.set_xlabel("x")
     ax.set_ylabel("y")
+
+
+def _setup_gif_ax(ax: Axes, title_str: str) -> None:
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(0.0, 1.0)
+    ax.set_aspect("equal")
+    ax.grid(alpha=0.2)
+    ax.set_xlabel("x")
+    ax.set_ylabel("y")
+    ax.set_title(title_str)
+
+
+def _create_gif_artists(
+    ax: Axes,
+    trail_length: int,
+    show_links: bool,
+    links_width: float,
+    links_alpha: float,
+) -> dict:
+    trails = []
+    for i in range(trail_length):
+        alpha = 0.35 * (0.75 ** (i + 1))
+        size = 38 * (0.88 ** (i + 1))
+        ts = ax.scatter([], [], c=[], s=size, alpha=alpha, zorder=2)
+        trails.append(ts)
+    main = ax.scatter([], [], c=[], s=42, zorder=4)
+    unreachable = ax.scatter(
+        [], [], c="#b8b8b8", edgecolors="#666666",
+        linewidths=0.4, s=42, zorder=4,
+    )
+    links = None
+    if show_links and LineCollection is not None:
+        links = LineCollection([], linewidths=links_width, alpha=links_alpha, zorder=1)
+        ax.add_collection(links)
+    return {"trails": trails, "main": main, "unreachable": unreachable, "links": links}
+
+
+def _update_gif_ax(
+    round_idx: int,
+    artists: dict,
+    pos_data: dict,
+    val_data: dict,
+    edge_data: dict | None,
+    frame_idx: int,
+    rounds: list[int],
+    id_colors: np.ndarray | None,
+    color_by_id: bool,
+    trail_length: int,
+) -> list:
+    pos = pos_data[round_idx].detach().cpu().numpy()
+    vals = _to_color_values(val_data[round_idx])
+    finite = np.isfinite(vals)
+
+    for i in range(trail_length):
+        prev_idx = frame_idx - (i + 1)
+        if prev_idx >= 0:
+            p_round = rounds[prev_idx]
+            p_pos = pos_data[p_round].detach().cpu().numpy()
+            p_vals = _to_color_values(val_data[p_round])
+            p_finite = np.isfinite(p_vals)
+            artists["trails"][i].set_offsets(p_pos[p_finite])
+            if color_by_id:
+                artists["trails"][i].set_color(id_colors[p_finite])  # type: ignore[index]
+            else:
+                artists["trails"][i].set_array(p_vals[p_finite])
+        else:
+            artists["trails"][i].set_offsets(np.empty((0, 2)))
+
+    artists["main"].set_offsets(pos[finite])
+    if color_by_id:
+        artists["main"].set_color(id_colors[finite])  # type: ignore[index]
+    else:
+        artists["main"].set_array(vals[finite])
+    artists["unreachable"].set_offsets(pos[~finite])
+
+    if artists["links"] is not None and edge_data is not None and round_idx in edge_data:
+        segs = _edge_segments_from_round(pos_data[round_idx], edge_data[round_idx])
+        artists["links"].set_segments(segs)
+        if color_by_id:
+            edges = edge_data[round_idx].detach().cpu().numpy()
+            artists["links"].set_colors(id_colors[edges[0]])  # type: ignore[index]
+        else:
+            artists["links"].set_colors("black")
+
+    res = [artists["main"], artists["unreachable"], *artists["trails"]]
+    if artists["links"]:
+        res.append(artists["links"])
+    return res
 
 
 def export_moving_gif(
@@ -359,103 +517,37 @@ def export_moving_gif(
     num_nodes = positions_by_round[rounds[0]].shape[0]
     id_colors = _get_identity_colors(num_nodes) if color_by_id else None
 
-    # Global min/max for color scaling if not using ID colors
-    vmin, vmax = 0.0, 1.0
-    if not color_by_id:
-        finite_all = []
-        for r in rounds:
-            arr = _to_color_values(values_by_round[r])
-            finite = arr[np.isfinite(arr)]
-            if finite.size: finite_all.append(finite)
-        if finite_all:
-            flat = np.concatenate(finite_all)
-            vmin, vmax = float(flat.min()), float(flat.max())
-
-    # Create subplots if phantom is provided
     is_split = phantom_pos_seq is not None
     ncols = 2 if is_split else 1
     fig, axes = plt.subplots(1, ncols, figsize=(6.6 * ncols, 6.0), squeeze=False)
     ax_pred = axes[0][0 if not is_split else 1]
     ax_ref = axes[0][0] if is_split else None
 
-    def setup_ax(ax, title_str):
-        ax.set_xlim(0.0, 1.0)
-        ax.set_ylim(0.0, 1.0)
-        ax.set_aspect("equal")
-        ax.grid(alpha=0.2)
-        ax.set_xlabel("x")
-        ax.set_ylabel("y")
-        return ax.set_title(title_str)
+    _setup_gif_ax(ax_pred, "Learned Model" if is_split else title)
+    if is_split:
+        _setup_gif_ax(ax_ref, "Teacher Reference")  # type: ignore[arg-type]
 
-    setup_ax(ax_pred, "Learned Model" if is_split else title)
-    if is_split: setup_ax(ax_ref, "Teacher Reference")
-
-    # Artists containers
-    def create_artists(ax):
-        # Trails
-        trails = []
-        for i in range(trail_length):
-            alpha = 0.35 * (0.75 ** (i + 1))
-            size = 38 * (0.88 ** (i + 1))
-            ts = ax.scatter([], [], c=[], s=size, alpha=alpha, zorder=2)
-            trails.append(ts)
-        # Main scatter
-        main = ax.scatter([], [], c=[], s=42, zorder=4)
-        unreachable = ax.scatter([], [], c="#b8b8b8", edgecolors="#666666", linewidths=0.4, s=42, zorder=4)
-        # Links
-        links = None
-        if show_links and LineCollection is not None:
-            links = LineCollection([], linewidths=links_width, alpha=links_alpha, zorder=1)
-            ax.add_collection(links)
-        return {"trails": trails, "main": main, "unreachable": unreachable, "links": links}
-
-    pred_artists = create_artists(ax_pred)
-    ref_artists = create_artists(ax_ref) if is_split else None
-
-    def update_ax(round_idx, artists, pos_data, val_data, edge_data, frame_idx):
-        pos = pos_data[round_idx].detach().cpu().numpy()
-        vals = _to_color_values(val_data[round_idx])
-        finite = np.isfinite(vals)
-        
-        # Trails
-        for i in range(trail_length):
-            prev_idx = frame_idx - (i + 1)
-            if prev_idx >= 0:
-                p_round = rounds[prev_idx]
-                p_pos = pos_data[p_round].detach().cpu().numpy()
-                p_vals = _to_color_values(val_data[p_round])
-                p_finite = np.isfinite(p_vals)
-                artists["trails"][i].set_offsets(p_pos[p_finite])
-                if color_by_id: artists["trails"][i].set_color(id_colors[p_finite])
-                else: artists["trails"][i].set_array(p_vals[p_finite])
-            else:
-                artists["trails"][i].set_offsets(np.empty((0, 2)))
-
-        artists["main"].set_offsets(pos[finite])
-        if color_by_id: artists["main"].set_color(id_colors[finite])
-        else: artists["main"].set_array(vals[finite])
-        artists["unreachable"].set_offsets(pos[~finite])
-        
-        if artists["links"] is not None and edge_data is not None and round_idx in edge_data:
-            segs = _edge_segments_from_round(pos_data[round_idx], edge_data[round_idx])
-            artists["links"].set_segments(segs)
-            if color_by_id:
-                edges = edge_data[round_idx].detach().cpu().numpy()
-                artists["links"].set_colors(id_colors[edges[0]])
-            else:
-                artists["links"].set_colors("black")
-        
-        res = [artists["main"], artists["unreachable"], *artists["trails"]]
-        if artists["links"]: res.append(artists["links"])
-        return res
+    pred_artists = _create_gif_artists(
+        ax_pred, trail_length, show_links, links_width, links_alpha,
+    )
+    ref_artists = _create_gif_artists(
+        ax_ref, trail_length, show_links, links_width, links_alpha,  # type: ignore[arg-type]
+    ) if is_split else None
 
     def update(frame_idx: int):
         round_idx = rounds[frame_idx]
-        res = update_ax(round_idx, pred_artists, positions_by_round, values_by_round, edge_index_by_round, frame_idx)
+        res = _update_gif_ax(
+            round_idx, pred_artists, positions_by_round,
+            values_by_round, edge_index_by_round, frame_idx,
+            rounds, id_colors, color_by_id, trail_length,
+        )
         if is_split:
-            # For reference, we reuse values_by_round (identity) or we can assume teacher always reachable
-            # Values for teacher: we can just pass the same as pred since identity is same
-            res += update_ax(round_idx, ref_artists, {r: phantom_pos_seq[r] for r in rounds}, values_by_round, edge_index_by_round, frame_idx)
+            ref_pos_data = {r: phantom_pos_seq[r] for r in rounds}  # type: ignore[index]
+            res += _update_gif_ax(
+                round_idx, ref_artists, ref_pos_data,  # type: ignore[arg-type]
+                values_by_round, edge_index_by_round, frame_idx,
+                rounds, id_colors, color_by_id, trail_length,
+            )
         return res
 
     fig.suptitle(title)

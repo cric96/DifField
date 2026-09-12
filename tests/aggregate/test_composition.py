@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import torch
 
-from diffield import branch, mux, scatter, iterate, gather_max, gather_sum
-from diffield.dsl import field
 from conftest import field_zeros
+from diffield import branch, gather_max, gather_sum, iterate, mux, scatter
+from diffield.dsl import field
 from tests.aggregate.support import ROUNDS, flags, values
 
 

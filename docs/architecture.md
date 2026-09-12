@@ -89,6 +89,7 @@ classDiagram
         +edge_weight: Tensor?
         +round() ContextManager
         +reset()
+        +update_topology(edge_index, positions, edge_weight)
     }
 
     class RoundContext {
@@ -106,10 +107,17 @@ classDiagram
         +num_nodes: int
         +get_or_init(name, init) Tensor
         +update(name, value)
-        +track_branch(name, cond) mask
-        +reset_states_for_nodes(mask, inits)
+        +resolve(label) path
+        +restrict(keys, keep)
         +snapshot() dict
         +restore(snapshot)
+    }
+
+    class Aligner {
+        +key(kind, label) path
+        +scope(kind, label) ContextManager
+        +frame(kind, label) ContextManager
+        +reset()
     }
 
     class DeviceContext {
@@ -128,9 +136,59 @@ classDiagram
 **Concepts:**
 
 - **AggregateContext** — the global execution environment for a graph. One context per simulation.
+  `update_topology(edge_index, positions=...)` swaps the graph in place between rounds while the
+  node set and its `StateManager` persist: the mobile-network execution model, where links appear
+  and disappear and stateful fields (`gradient`, `elect`, `iterate`) self-heal rather than restart.
+  Edge lengths derived from `positions` are detached — routing cost is structure, not a gradient path.
 - **RoundContext** — the per-round snapshot of topology, state, and exports. Created fresh each round.
-- **StateManager** — persistent per-node memory across rounds. Handles `iterate` state, branch-switch resets, and snapshots.
-- **DeviceContext** — a local view of execution from a single device's perspective, useful for debugging and didactic purposes.
+- **StateManager** — persistent per-node memory across rounds. Handles `iterate` state, per-partition restriction, and snapshots.
+- **Aligner** — the evaluation-tree path that identifies each occurrence of a construct. See *Alignment* below.
+- **DeviceContext** — a local view of execution from a single device's perspective, useful for debugging and didactic purposes. See *Local execution* below for what it can and cannot reproduce.
+
+### Alignment
+
+A construct's persistent state is identified by where it sits in the *evaluation
+tree*, not where it sits in the source text. The identity is a `/`-joined path
+of tokens, each `kind#index` or `kind:label`:
+
+```
+/gradient:dist/it#0/gt#0
+/br:obstacle/T#0/collect_cast#0/it#0
+/it#2
+```
+
+`index` counts occurrences of that kind within the current frame, so two calls
+to the same block never alias — which is what makes the building blocks
+stackable. Paths hold no filenames, line numbers or object ids, so they are
+identical across processes and can be checkpointed or sent over a wire.
+
+- `iterate` and `gather` mint a token; `iterate` also opens a frame, so
+  constructs inside its body nest beneath it.
+- `branch` opens `T`/`F` frames, giving the partitions disjoint slots. After
+  both have run, each partition's slots are *restricted* to its own nodes, so a
+  node that is not in a partition reads that partition's initializers. This is
+  the availability mask of the field-calculus store, and it removes the need
+  for manual state resets on partition switches.
+- `mux` mints nothing: its arms are evaluated in the caller's frame.
+- `@aggregate` opens a frame for a function, and is what library blocks and
+  user-written blocks use. It is not required for correctness — occurrence
+  counters already keep sibling calls apart — but it keeps keys stable when the
+  caller changes, and keeps them readable.
+- `name=` / `tag=` supply a *label* rather than an absolute key. Labelled tokens
+  carry no index, so adding an unlabelled sibling never renames a slot you
+  checkpoint. Lookups accept either a full path or a bare label; a label that
+  matches more than one slot (the same name in both arms of a `branch`) raises
+  rather than silently picking one.
+
+### Local execution
+
+`DeviceContext` holds one device (node 0) and its neighbours (nodes 1..k). The
+neighbours have no incoming edges of their own, so a program is reproducible
+there only if **every `gather` reads a sensor, a constant, or an `iterate` state
+from the previous round**. A `gather` of a gather-derived field has no
+neighbour values to read and yields fill values locally, while the global
+engine would propagate two hops in one round. `mid()` likewise numbers the
+local view unless real ids are supplied via `device_id` / `neighbor_ids`.
 
 ### 2. Functional Utilities
 
@@ -228,6 +286,8 @@ graph TB
         gradient_cast["gradient_cast(source, center, acc)"]
         broadcast["broadcast(mask, value)"]
         collect_cast["collect_cast(potential, local, null, acc)"]
+        elect["elect(key, eligible, grain)"]
+        descend["descend(potential, toward)"]
     end
 
     subgraph Helpers["Field Helpers"]
@@ -251,6 +311,12 @@ graph TB
 
     collect_cast --> iterate
     collect_cast --> scatter
+
+    elect --> iterate
+    elect --> gradient
+    elect --> mux
+
+    descend --> scatter
 ```
 
 **Conceptual semantics:**
@@ -265,6 +331,8 @@ graph TB
 | `gradient_cast` | "Route payloads along gradient paths toward sources" |
 | `broadcast` | "Spread a value from root nodes to the rest of the network" |
 | `collect_cast` | "Gather payloads from children toward local minima of a potential field" |
+| `elect` | "Choose one leader per region of diameter `grain`, and heal when it vanishes" |
+| `descend` | "Which way is downhill on this potential field, in `toward` coordinates" |
 
 ### 5. Simulation Layer
 
@@ -425,6 +493,7 @@ sequenceDiagram
     participant Branch as BranchLayer
     participant Func as Functional
     participant State as StateManager
+    participant Align as Aligner
 
     DSL->>Iterate: iterate(init, fn, name)
     Iterate->>State: get_or_init(init, name)
@@ -438,9 +507,8 @@ sequenceDiagram
     Gather-->>DSL: neighbor contribution
 
     DSL->>Branch: branch(cond, if_true, if_false)
-    Branch->>State: track_branch(name, cond)
-    State-->>Branch: switched_mask
-    Branch->>State: reset_states_for_nodes(mask, resets)
+    Branch->>Align: frame("T") / frame("F")
+    Align-->>Branch: disjoint slots per partition
 
     alt hard mode
         Branch->>DSL: execute if_true or if_false per node
@@ -449,6 +517,7 @@ sequenceDiagram
         Func-->>Branch: blended result
     end
 
+    Branch->>State: restrict(partition slots, keep)
     Branch-->>DSL: branch result
     DSL-->>Iterate: new_state
     Iterate->>State: update(name, new_state)

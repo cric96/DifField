@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import broadcast, gather_min, mux, scatter, scatter_range, iterate
-from diffield.dsl import field
+from diffield.dsl import broadcast, field, gather_min, iterate, mux, scatter, scatter_range
 
 CHANNEL_THRESHOLD = 0.5
 
@@ -61,7 +60,7 @@ def build_snapshot_payloads(
         default_inf = inf_field(num_nodes, device=default_device)
         dist_src = payload.get("dist_src", default_inf)
         dist_dst = payload.get("dist_dst", default_inf)
-        dist_sd_state = payload.get("_gc_dist_channel")
+        dist_sd_state = payload.get("dist_channel")
         if dist_sd_state is None:
             dist_sd = default_inf
         elif dist_sd_state.dim() > 1:

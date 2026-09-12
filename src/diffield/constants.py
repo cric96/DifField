@@ -13,10 +13,12 @@ Used in :func:`field_where`, :class:`BranchLayer` state merging,
 and anywhere ``c >= CONDITION_THRESHOLD`` selects the "true" branch.
 """
 
-BROADCAST_NEAR_ZERO: float = 0.05
-"""When ``broadcast()`` receives a float mask, values ≤ this threshold
-are treated as *True* (i.e. root nodes).  This heuristic lets a
-gradient field (whose source is 0.0) be used directly as a mask.
+ELECTION_NONE: float = 1e9
+"""Sentinel key produced by ``elect()`` where no candidate is within reach.
+
+Election keys must stay well below this value; a node whose adopted key is
+``>= ELECTION_NONE`` currently follows no leader (it abdicated in the
+half-grain buffer zone, or heard no candidate at all).
 """
 
 # ── Temperature defaults ────────────────────────────────────────────────

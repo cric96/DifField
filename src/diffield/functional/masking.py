@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from torch import Tensor
 import torch
+from torch import Tensor
 
 from ..constants import CONDITION_THRESHOLD, DEFAULT_TAU_BRANCH
 from ..pyg_backend import subgraph_for_nodes

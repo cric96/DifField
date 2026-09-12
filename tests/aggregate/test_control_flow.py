@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
+import pytest
 import torch
 
+from conftest import field_from_values
 from diffield import (
     AggregateContext,
     branch,
     gather_max,
-    gather_min,
     gather_sum,
     iterate,
     mux,
     scatter,
 )
+from diffield.core import AlignmentError
 from diffield.dsl import field
-from conftest import field_from_values, field_zeros
 from tests.aggregate.support import ROUNDS, flags, values
 
 
@@ -111,36 +112,48 @@ class TestBranch:
 
         assert torch.allclose(soft, hard, atol=1e-1)
 
-    def test_reset_states_on_partition_switch(self, line_ctx):
+    def test_partition_switch_reinitialises_state(self, line_ctx):
         # Round 1: [T, T, T, T] -> all in branch_true
         # Round 2: [T, T, F, F] -> nodes 2,3 switch to branch_false
+        #
+        # Alignment gives each partition its own store slot and restricts it to
+        # the nodes in that partition, so a node entering a partition reads that
+        # partition's initializer. No reset_states= bookkeeping is needed.
         cond1 = flags(True, True, True, True)
         cond2 = flags(True, True, False, False)
 
-        with line_ctx.round():
-            branch(
-                cond1,
-                lambda: iterate(field.zeros(), lambda s: s + 5.0, name="reset_iterate"),
-                lambda: iterate(field.zeros(), lambda s: s + 1.0, name="reset_iterate"),
-                branch_name="switcher",
-            )
+        def run(cond):
+            with line_ctx.round():
+                return branch(
+                    cond,
+                    lambda: iterate(
+                        field.zeros(), lambda s: s + 5.0, name="reset_iterate"
+                    ),
+                    lambda: iterate(
+                        field.zeros(), lambda s: s + 1.0, name="reset_iterate"
+                    ),
+                    branch_name="switcher",
+                )
 
-        # Before switch, all should be 5.0
-        assert torch.allclose(line_ctx.get_state(name="reset_iterate"), values(5.0, 5.0, 5.0, 5.0))
+        assert torch.allclose(run(cond1), values(5.0, 5.0, 5.0, 5.0))
 
-        with line_ctx.round():
-            branch(
-                cond2,
-                lambda: iterate(field.zeros(), lambda s: s + 5.0, name="reset_iterate"),
-                lambda: iterate(field.zeros(), lambda s: s + 1.0, name="reset_iterate"),
-                branch_name="switcher",
-                reset_states={"reset_iterate": field.zeros()},
-            )
+        # Nodes 0,1 stayed T -> 5.0 + 5.0 = 10.0
+        # Nodes 2,3 switched T->F -> read the F initializer, then +1.0 = 1.0
+        assert torch.allclose(run(cond2), values(10.0, 10.0, 1.0, 1.0))
 
-        # After switch:
-        # Nodes 0,1: stayed T -> 5.0 + 5.0 = 10.0
-        # Nodes 2,3: switched T->F -> reset to 0.0, then +1.0 = 1.0
-        assert torch.allclose(line_ctx.get_state(name="reset_iterate"), values(10.0, 10.0, 1.0, 1.0))
+        # The label now names two slots, one per partition, each restricted to
+        # the nodes it belongs to.
+        state = line_ctx.state
+        assert torch.allclose(
+            state.get_state(name="/br:switcher/T#0/it:reset_iterate"),
+            values(10.0, 10.0, 0.0, 0.0),
+        )
+        assert torch.allclose(
+            state.get_state(name="/br:switcher/F#0/it:reset_iterate"),
+            values(0.0, 0.0, 1.0, 1.0),
+        )
+        with pytest.raises(AlignmentError):
+            state.get_state(name="reset_iterate")
 
 
 class TestMux:

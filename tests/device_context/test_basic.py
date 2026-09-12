@@ -7,20 +7,19 @@ import torch
 
 from diffield import (
     AggregateContext,
+    gather_min,
+    gather_sum,
     gradient,
+    iterate,
     mux,
     scatter,
     scatter_range,
-    iterate,
-    gather_min,
-    gather_sum,
 )
 from diffield.dsl import DeviceContext, field
 
 from .support import (
     ABS_TOL,
     GLOBAL_SYNC_ROUNDS,
-    GRADIENT_EXPORT,
     GRADIENT_STATE,
     ONE_NEIGHBOR,
     TWO_NEIGHBORS,
@@ -155,7 +154,7 @@ class TestDeviceContextBasic:
             neighbor_exports = None
             if round_index > 0:
                 neighbor_exports = {
-                    GRADIENT_EXPORT: [
+                    GRADIENT_STATE: [
                         global_states[round_index - 1][upstream_neighbor_id].item()
                     ]
                 }

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any
 
 ROOT = Path(__file__).resolve().parent
 for path in (ROOT, ROOT / "src", ROOT / "examples"):
@@ -12,12 +11,13 @@ for path in (ROOT, ROOT / "src", ROOT / "examples"):
     if path_str not in sys.path:
         sys.path.insert(0, path_str)
 
-import pytest
-import torch
-import torch.nn as nn
-from torch import Tensor
-from diffield import AggregateContext
-from diffield.utils import make_grid_graph
+import pytest  # noqa: E402
+import torch  # noqa: E402
+from torch import Tensor  # noqa: E402
+
+from diffield import AggregateContext  # noqa: E402
+from diffield.core import with_context  # noqa: E402
+from diffield.dsl import field, mid  # noqa: E402
 
 
 @pytest.fixture
@@ -126,64 +126,47 @@ def weighted_triangle_topology() -> tuple[Tensor, Tensor, int]:
     return edge_index, edge_weight, 3
 
 
-def assert_finite_gradients(params: list[nn.Parameter]) -> None:
+def assert_finite_gradients(params: list[Tensor]) -> None:
     """Assert all parameters have finite gradients."""
     for param in params:
-        assert param.grad is not None, f"Parameter {param} has no gradient"
-        assert torch.isfinite(param.grad).all(), (
+        assert param.grad is not None, f"Parameter {param} has no gradient"  # noqa: S101
+        assert torch.isfinite(param.grad).all(), (  # noqa: S101
             f"Parameter {param} has non-finite gradient"
         )
 
 
-def make_grid_graph(rows: int, cols: int) -> tuple[Tensor, int]:
-    """Create a grid graph and return (edge_index, num_nodes)."""
-    return make_grid_graph(rows, cols)
-
-
 def field_from_values(ctx: AggregateContext, values: list[float] | Tensor) -> Tensor:
     """Create a field from a list of values in the given context."""
-    from diffield.dsl import field
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.from_values(values)
 
 
 def field_ones(ctx: AggregateContext) -> Tensor:
     """Create a field of ones in the given context."""
-    from diffield.dsl import field
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.ones()
 
 
 def field_zeros(ctx: AggregateContext) -> Tensor:
     """Create a field of zeros in the given context."""
-    from diffield.dsl import field
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.zeros()
 
 
 def field_of(ctx: AggregateContext, value: float) -> Tensor:
     """Create a constant field in the given context."""
-    from diffield.dsl import field
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.of(value)
 
 
 def field_mid(ctx: AggregateContext) -> Tensor:
     """Create a field of node IDs in the given context."""
-    from diffield.dsl import mid
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return mid()
 
 
 def field_with_overrides(ctx: AggregateContext, overrides: tuple[tuple[int, float], ...]) -> Tensor:
     """Create a field with specific overrides in the given context."""
-    from diffield.dsl import field
-    from diffield.core import with_context
     with with_context(ctx._ctx):
         return field.with_overrides(field.zeros(), overrides)
 

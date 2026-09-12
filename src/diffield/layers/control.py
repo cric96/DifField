@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import torch.nn as nn
-from torch import Tensor
+import warnings
+
+from torch import Tensor, nn
 
 from ..constants import DEFAULT_TAU_BRANCH
 from ..core import RoundContext, resolve_context, sub_context
@@ -12,13 +13,21 @@ from ..functional import field_where, mask_edges_for_partition
 
 
 class BranchLayer(nn.Module):
-    """Dynamic subgraph partitioning with cross-partition isolation."""
+    """Dynamic subgraph partitioning with cross-partition isolation.
+
+    The two partitions occupy distinct alignment frames (``.../br/T/`` and
+    ``.../br/F/``), so their persistent state can never alias.  After both have
+    run, each partition's slots are restricted to its own nodes, which realises
+    the availability mask of the field-calculus store: a node that is not in a
+    partition reads that partition's initializers rather than whatever the
+    vectorised evaluation happened to compute for it.
+    """
 
     def __init__(
         self,
         true_branch: nn.Module,
         false_branch: nn.Module,
-        branch_name: str = "branch",
+        branch_name: str | None = None,
         reset_states: dict[str, Tensor] | None = None,
         mode: str | None = None,
         tau: float | None = None,
@@ -27,18 +36,22 @@ class BranchLayer(nn.Module):
         self.true_branch = true_branch
         self.false_branch = false_branch
         self.branch_name = branch_name
-        self.reset_states = reset_states or {}
         self.mode = mode
         self.tau = tau
+        if reset_states:
+            warnings.warn(
+                "branch(reset_states=...) is ignored and will be removed: "
+                "alignment now resets a partition's state for nodes outside it "
+                "automatically.",
+                DeprecationWarning,
+                stacklevel=3,
+            )
 
     def forward(
         self, x: Tensor, cond: Tensor, ctx: RoundContext | None = None
     ) -> Tensor:
         """Run branch."""
         ctx = resolve_context(ctx)
-        switched = ctx.state.track_branch(self.branch_name, cond)
-        if self.reset_states:
-            ctx.state.reset_states_for_nodes(switched, self.reset_states)
 
         effective_mode = self.mode if self.mode is not None else get_default_mode()
         effective_tau = self.tau if self.tau is not None else DEFAULT_TAU_BRANCH
@@ -66,40 +79,28 @@ class BranchLayer(nn.Module):
             )
         )
 
-        saved_states = ctx.state.snapshot()
-
-        ctx_true = sub_context(
-            ctx, edge_index_true, edge_weight_true, message_weight_true
-        )
-        out_true = self.true_branch(x, ctx_true)
-        states_after_true = ctx.state.snapshot()
-
-        ctx.state.restore(saved_states)
-        ctx_false = sub_context(
-            ctx, edge_index_false, edge_weight_false, message_weight_false
-        )
-        out_false = self.false_branch(x, ctx_false)
-        states_after_false = ctx.state.snapshot()
-
-        all_keys = set(states_after_true) | set(states_after_false)
-        for key in all_keys:
-            state_after_true = states_after_true.get(key)
-            state_after_false = states_after_false.get(key)
-            if state_after_true is not None and state_after_false is not None:
-                ctx.state.update(
-                    field_where(
-                        cond,
-                        state_after_true,
-                        state_after_false,
-                        mode=effective_mode,
-                        tau=effective_tau,
-                    ),
-                    name=key,
+        with ctx.align.frame("br", self.branch_name):
+            with ctx.align.frame("T") as frame_true:
+                ctx_true = sub_context(
+                    ctx, edge_index_true, edge_weight_true, message_weight_true
                 )
-            elif state_after_true is not None:
-                ctx.state.update(state_after_true, name=key)
-            else:
-                ctx.state.update(state_after_false, name=key)
+                out_true = self.true_branch(x, ctx_true)
+            with ctx.align.frame("F") as frame_false:
+                ctx_false = sub_context(
+                    ctx, edge_index_false, edge_weight_false, message_weight_false
+                )
+                out_false = self.false_branch(x, ctx_false)
+
+        keep_true = cond.float()
+        ctx.state.restrict(
+            frame_true.minted, keep=keep_true, mode=effective_mode, tau=effective_tau
+        )
+        ctx.state.restrict(
+            frame_false.minted,
+            keep=1.0 - keep_true,
+            mode=effective_mode,
+            tau=effective_tau,
+        )
 
         return field_where(
             cond, out_true, out_false, mode=effective_mode, tau=effective_tau

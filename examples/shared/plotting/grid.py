@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
-from typing import Optional
-import numpy as np
+from typing import TYPE_CHECKING
+
 import torch
-from .common import plt, save_gif, Axes
+
+from .common import Axes, plt, save_gif
+
+if TYPE_CHECKING:
+    import numpy as np
 
 
 def to_grid(
     tensor: torch.Tensor,
     rows: int,
     cols: int,
-    obstacle_mask: Optional[torch.Tensor] = None,
+    obstacle_mask: torch.Tensor | None = None,
     replace_inf: bool = True,
 ) -> np.ndarray:
     """Reshape a flat tensor to a 2D grid, masking obstacles and infinities."""
@@ -30,22 +34,22 @@ def save_grid_simulation_gif(
     rows: int,
     cols: int,
     output_path: str,
-    obstacle: Optional[torch.Tensor] = None,
-    src_pos: Optional[tuple[int, int]] = None,
-    dst_pos: Optional[tuple[int, int]] = None,
+    obstacle: torch.Tensor | None = None,
+    src_pos: tuple[int, int] | None = None,
+    dst_pos: tuple[int, int] | None = None,
     cmap: str = "viridis",
     vmin: float = 0.0,
     vmax: float = 45.0,
     fps: int = 10,
     figsize: tuple[float, float] = (5, 5),
-    title: Optional[str] = None,
+    title: str | None = None,
 ) -> None:
     """Save a GIF of a specific field from a grid simulation's records."""
     frames = sorted(records.keys())
 
     def render_frame(ax, frame_idx):
         grid = to_grid(records[frame_idx][field_key], rows, cols, obstacle)
-        im = ax.imshow(grid, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
+        ax.imshow(grid, cmap=cmap, vmin=vmin, vmax=vmax, interpolation="nearest")
         if obstacle is not None:
             draw_obstacles(ax, obstacle, rows, cols)
         if src_pos is not None:
@@ -88,7 +92,7 @@ def draw_obstacles(
 def draw_markers(
     ax: Axes | None,
     src_pos: tuple[int, int],
-    dst_pos: Optional[tuple[int, int]] = None,
+    dst_pos: tuple[int, int] | None = None,
     ms: int = 10,
 ) -> None:
     """Draw source and destination markers."""

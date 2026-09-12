@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
+
 from ..domain.program import run_gradient_program
 from .attention import AttentionMinAggr
 

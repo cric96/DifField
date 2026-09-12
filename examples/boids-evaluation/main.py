@@ -15,40 +15,47 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as F  # noqa: N812
+from torch import nn
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield import (
+from generate_plots import (  # noqa: E402
+    generate_boids_plots,
+    plot_parameter_recovery_bands,
+    plot_train_val_metrics,
+)
+from shared.diagnostics.csv import save_history_csv  # noqa: E402
+from shared.metrics import mean  # noqa: E402
+from shared.plotting import (  # noqa: E402
+    apply_paper_style,
+    export_moving_gif,
+    plot_node_trajectories,
+)
+from shared.training import MetricHistory, grad_norm, parse_int_csv  # noqa: E402
+
+from diffield.dsl import AggregateContext, gather_avg, gather_sum, iterate, scatter  # noqa: E402
+from diffield.sim import (  # noqa: E402
     SpatialScenario,
     bounce_in_box,
-    gather_avg,
-    gather_sum,
-    iterate,
     limit_speed,
     normalize_vectors,
-    scatter,
 )
-from diffield.dsl import AggregateContext
-
-from shared.plotting import export_moving_gif, plot_moving_snapshots, plot_node_trajectories
-from shared.training import MetricHistory, grad_norm, parse_int_csv
-from shared.diagnostics.csv import save_history_csv
-from shared.metrics import mean, std
-from generate_plots import generate_boids_plots, plot_train_val_metrics, plot_parameter_recovery_bands
 
 try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+
+    apply_paper_style()
 except ImportError:
     plt = None
 
@@ -93,7 +100,7 @@ def boids_step(
 
 def sample_initial_state(
     num_nodes: int,
-    *,  
+    *,
     seed: int,
     velocity_scale: float,
     device: torch.device,
@@ -125,7 +132,7 @@ def teacher_rollout(
     w_sep: float,
     w_align: float,
     w_cohesion: float,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[torch.Tensor]]:
     scenario = SpatialScenario(
         positions=positions0,
         edge_radius=radius,
@@ -181,7 +188,6 @@ def teacher_rollout(
 
 
 def _inverse_softplus(x: float) -> float:
-    import math
     return x + math.log(1.0 - math.exp(-x)) if x < 20.0 else x
 
 
@@ -278,7 +284,7 @@ class LearnableBoids(nn.Module):
         velocities_seq: list[torch.Tensor] = []
         edge_index_seq: list[torch.Tensor] = []
 
-        for step_idx in range(rounds):
+        for _step_idx in range(rounds):
             # We need to compute edge_index here for consistency
             scenario = SpatialScenario(
                 positions=positions,
@@ -376,14 +382,14 @@ def teacher_forced_step_losses(
         vel_loss = F.mse_loss(pred_preclip, target_preclip)
         loss = pos_loss + velocity_loss_weight * vel_loss
 
-        sep_focus_loss = close_pair_distance_loss(
+        close_pair_distance_loss(
             pred_pos, target_pos, sep=sep,
         )
 
         total_loss = total_loss + loss
         total_pos_loss = total_pos_loss + pos_loss
         total_vel_loss = total_vel_loss + vel_loss
-        total_sep_focus = total_sep_focus # + sep_focus_loss
+        total_sep_focus = total_sep_focus  # noqa: PLW0127  # + sep_focus_loss
 
         state_pos = target_pos
         state_vel = target_vel
@@ -570,9 +576,16 @@ def train_one_seed(
         }
         recovery = compute_recovery(teacher_params, learned_params)
 
-        do_eval = (epoch + 1) % max(1, eval_every) == 0 or epoch == 0 or epoch == epochs - 1 or epoch == 3 or epoch == 4
+        do_eval = (
+            (epoch + 1) % max(1, eval_every) == 0
+            or epoch == 0
+            or epoch == epochs - 1
+            or epoch in {3, 4}
+        )
 
-        val_total, val_pos, val_vel, val_pos_error = float("nan"), float("nan"), float("nan"), float("nan")
+        val_total, val_pos, val_vel, val_pos_error = (
+            float("nan"), float("nan"), float("nan"), float("nan"),
+        )
         if do_eval:
             with torch.no_grad():
                 val_pred_pos, val_pred_vel, val_edge_seq = model.rollout(
@@ -721,7 +734,6 @@ def _save_validation_gif(
         positions_over_time=[pred_pos_seq[r] for r in range(rounds)],
         source_idx=highlight_node,
         output_path=str(traj_path),
-        title=f"Validation Seed {eval_seed} epoch {epoch + 1} Trajectories",
         show_source=show_source,
         phantom_pos_seq=phantom_pos_seq,
     )
@@ -774,7 +786,7 @@ def _get_device(device_str: str) -> torch.device:
     return torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
-def main() -> None:
+def main() -> None:  # noqa: PLR0915
     args = parse_args()
     device = _get_device(args.device)
     seeds = parse_int_csv(args.seeds)
@@ -788,7 +800,11 @@ def main() -> None:
 
     print(f"=== Boids Evaluation: {len(seeds)} training seeds, eval seed {eval_seed} ===")
     print(f"  device={device}  epochs={args.epochs}  rounds={args.rounds}  nodes={args.num_nodes}")
-    print(f"  teacher: w_sep={args.teacher_w_sep}  w_align={args.teacher_w_align}  w_cohesion={args.teacher_w_cohesion}")
+    print(
+        f"  teacher: w_sep={args.teacher_w_sep}"
+        f"  w_align={args.teacher_w_align}"
+        f"  w_cohesion={args.teacher_w_cohesion}"
+    )
 
     # Pre-generate evaluation trace
     eval_trace = generate_or_load_trace(
@@ -808,7 +824,6 @@ def main() -> None:
         positions_over_time=[eval_trace.pos_seq[r] for r in range(args.rounds)],
         source_idx=args.highlight_node,
         output_path=str(teacher_dir / "teacher_trajectories.png"),
-        title="Teacher Ground Truth Trajectories",
         show_source=False,
     )
     export_moving_gif(
@@ -890,7 +905,7 @@ def main() -> None:
     for i, (seed, model) in enumerate(final_models.items()):
         seed_dir = out_dir / f"seed_{seed}"
         seed_dir.mkdir(parents=True, exist_ok=True)
-        
+
         # Save individual seed history
         history = all_histories[i]
         save_history_csv(history, seed_dir / "history.csv")
@@ -903,7 +918,7 @@ def main() -> None:
                 velocities0=eval_trace.velocities0,
             )
 
-        positions_over_time = [pred_pos[r] for r in range(args.rounds)]
+        [pred_pos[r] for r in range(args.rounds)]
         highlight_idx = max(0, min(args.highlight_node, args.num_nodes - 1))
 
         # Extract data for reproducing the figures
@@ -967,15 +982,21 @@ def main() -> None:
     with (out_dir / "summary.json").open("w", encoding="utf-8") as f:
         json.dump(summary, f, indent=2)
 
-    print(f"\n=== Summary ===")
-    print(f"{'seed':>6} | {'w_sep':>10} | {'w_align':>10} | {'w_cohesion':>10} | {'err_sep':>8} | {'err_align':>8} | {'err_coh':>8}")
+    print("\n=== Summary ===")
+    header = (
+        f"{'seed':>6} | {'w_sep':>10} | {'w_align':>10} | {'w_cohesion':>10}"
+        f" | {'err_sep':>8} | {'err_align':>8} | {'err_coh':>8}"
+    )
+    print(header)
     print("-" * 80)
     for seed in seeds:
         lp = final_learned[seed]
         rec = recovery_summary[str(seed)]
         print(
-            f"{seed:>6} | {lp['w_sep']:>10.4f} | {lp['w_align']:>10.4f} | {lp['w_cohesion']:>10.4f} | "
-            f"{rec['w_sep']['rel_error']:>8.1%} | {rec['w_align']['rel_error']:>8.1%} | {rec['w_cohesion']['rel_error']:>8.1%}"
+            f"{seed:>6} | {lp['w_sep']:>10.4f} | {lp['w_align']:>10.4f}"
+            f" | {lp['w_cohesion']:>10.4f} | {rec['w_sep']['rel_error']:>8.1%}"
+            f" | {rec['w_align']['rel_error']:>8.1%}"
+            f" | {rec['w_cohesion']['rel_error']:>8.1%}"
         )
 
     print(f"\nArtifacts saved to {out_dir}")

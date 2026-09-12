@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import torch
 
-from diffield import mux, iterate
-from diffield.layers import BranchLayer, MuxLayer, GatherLayer, IterateLayer
-from diffield.dsl import field
 from conftest import field_from_values, field_with_overrides, field_zeros
+from diffield import iterate, mux
+from diffield.dsl import field
+from diffield.layers import BranchLayer, GatherLayer, IterateLayer, MuxLayer
 from tests.aggregate.support import AddConstant, flags, values
 
 COMPOSITION_ROUNDS = 5

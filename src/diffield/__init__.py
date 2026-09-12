@@ -1,36 +1,43 @@
 """diffield — aggregate computing and differentiable field calculus."""
 
+from .constants import ELECTION_NONE
 from .core import (
     AggregateContext,
     DeviceContext,
     RoundContext,
     StateManager,
+    aggregate,
     get_default_mode,
     set_default_mode,
     with_mode,
 )
 from .dsl import (
+    as_scatter_expr,
     branch,
     broadcast,
     collect_cast,
     const,
+    descend,
+    elect,
     field,
+    gather,
+    gather_avg,
+    gather_max,
+    gather_min,
+    gather_sum,
     gradient,
     gradient_cast,
+    has_neighbors,
+    iterate,
+    link_cat,
     mid,
     mux,
+    nbr_count,
     scatter,
     scatter_range,
-    iterate,
-    gather,
-    gather_min,
-    gather_max,
-    gather_sum,
-    gather_avg,
-    as_scatter_expr,
 )
 from .functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from .layers import BranchLayer, GatherLayer, MuxLayer, IterateLayer
+from .layers import BranchLayer, GatherLayer, IterateLayer, MuxLayer
 from .pyg_backend import HAS_PYG
 from .sim import (
     EventSchedule,
@@ -49,12 +56,15 @@ from .sim import (
     limit_speed,
     normalize_vectors,
 )
-from .utils import make_grid_graph
+from .utils import get_device, get_grid_distances, make_grid_graph
 
 __all__ = [
+    # Constants
+    "ELECTION_NONE",
     # Core
     "RoundContext",
     "StateManager",
+    "aggregate",
     # DSL
     "AggregateContext",
     "DeviceContext",
@@ -65,12 +75,17 @@ __all__ = [
     "gather_max",
     "gather_sum",
     "gather_avg",
+    "has_neighbors",
+    "nbr_count",
     "as_scatter_expr",
+    "link_cat",
     "scatter_range",
     "branch",
     "broadcast",
     "gradient_cast",
     "collect_cast",
+    "descend",
+    "elect",
     "mux",
     "const",
     "field",
@@ -109,4 +124,6 @@ __all__ = [
     "boids_acceleration_dense",
     # Utilities
     "make_grid_graph",
+    "get_device",
+    "get_grid_distances",
 ]

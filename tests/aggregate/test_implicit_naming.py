@@ -1,16 +1,20 @@
-"""Tests for auto-naming behavior in DSL primitives."""
+"""Constructs used without an explicit ``name=`` still get their own state.
+
+Identity comes from the alignment path (see ``test_alignment.py``); these
+tests cover the everyday consequences for unlabelled constructs.
+"""
 
 from __future__ import annotations
 
 import torch
 
-from diffield import branch, scatter, iterate, gather_sum, gather_max
+from conftest import field_from_values, field_of, field_ones
+from diffield import branch, gather_max, gather_sum, iterate, scatter
 from diffield.dsl import field
-from conftest import field_from_values, field_ones, field_of
 from tests.aggregate.support import ROUNDS, flags, values
 
 
-class TestAutoNamingIterate:
+class TestUnlabelledIterate:
     def test_iterate_without_name_accumulates(self, line_ctx):
         results = []
         for _ in range(ROUNDS):
@@ -43,7 +47,7 @@ class TestAutoNamingIterate:
         assert torch.allclose(a, field_ones(line_ctx))
         assert torch.allclose(b, field_of(line_ctx, 10.0))
 
-    def test_explicit_name_overrides_auto(self, line_ctx):
+    def test_explicit_name_labels_the_slot(self, line_ctx):
         with line_ctx.round():
             iterate(field.zeros(), lambda s: s + 1, name="my_state")
         assert line_ctx.get_state(name="my_state") is not None
@@ -52,7 +56,7 @@ class TestAutoNamingIterate:
         )
 
 
-class TestAutoNamingScatter:
+class TestUnlabelledGather:
     def test_two_scatter_same_level_different_tags(self, triangle_ctx):
         x = field_from_values(triangle_ctx, [1.0, 2.0, 3.0])
         with triangle_ctx.round() as round_ctx:

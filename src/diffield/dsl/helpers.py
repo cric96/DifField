@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import torch
 from torch import Tensor
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .scattering import LinkField
@@ -79,7 +80,7 @@ def validate_cast_mode(mode: str) -> None:
 
 
 def resolve_edge_cost(
-    weight: Tensor | "LinkField" | None, ctx: RoundContext
+    weight: Tensor | LinkField | None, ctx: RoundContext
 ) -> Tensor:
     """Resolve an edge cost tensor from various input types."""
     from .scattering import LinkField
@@ -105,21 +106,25 @@ def edge_sources_targets(edge_index: Tensor) -> tuple[Tensor, Tensor]:
     return edge_index[0], edge_index[1]
 
 
-def hard_parent_ids(potential: Tensor, ctx: RoundContext | None = None) -> Tensor:
-    """Select one admissible parent per node according to the potential field."""
-    return hard_parent_ids_with_edge_cost(potential, edge_cost=None, ctx=ctx)
-
-
 def hard_parent_ids_with_edge_cost(
     potential: Tensor,
     edge_cost: Tensor | None,
     ctx: RoundContext | None = None,
+    edge_index: Tensor | None = None,
 ) -> Tensor:
-    """Select one admissible parent per node with an optional explicit edge cost."""
+    """Select one admissible parent per node with an optional explicit edge cost.
+
+    Convention shared with :func:`soft_parent_weights_with_edge_cost`: on an
+    edge ``parent -> child`` the *parent* is the endpoint with lower potential,
+    i.e. the one closer to the potential's minimum, so payloads flow child to
+    parent.  Returns a node field where entry ``i`` is the parent of ``i``, or
+    ``-1`` when ``i`` has none.
+    """
     ctx = resolve_context(ctx)
-    src, tgt = edge_sources_targets(ctx.edge_index)
-    parent_potential = potential[src]
-    child_potential = potential[tgt]
+    edges = ctx.edge_index if edge_index is None else edge_index
+    parent, child = edge_sources_targets(edges)
+    parent_potential = potential[parent]
+    child_potential = potential[child]
     effective_edge_cost = ctx.edge_weight if edge_cost is None else edge_cost
     path_cost = parent_potential + effective_edge_cost
     tolerance = 1e-6 + 1e-5 * torch.maximum(path_cost.abs(), child_potential.abs())
@@ -134,7 +139,7 @@ def hard_parent_ids_with_edge_cost(
                 parent_potential,
                 torch.full_like(parent_potential, float("inf")),
             ),
-            src.to(dtype=parent_potential.dtype),
+            parent.to(dtype=parent_potential.dtype),
         ),
         dim=-1,
     )
@@ -145,7 +150,7 @@ def hard_parent_ids_with_edge_cost(
     )
     best_parent = scatter_min_by_first(
         parent_candidates,
-        tgt,
+        child,
         ctx.num_nodes,
         mode="hard",
         tau=DEFAULT_TAU_SOFT_AGGR,
@@ -155,13 +160,6 @@ def hard_parent_ids_with_edge_cost(
     candidate_parent = best_parent[:, 1].round().long()
     sentinel = torch.full_like(candidate_parent, -1)
     return torch.where(torch.isfinite(candidate_potential), candidate_parent, sentinel)
-
-
-def soft_parent_weights(
-    potential: Tensor, tau: float | Tensor, ctx: RoundContext | None = None
-) -> Tensor:
-    """Compute relaxed parent-selection weights for soft collect semantics."""
-    return soft_parent_weights_with_edge_cost(potential, tau, edge_cost=None, ctx=ctx)
 
 
 def _compute_soft_gates(
@@ -224,18 +222,29 @@ def soft_parent_weights_with_edge_cost(
     tau: float | Tensor,
     edge_cost: Tensor | None,
     ctx: RoundContext | None = None,
+    edge_index: Tensor | None = None,
 ) -> Tensor:
-    """Compute relaxed parent-selection weights with an optional explicit edge cost."""
+    """Relaxed parent-selection weights, one per edge.
+
+    Same convention as :func:`hard_parent_ids_with_edge_cost`: the parent is the
+    endpoint with lower potential.  Because a *collect* sends payloads from
+    child to parent, the edge ``child -> parent`` carries the message, so here
+    the edge source is the child and the edge target is the candidate parent.
+    Weights are normalised per child, so each child distributes one unit of
+    payload across its candidate parents.
+    """
     ctx = resolve_context(ctx)
-    src, tgt = edge_sources_targets(ctx.edge_index)
+    edges = ctx.edge_index if edge_index is None else edge_index
+    child, parent = edge_sources_targets(edges)
+    src, tgt = child, parent
     if isinstance(tau, Tensor):
         effective_tau = tau.to(
             device=potential.device, dtype=potential.dtype
         ).clamp_min(LOG_EPSILON)
     else:
         effective_tau = potential.new_tensor(max(float(tau), LOG_EPSILON))
-    parent_potential = potential[tgt]
-    child_potential = potential[src]
+    parent_potential = potential[parent]
+    child_potential = potential[child]
     effective_edge_cost = ctx.edge_weight if edge_cost is None else edge_cost
     path_cost = parent_potential + effective_edge_cost
     finite = (

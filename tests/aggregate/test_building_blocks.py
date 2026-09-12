@@ -2,27 +2,27 @@
 
 import torch
 
+from conftest import assert_finite_gradients, field_from_values, field_with_overrides
 from diffield import (
     AggregateContext,
+    broadcast,
     collect_cast,
+    gather_min,
     gradient,
     gradient_cast,
-    broadcast,
-    scatter_range,
     iterate,
     mux,
-    gather_min,
     scatter,
+    scatter_range,
 )
 from diffield.dsl import field
-from conftest import assert_finite_gradients, field_from_values, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
-    PROPAGATION_ROUNDS,
     LINE_SOURCE,
-    WEIGHTED_SOURCES,
-    SOFT_MATCH_TAU,
+    PROPAGATION_ROUNDS,
     SOFT_MATCH_ATOL,
+    SOFT_MATCH_TAU,
+    WEIGHTED_SOURCES,
     values,
 )
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import torch
 
-from diffield import gather_min, scatter, iterate, gather_sum
+from diffield import gather_min, gather_sum, iterate, scatter
 from diffield.dsl import DeviceContext
 
 from .support import (
@@ -22,8 +22,8 @@ from .support import (
 
 class TestDeviceContextAutoNamed:
     def test_decentralized_auto_named_iterate_accumulates(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         round_1 = (
             run_named_iterate(
@@ -72,8 +72,8 @@ class TestDeviceContextAutoNamed:
         assert round_3 == (21.0, 21.0)
 
     def test_decentralized_scatter_without_tag_uses_local_field(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         def run_sum(device: DeviceContext, neighbor_values):
             with device.round(
@@ -96,8 +96,8 @@ class TestDeviceContextAutoNamed:
         assert agg_b2 > agg_b1
 
     def test_decentralized_auto_iterate_with_branch(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         cond_a = dev_a.local_field(own=1.0, scatter=1.0)
         cond_b = dev_b.local_field(own=0.0, scatter=1.0)
@@ -135,8 +135,8 @@ class TestDeviceContextAutoNamed:
         assert round_3[1] > round_2[1]
 
     def test_decentralized_scatter_min_aggregation_without_tag(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=TWO_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=TWO_NEIGHBORS, self_loop=True)
 
         def run_min(device: DeviceContext, neighbor_values):
             with device.round(

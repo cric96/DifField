@@ -9,11 +9,11 @@ import torch
 from torch import Tensor
 
 try:
-    from torch_geometric.nn import knn_graph, radius_graph
     from torch_geometric.data import Data
+    from torch_geometric.nn import knn_graph, radius_graph
     from torch_geometric.utils import grid as pyg_grid
-    from torch_geometric.utils import subgraph as pyg_subgraph
     from torch_geometric.utils import scatter as pyg_scatter
+    from torch_geometric.utils import subgraph as pyg_subgraph
 except Exception as exc:  # pragma: no cover - import-time guard
     raise RuntimeError(
         "PyTorch Geometric is required. Install `torch-geometric` in the active environment."
@@ -58,7 +58,7 @@ def build_grid_edge_index(
     cols: int,
     *,
     connectivity: int = 4,
-    include_self_loops: bool = True,
+    include_self_loops: bool = False,
     device: torch.device | None = None,
 ) -> Tensor:
     """Build grid edges using PyG utilities and connectivity filtering."""

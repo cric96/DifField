@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import hashlib
-import inspect
-from typing import Callable
+from collections.abc import Callable
 
 import torch
-import torch.nn as nn
-from torch import Tensor
+from torch import Tensor, nn
 
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
 from ..core import RoundContext, current_context, with_context
@@ -31,37 +28,6 @@ class _LambdaModule(nn.Module):
         return self._fn()
 
 
-def _auto_name(kind: str, **kwargs: object) -> str:
-    """Generate a deterministic name from the caller's source location.
-
-    Walks up the stack skipping frames that belong to diffield internals
-    (e.g. ``_LambdaModule.forward`` when ``iterate`` is called inside a branch
-    lambda) so the name always reflects the user's source position.
-
-    Additional keyword arguments (e.g. ``aggr``) are folded into the hash so
-    that two calls on the same line with different parameters get distinct
-    names.
-
-    The identity of the calling code object is also included so that two
-    different lambdas on the same source line (as is common inside
-    ``branch``) produce distinct names.
-    """
-    frame = inspect.currentframe()
-    while frame is not None:
-        code = frame.f_code
-        if not code.co_filename.endswith("diffield/dsl/primitives.py"):
-            param_key = tuple(sorted(kwargs.items()))
-            code_id = id(code)
-            key = (
-                f"{code.co_filename}:{frame.f_lineno}:"
-                f"{code.co_name}:{code_id}:{param_key}"
-            )
-            short_hash = hashlib.md5(key.encode()).hexdigest()[:8]
-            return f"{kind}_{short_hash}"
-        frame = frame.f_back
-    return f"{kind}_fallback"
-
-
 def iterate(
     init: Tensor,
     fn: Callable[[Tensor], Tensor],
@@ -74,14 +40,14 @@ def iterate(
     ``field.inf()``, scenario helpers, or any tensor with first dimension equal
     to the number of nodes.
 
-    Can be called as ``iterate(init, fn)`` for auto-naming or
-    ``iterate(init, fn, name="my_name")`` for explicit naming.
+    Each occurrence is identified by its position in the evaluation tree (see
+    :mod:`diffield.core.alignment`), so two calls never share state.  ``name``
+    is optional and labels the occurrence, which keeps its store key stable and
+    readable — ``iterate(..., name="dist")`` becomes ``/it:dist``.
     """
     from ..layers import IterateLayer
 
-    resolved_name = name if name is not None else _auto_name("r")
-
-    return IterateLayer(init, fn, name=resolved_name)(torch.empty(0))
+    return IterateLayer(init, fn, name=name)(torch.empty(0))
 
 
 def gather(
@@ -98,21 +64,19 @@ def gather(
     The input must be a :class:`LinkField`, typically built with :func:`scatter`
     and optionally combined with arithmetic or :func:`scatter_range`.
 
-    When a tag is present, the source field is exported in the context and can
-    be overridden by runtime message overrides.
+    The gathered source field is exported in the context under this
+    occurrence's alignment path, where it can be overridden by runtime message
+    overrides.  ``tag`` is optional and labels the occurrence.
     """
-    from ..layers import GatherLayer
     from ..core import current_context
+    from ..layers import GatherLayer
 
     ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
 
-    # Use provided tag or auto-generate one
-    if tag is not None:
-        expr.tag = tag
-    elif expr.tag is None:
-        expr.tag = _auto_name("h", aggr=aggr)
+    label = tag if tag is not None else expr.tag
+    expr.tag = ctx.align.key("gt", label)
 
     return GatherLayer(
         aggr=aggr,
@@ -127,17 +91,18 @@ def branch(
     cond: Tensor,
     if_true: Callable[[], Tensor],
     if_false: Callable[[], Tensor],
-    branch_name: str = "branch",
+    branch_name: str | None = None,
     reset_states: dict[str, Tensor] | None = None,
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Domain restriction with edge partitioning and optional state reset.
+    r"""Domain restriction with edge partitioning.
 
-    Communication is restricted by masking edges per branch. Branch evaluations
-    share the same underlying state manager and are coordinated via
-    snapshot/restore semantics before merging. ``reset_states`` values must be
-    node field tensors.
+    Communication is restricted by masking edges per branch, and each partition
+    gets its own alignment frame so their persistent state is disjoint.  A node
+    that leaves a partition reads that partition's initializers when it returns,
+    matching field-calculus alignment, so ``reset_states`` is no longer needed
+    and is ignored.  ``branch_name`` optionally labels the occurrence.
     """
     from ..layers import BranchLayer
 
@@ -180,11 +145,14 @@ def const(value: float) -> Tensor:
 
 
 def mid() -> Tensor:
-    """Return tensor of node IDs [0, 1, ..., N-1] as float."""
+    """Return the device-identity field.
+
+    Normally ``[0, 1, ..., N-1]``.  A :class:`~diffield.core.device.DeviceContext`
+    holds only one device and its neighbours, so it reports the real network
+    ids it was given rather than its local slot numbering.
+    """
     ctx = current_context()
-    return torch.arange(
-        ctx.num_nodes, dtype=torch.float32, device=ctx.edge_index.device
-    )
+    return ctx.node_ids
 
 
 class field:
@@ -205,9 +173,9 @@ class field:
     @staticmethod
     def inf() -> Tensor:
         return const(float("inf"))
-    
+
     # TODO add description here
-    
+
     @staticmethod
     def with_overrides(field: Tensor, overrides: tuple[int, float]) -> Tensor:
         for node_id, value in overrides:

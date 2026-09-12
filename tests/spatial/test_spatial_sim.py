@@ -11,16 +11,13 @@ from diffield import (
     boids_acceleration_dense,
     bounce_in_box,
     build_spatial_graph,
+    gather_min,
     gradient,
+    iterate,
     limit_speed,
     mux,
-    scatter,
     normalize_vectors,
-    iterate,
-    gather_min,
-    gather_max,
-    gather_sum,
-    gather_avg,
+    scatter,
 )
 from diffield.dsl import field
 

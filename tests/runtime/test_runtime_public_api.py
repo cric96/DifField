@@ -13,15 +13,12 @@ from diffield import (
     SimulationEngine,
     SnapshotRecorder,
     build_spatial_graph,
+    gather_min,
+    gather_sum,
     gradient,
+    iterate,
     mux,
     scatter,
-    iterate,
-    gather_min,
-    gather_max,
-    gather_sum,
-    gather_avg,
-    gather,
 )
 from diffield.dsl import field
 from diffield.utils import get_device, get_grid_distances

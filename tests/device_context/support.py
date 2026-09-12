@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Callable, Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
 import pytest
 import torch
@@ -19,8 +20,9 @@ ONE_NEIGHBOR = 1
 TWO_NEIGHBORS = 2
 THREE_NEIGHBORS = 3
 
+# A block's state is reached by the label the caller wrote, not by an
+# internal key: gradient(..., name="dist") stores at /gradient:dist/it#0.
 GRADIENT_STATE = "dist"
-GRADIENT_EXPORT = "_grad_dist"
 STATE_NAME = "state"
 OUTER_STATE = "outer"
 COUNTER_STATE = "counter"

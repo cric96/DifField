@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import torch
-import torch.nn as nn
+from torch import nn
+
 from ..domain.moving_logic import (
+    MAX_DIST,
     pairwise_shortest_hop,
     step_teacher_positions,
-    MAX_DIST,
 )
 from ..model.moving_model import LearnableMovingGradient
 from ..visualization.moving import render_moving_gradient_evolution
@@ -46,7 +47,7 @@ class MovingGradientWorkflow:
         elif self.spec.learn == "ac":
             params = [model.w_raw]
         else:
-            params = list(model.motion_policy.parameters()) + [model.w_raw]
+            params = [*list(model.motion_policy.parameters()), model.w_raw]
 
         opt = torch.optim.Adam(params, lr=self.spec.lr)
 
@@ -81,8 +82,10 @@ class MovingGradientWorkflow:
             opt.step()
 
             if (epoch + 1) % 20 == 0 or epoch == 0:
+                w_val = model.w.item()
                 print(
-                    f"epoch={epoch + 1:3d} loss={total.item():.5f} mse={loss.item():.5f} w={model.w.item():.4f}"
+                    f"epoch={epoch + 1:3d} loss={total.item():.5f} "
+                    f"mse={loss.item():.5f} w={w_val:.4f}"
                 )
 
         print("Training complete.")

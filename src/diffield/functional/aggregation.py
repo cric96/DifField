@@ -22,7 +22,7 @@ def scatter_aggr(
     if callable(aggr) and not isinstance(aggr, str):
         return aggr(src, index, num_nodes)
     if aggr in ("sum", "mean"):
-        return _scatter_sum_mean(src, index, num_nodes, aggr)
+        return _scatter_sum_mean(src, index, num_nodes, aggr, fill_value)
     if aggr == "min":
         return _scatter_min(src, index, num_nodes, mode, tau, fill_value)
     if aggr == "max":
@@ -30,8 +30,27 @@ def scatter_aggr(
     raise ValueError(f"Unknown aggregation: {aggr}")
 
 
-def _scatter_sum_mean(src: Tensor, index: Tensor, num_nodes: int, aggr: str) -> Tensor:
-    return scatter_hard(src, index, num_nodes, aggr=aggr, fill_value=FILL_VALUE_DEFAULT)
+def _scatter_sum_mean(
+    src: Tensor,
+    index: Tensor,
+    num_nodes: int,
+    aggr: str,
+    fill_value: float = FILL_VALUE_DEFAULT,
+) -> Tensor:
+    """Sum/mean reduction, honouring *fill_value* for buckets with no messages.
+
+    An empty sum is naturally zero, so this only differs from the default when
+    the caller asked for something else — previously that request was ignored.
+    """
+    out = scatter_hard(src, index, num_nodes, aggr=aggr, fill_value=FILL_VALUE_DEFAULT)
+    if fill_value == FILL_VALUE_DEFAULT:
+        return out
+    msg_count = src.new_zeros(num_nodes)
+    msg_count.scatter_add_(0, index, src.new_ones(index.shape[0]))
+    isolated = msg_count == 0
+    if out.dim() > 1:
+        isolated = isolated.unsqueeze(-1)
+    return torch.where(isolated, src.new_full(out.shape, fill_value), out)
 
 
 def _scatter_min(

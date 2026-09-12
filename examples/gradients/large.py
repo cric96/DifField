@@ -19,17 +19,19 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from diffield import SnapshotRecorder
-from shared.plotting import save_grid_simulation_gif
+from shared.plotting import apply_paper_style, panel_label, save_grid_simulation_gif  # noqa: E402
+
+apply_paper_style()
+
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
 
 try:
-    from .domain.program import auto_rounds, run_gradient_program
+    from .domain.program import auto_rounds, run_gradient_program  # noqa: F401
 except ImportError:
-    from gradients.domain.program import auto_rounds, run_gradient_program
+    from gradients.domain.program import auto_rounds
 
-from diffield import GridScenario, SimulationEngine, mux, scatter, iterate, scatter_range, gather_min
-from diffield.dsl import field
-from diffield.utils import get_device
+from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():
@@ -119,7 +121,7 @@ def run_large_gradient(args, scenario, source, device: torch.device):
         .view(args.rows, args.cols)
         .clone()
         for round_idx, payload in recorder.records.items()
-        if not (not args.no_gif) or (round_idx + 1) in record_at
+        if args.no_gif or (round_idx + 1) in record_at
     }
 
     if device.type == "cuda":
@@ -139,10 +141,11 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     fig, axes = plt.subplots(1, len(snapshots), figsize=(20, 4))
     if len(snapshots) == 1:
         axes = [axes]
+    letters = "abcdefghijklmnopqrstuvwxyz"
     for index, (round_idx, snapshot) in enumerate(sorted(snapshots.items())):
         im = axes[index].imshow(snapshot.numpy(), cmap="magma")
-        axes[index].set_title(f"Round {round_idx}")
         axes[index].axis("off")
+        panel_label(axes[index], letters[index % len(letters)])
         fig.colorbar(im, ax=axes[index], fraction=0.046, pad=0.04)
 
     plt.tight_layout()
@@ -154,9 +157,6 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     plt.figure(figsize=(8, 6))
     plt.imshow(dist.numpy(), cmap="magma")
     plt.colorbar(label="Distance")
-    plt.title(
-        f"Final Gradient field on {args.rows}x{args.cols} grid (Source at center)"
-    )
     final_path = f"{args.viz_prefix}.png"
     Path(final_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(final_path)
@@ -169,7 +169,8 @@ def main():
     device = get_device(args.device)
 
     print(
-        f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, {args.rows * args.cols} nodes) ==="
+        f"=== Large-scale Gradient ({args.rows}x{args.cols} grid, "
+        f"{args.rows * args.cols} nodes) ==="
     )
     print(f"Device: {device}")
 
@@ -179,7 +180,7 @@ def main():
     graph_time = time.time() - start_time
     print(f"Graph built in {graph_time:.4f}s (Edges: {scenario.edge_index.shape[1]})")
 
-    output, weight, snapshots, _, rounds = run_large_gradient(
+    output, weight, snapshots, _, _rounds = run_large_gradient(
         args, scenario, source, device
     )
 
@@ -197,6 +198,7 @@ def main():
     loss.backward()
     backward_time = time.time() - start_time
     print(f"Backward pass in {backward_time:.4f}s")
+    assert weight.grad is not None  # noqa: S101
     print(f"d(loss)/dw = {weight.grad.item():.1f}")
 
     plot_results(dist, snapshots, args)

@@ -11,10 +11,11 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import torch
-from diffield.utils import get_device
-from gradients.domain.specs import GridSpec, LearnableGradientSpec, TrainingSpec
-from gradients.training.distance_workflow import LearnableGradientWorkflow
+import torch  # noqa: E402
+from gradients.domain.specs import GridSpec, LearnableGradientSpec, TrainingSpec  # noqa: E402
+from gradients.training.distance_workflow import LearnableGradientWorkflow  # noqa: E402
+
+from diffield.utils import get_device  # noqa: E402
 
 
 def parse_args():

@@ -1,0 +1,29 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --extra cpu --extra vmas --extra decentralized
+
+      - run: uv run pytest
+
+      # Lint and type checks are configured (see [tool.ruff] / [tool.pyright] in
+      # pyproject.toml) but not yet gating: the tree currently has ~163 ruff and
+      # ~66 pyright findings, almost all pre-existing style debt in src/diffield.
+      # Re-enable these two steps once that cleanup pass lands.
+      # - run: uv run ruff check .
+      # - run: uv run pyright

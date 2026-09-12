@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from diffield import scatter, gather_sum
+from diffield import gather_sum, scatter
 from diffield.dsl import DeviceContext
 
 from .support import (
@@ -18,7 +18,7 @@ from .support import (
 
 class TestDeviceContextEdgeCases:
     def test_tagged_neighbor_messages_override_local_expression(self):
-        device = DeviceContext(num_neighbors=TWO_NEIGHBORS)
+        device = DeviceContext(num_neighbors=TWO_NEIGHBORS, self_loop=True)
         expression = device.local_field(own=10.0, scatter=[10.0, 10.0])
 
         result = run_round(
@@ -46,7 +46,7 @@ class TestDeviceContextEdgeCases:
         assert with_self == 6.0
 
     def test_decentralized_iterate_with_incompatible_init_values(self):
-        device = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        device = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
         cond_true = device.local_field(own=1.0, scatter=1.0)
         cond_false = device.local_field(own=0.0, scatter=1.0)
 
@@ -92,8 +92,8 @@ class TestDeviceContextEdgeCases:
         assert round_3 == VERY_LARGE_INIT
 
     def test_decentralized_scatter_aggregates_incompatible_values_across_partitions(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         cond_a = dev_a.local_field(own=1.0, scatter=1.0)
         cond_b = dev_b.local_field(own=0.0, scatter=1.0)

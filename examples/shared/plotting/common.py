@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Sequence
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
 
 try:
     import matplotlib.patches as mpatches
@@ -39,7 +42,7 @@ def save_gif(
         render_frame_fn(ax, frame_idx)
 
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    anim = FuncAnimation(fig, update, frames=frames)
+    anim = FuncAnimation(fig, update, frames=frames)  # type: ignore[arg-type]
     writer = PillowWriter(fps=fps)
     anim.save(output_path, writer=writer)
     plt.close(fig)

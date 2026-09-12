@@ -3,22 +3,21 @@
 from __future__ import annotations
 
 import torch
-import torch.nn.functional as F
 
+from conftest import assert_finite_gradients, field_with_overrides
 from diffield import (
     AggregateContext,
+    broadcast,
     collect_cast,
+    gather_min,
     gradient,
     gradient_cast,
-    broadcast,
-    scatter_range,
     iterate,
     mux,
-    gather_min,
     scatter,
+    scatter_range,
 )
 from diffield.dsl import field
-from conftest import assert_finite_gradients, field_with_overrides
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
     LINE_SOURCE,

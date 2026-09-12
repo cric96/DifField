@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 import time
+from dataclasses import dataclass, field
 
 import torch
 
@@ -43,9 +43,13 @@ class SnapshotRecorder:
             for key, value in states.items():
                 payload[key] = value.detach().clone()
         else:
+            # Requested fields may be bare alignment labels ("dist_src") while
+            # the store is keyed by full path. Resolve, but record under the
+            # name the caller asked for so downstream readers stay unchanged.
             for key in self.state_fields:
-                if key in states:
-                    payload[key] = states[key].detach().clone()
+                value = round_ctx.state.get_state(name=key)
+                if value is not None:
+                    payload[key] = value.detach().clone()
 
         if self.export_fields:
             for key in self.export_fields:
