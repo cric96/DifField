@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 
 import torch
 from torch import Tensor, nn
 
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
-from ..core import RoundContext, current_context, with_context
-from ..core.mode import get_default_mode
+from ..core import RoundContext, current_context, sub_context, with_context
+from ..core.alignment import SEP
+from ..core.mode import get_default_mode, get_default_tau
 from ..functional import field_where
-from .scattering import LinkField
+from .helpers import ensure_field
+from .scattering import LinkField, scatter
 
 
 class _LambdaModule(nn.Module):
@@ -73,7 +76,7 @@ def gather(
 
     ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
-    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    effective_tau = tau if tau is not None else get_default_tau(DEFAULT_TAU_SOFT_AGGR)
 
     label = tag if tag is not None else expr.tag
     expr.tag = ctx.align.key("gt", label)
@@ -85,6 +88,71 @@ def gather(
         fill_value=fill_value,
         include_self=include_self,
     )(expr, ctx=ctx, tag=expr.tag)
+
+
+def nbr(value: Tensor, *, default: float = 0.0, name: str | None = None) -> LinkField:
+    r"""Neighbours' value of *value* from their previous round (field-calculus ``nbr``).
+
+    The value travels as a state slot, so it is exchanged between independent
+    devices like any ``iterate`` state.  A neighbour that has not published yet
+    reads ``default``; a self link (``include_self``) reads the current value.
+    Each call is one exchanged field: bind it once and reuse it.
+    """
+    ctx = current_context()
+    value = ensure_field(value, ctx)
+    key = ctx.align.key("nbr", name)
+    published = ctx.state.get_or_init(torch.full_like(value, default), name=key)
+    ctx.state.update(value, name=key)
+
+    def evaluate(_ctx: RoundContext, edge_index: Tensor, _weight: Tensor | None) -> Tensor:
+        source, target = edge_index
+        own = (source == target).view(-1, *[1] * (value.dim() - 1))
+        return torch.where(own, value[source], published[source])
+
+    return LinkField(evaluate, _repr=f"nbr({name or 'field'})")
+
+
+@contextmanager
+def aligned_on(
+    key: Tensor,
+    *,
+    weight: Tensor | None = None,
+    name: str | None = None,
+    mode: str | None = None,
+) -> Generator[None, None, None]:
+    r"""Partition the enclosed computation by *key* (ScaFi ``align``, FCPP ``split``,
+    Collektive ``alignedOn``).
+
+    Devices publish their key; inside the block a link ``j -> i`` exists only
+    when ``j``'s published key equals ``i``'s current key, so each partition
+    computes independently, centrally or on devices.  A device whose key
+    changed restarts the enclosed blocks.  In soft mode a ``weight`` (e.g.
+    membership confidence) makes :func:`~diffield.dsl.scattering.membership`
+    equal ``w_j * w_i`` for additive blocks; the partition itself stays hard.
+    """
+    ctx = current_context()
+    key = ensure_field(key, ctx).detach().float()
+    soft = weight is not None and (mode or get_default_mode()) == "soft"
+    own = ensure_field(weight, ctx) if soft else torch.ones_like(key)
+    with ctx.align.scope("aligned_on", name) as slot:
+        published = ctx.state.get_or_init(key.new_full((ctx.num_nodes, 2), float("nan")), name=slot)
+        ctx.state.update(torch.stack((key, own), -1), name=slot)
+        source, target = ctx.edge_index
+        same = published[source, 0] == key[target]
+        region = sub_context(
+            ctx,
+            ctx.edge_index[:, same],
+            ctx.edge_weight[same],
+            None if ctx.message_weight is None else ctx.message_weight[same],
+        )
+        if soft:
+            link = scatter(published[:, 1]) * own
+            region.membership = link if ctx.membership is None else ctx.membership * link
+        with with_context(region):
+            yield
+    changed = (key != published[:, 0]) & ~published[:, 0].isnan()
+    inner = [k for k in ctx.state.keys() if k.startswith(slot + SEP)]  # noqa: SIM118
+    ctx.state.restrict(inner, keep=~changed, mode="hard")
 
 
 def branch(

@@ -1,15 +1,7 @@
 #!/usr/bin/env python3
-"""Cross-scenario comparison: one paper-ready overview figure per mode.
+"""Create cross-scenario SHAC/imitation figures and a master CSV.
 
-Reads the per-scenario ``summary.json`` files that ``main.py`` writes under
-``<out-root>/vmas-<scenario>-<mode>/`` and produces the headline figure plus
-two composite overviews (SHAC final behaviour and imitation parameter
-recovery / depth expressivity, across all five scenarios at once) and a single
-master CSV table, so the whole pipeline's results can be read/compared at a
-glance instead of scenario-by-scenario.
-
-Run after ``main.py --mode shac`` and ``main.py --mode imitation`` have
-produced their per-scenario summaries:
+Run after both modes have produced summaries:
     uv run python examples/vmas_diffield/summarize.py
 """
 
@@ -28,7 +20,7 @@ sys.path.insert(0, str(ROOT / "examples"))
 from shared.plotting import apply_paper_style, color_of, label_of, panel_label  # noqa: E402
 from shared.plotting import savefig as _savefig  # noqa: E402
 from shared.plotting.style import MUTED  # noqa: E402
-from vmas_diffield.vmas_env import SCENARIO_SPEC  # noqa: E402
+from vmas_diffield.scenarios import SCENARIO_SPEC  # noqa: E402
 
 try:
     import matplotlib
@@ -118,16 +110,9 @@ def plot_shac_overview(out_root: Path, out_path: Path) -> None:
 
 
 def plot_headline(out_root: Path, out_path: Path) -> None:
-    """The cross-scenario "money figure": is a field program >= the GNN, everywhere?
+    """Compare normalized per-scenario scores and score vs. parameter count.
 
-    (a) Final primary metric per scenario, normalized within each scenario to the
-    best policy's mean (=1.0), so four metrics with wildly different absolute
-    scales (order ~0.9 vs coverage ~0.005) read on one axis. (b) The same
-    normalized score (mean across scenarios) against trainable-parameter count
-    (log): the interpretable field programs should sit top-left -- matching or
-    beating the GNN with orders of magnitude fewer parameters. ``leader`` is a
-    flocking-only specialist, so it appears in (a) but is excluded from (b)'s
-    cross-scenario mean.
+    The specialist ``leader`` appears only in the per-scenario panel.
     """
     summaries = {sc: _load(out_root, sc, "shac") for sc in SCENARIOS}
     if plt is None or not any(summaries.values()):
@@ -180,12 +165,7 @@ def plot_headline(out_root: Path, out_path: Path) -> None:
 
 
 def _headline_params_panel(ax_b, summaries, kinds, norm_scores) -> None:
-    """Panel (b): mean normalized score vs trainable-parameter count (log x).
-
-    ``expert`` trains zero parameters, which a log axis cannot place — it is
-    drawn as a dashed reference line instead (the "no learning at all" floor
-    every learned policy should clear).
-    """
+    """Plot mean normalized score against parameter count (log x)."""
     for k in kinds:
         if k == "leader" or not norm_scores[k]:
             continue
@@ -217,11 +197,7 @@ def _headline_params_panel(ax_b, summaries, kinds, norm_scores) -> None:
 
 
 def plot_imitation_overview(out_root: Path, out_path: Path) -> None:
-    """Row (a): final imitation loss per student, log scale — the depth/
-    expressivity result (program students fit the expert exactly; GNN students
-    plateau). Row (b): weight-recovery MAE, only for students that actually
-    recover program weights (bars for the others would fake perfect recovery).
-    """
+    """Plot final imitation loss and weight-recovery MAE across scenarios."""
     summaries = {sc: _load(out_root, sc, "imitation") for sc in SCENARIOS}
     if plt is None or not any(summaries.values()):
         print("no imitation summaries found; skipping overview")

@@ -54,6 +54,7 @@ from shared.plotting import (  # noqa: E402
 from shared.plotting import band as _band  # noqa: E402
 from shared.plotting import savefig as _savefig  # noqa: E402
 from vmas_diffield.policies import build_policy  # noqa: E402
+from vmas_diffield.scenarios import SCENARIO_SPEC  # noqa: E402
 from vmas_diffield.train import (  # noqa: E402
     evaluate,
     evaluate_perturbed,
@@ -62,7 +63,6 @@ from vmas_diffield.train import (  # noqa: E402
     train_shac,
 )
 from vmas_diffield.vmas_env import (  # noqa: E402
-    SCENARIO_SPEC,
     env_action_range,
     make_diff_env,
     obs_to_perception,
@@ -80,7 +80,7 @@ except ImportError:
 
 # Colour/marker/linestyle roles are fixed in shared.plotting.style (ROLE_COLOR
 # etc.) and looked up by policy kind via color_of/label_of, so every figure in
-# this pipeline (and the boids-evaluation one) uses the same identity mapping.
+# this pipeline uses the same identity mapping.
 # vmas_diffield/__init__.py relabels a few roles for this pipeline only.
 
 

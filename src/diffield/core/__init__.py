@@ -13,7 +13,7 @@ from .alignment import (
 from .context import RoundContext, sub_context
 from .device import DeviceContext
 from .execution import AggregateContext
-from .mode import get_default_mode, set_default_mode, with_mode
+from .mode import get_default_mode, get_default_tau, set_default_mode, with_mode
 from .stack import (
     context_stack,
     current_context,
@@ -38,6 +38,7 @@ __all__ = [
     "current_context",
     "get_alignment_check",
     "get_default_mode",
+    "get_default_tau",
     "pop_context",
     "push_context",
     "resolve_context",

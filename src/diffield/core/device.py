@@ -9,10 +9,31 @@ import torch
 from torch import Tensor
 
 from ..pyg_backend import maybe_make_data
+from .alignment import path_has_label
 from .execution import AggregateContext
+from .state import StateManager
 
 if TYPE_CHECKING:
     from .context import RoundContext
+
+
+class _MessageStateManager(StateManager):
+    """Only row zero is computed locally; other rows must come from messages."""
+
+    def __init__(self, num_nodes: int):
+        super().__init__(num_nodes)
+        self.neighbor_exports = {}
+
+    def get_or_init(self, init_val: Tensor, *, name: str) -> Tensor:
+        own_state = super().get_or_init(init_val, name=name)
+        state = torch.cat([own_state[:1], init_val[1:]], dim=0).clone()
+        for key, values in self.neighbor_exports.items():
+            if key != name and not path_has_label(name, key):
+                continue
+            for position, value in enumerate(values):
+                if value is not None:
+                    state[position + 1] = torch.as_tensor(value, dtype=state.dtype, device=state.device)
+        return state
 
 
 class DeviceContext:
@@ -23,7 +44,8 @@ class DeviceContext:
     reproducible here only if every ``gather`` reads a sensor, a constant, or
     an ``iterate`` state from the previous round; a ``gather`` of a
     gather-derived field has no neighbour values to read and yields fill
-    values.  ``mid()`` likewise numbers this local view, not the real network.
+    values. ``mid()`` uses stable network IDs when ``device_id`` and
+    ``neighbor_ids`` are supplied, otherwise it numbers the local view.
 
     ``self_loop`` follows the same convention as the graph builders and is off
     by default; pass ``include_self=True`` to ``gather`` to fold in the
@@ -38,6 +60,7 @@ class DeviceContext:
         neighbor_ranges: float | list[float] | Tensor = 1.0,
         device_id: int | None = None,
         neighbor_ids: list[int] | Tensor | None = None,
+        message_driven: bool = False,
     ) -> None:
         self._num_neighbors = num_neighbors
         self._self_loop = self_loop
@@ -58,6 +81,8 @@ class DeviceContext:
         self._agg_ctx = AggregateContext(
             edge_index, num_nodes, edge_weight=self._build_edge_weight(neighbor_ranges)
         )
+        if message_driven:
+            self._agg_ctx._ctx.state = _MessageStateManager(num_nodes)
         self._set_node_ids(device_id, neighbor_ids)
 
     def _set_node_ids(
@@ -221,7 +246,11 @@ class DeviceContext:
             )
             ctx.data = maybe_make_data(ctx.edge_index, ctx.num_nodes, ctx.edge_weight)
 
-            if neighbor_exports:
+            if isinstance(ctx.state, _MessageStateManager):
+                # Applied lazily by get_or_init, including a message received
+                # before this device has ever evaluated that occurrence.
+                ctx.state.neighbor_exports = neighbor_exports or {}
+            elif neighbor_exports:
                 self._inject_neighbor_exports(ctx, neighbor_exports)
 
             if neighbor_messages:

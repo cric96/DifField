@@ -141,7 +141,15 @@ class DecentralizedModel(mesa.Model):
         ``nan``, which stays ``nan`` through any comparison rather than quietly
         reading as agreement.
         """
-        values = torch.full((self.num_nodes,), float("nan"))
+        exemplar = next((agent.output for agent in self.agents if agent.output is not None), None)
+        shape = () if exemplar is None else exemplar.shape
+        if shape:
+            # Before the first asynchronous activation the payload shape is
+            # unknown. Once known, give earlier empty snapshots that shape too.
+            self.history[:] = [torch.full((self.num_nodes, *shape), float("nan"))
+                            if prior.shape == (self.num_nodes,) and torch.isnan(prior).all()
+                            else prior for prior in self.history]
+        values = torch.full((self.num_nodes, *shape), float("nan"))
         for agent in self.agents:
             if agent.output is not None:
                 values[agent.node_id] = agent.output.float()

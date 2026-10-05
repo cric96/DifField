@@ -34,38 +34,43 @@ def copy_gif(src, dst_name):
         return False
 
 
-def find_latest_boids_gif(out_dir):
-    validation_dir = Path(out_dir) / "validation"
-    if not validation_dir.exists():
-        return None
-    epochs = sorted(validation_dir.glob("epoch_*"))
-    if not epochs:
-        return None
-    latest_epoch = epochs[-1]
-    gifs = list(latest_epoch.glob("validation_seed*_pred.gif"))
-    return gifs[0] if gifs else None
-
-
 def generate_boids_flocking():
-    out_dir = str(TMP_DIR / "boids")
+    out_dir = TMP_DIR / "boids"
+    if not run(
+        [
+            "uv",
+            "run",
+            "python",
+            "-m",
+            "examples.seams",
+            "boids",
+            "--profile",
+            "paper-cpu",
+            "--out",
+            str(out_dir),
+        ],
+        "Boids observed learning and GNN comparison",
+    ):
+        return
+    PICS_DIR.mkdir(parents=True, exist_ok=True)
     run(
         [
-            "uv", "run", "python", "examples/boids-evaluation/main.py",
-            "--epochs", "70",
-            "--seeds", "5",
-            "--eval-seeds", "101",
-            "--out-dir", out_dir,
-            "--hide-links",
+            "ffmpeg",
+            "-y",
+            "-loglevel",
+            "error",
+            "-i",
+            str(out_dir / "videos/observed.mp4"),
+            "-t",
+            "6",
+            "-filter_complex",
+            "fps=8,scale=720:-1:flags=lanczos,split[a][b];[a]palettegen[p];[b][p]paletteuse",
+            "-loop",
+            "0",
+            str(PICS_DIR / "boids_flocking.gif"),
         ],
-        "Boids evaluation (70 epochs)",
+        "Boids README animation",
     )
-    final_gif = find_latest_boids_gif(out_dir)
-    if final_gif:
-        copy_gif(final_gif, "boids_flocking.gif")
-    else:
-        print("WARNING: No boids GIF found, trying fallback path...")
-        fallback = Path(out_dir) / "validation" / "epoch_0070" / "validation_seed101_pred.gif"
-        copy_gif(fallback, "boids_flocking.gif")
 
 
 def generate_spatial_channel():

@@ -135,6 +135,10 @@ class StateManager:
             self._states[key] = field_where(keep, state, init_like, mode=mode, tau=tau)
             self._aligned[key] = keep
 
+    def keys(self) -> list[str]:
+        """Alignment paths of every slot."""
+        return list(self._states)
+
     def reset(self) -> None:
         """Clear all states and branch tracking."""
         self._states.clear()

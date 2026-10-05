@@ -1,30 +1,10 @@
-"""Controllers for the VMAS experiments.
+"""VMAS controllers returning raw per-node forces ``[B*N, 2]``.
 
-All policies output a raw per-node force ``[B*N, 2]`` (the trainer squashes it
-to the VMAS action range via ``vmas_env.pack_actions``). They share a common
-``forward(perception, field_terms)`` interface so the trainers are
-policy-agnostic; the field terms come from the scenario's aggregate program
-(``programs.FieldProgram``).
-
-The policy spectrum, from pure program to pure network:
-
-  * ``expert``     — the aggregate program with hand-set weights (no training):
-                     the zero-parameter baseline.
-  * ``parametric`` — the program with *learned static* weights (SHAC): the
-                     interpretable parameter-optimization object.
-  * ``hybrid``     — ``ModulatedFieldPolicy``: the program whose weights are
-                     *controlled* per-agent per-step by a neural gate network
-                     ("aggregate + MLP/GNN" — the controller reads local
-                     features that include 1-hop neighbour means, so it is a
-                     1-hop message-passing net). Gates are zero-init to 1:
-                     at initialization the hybrid IS the parametric program.
-  * ``hybrid_res`` — the older residual hybrid (program + free force
-                     correction), kept as an opt-in ablation: structured
-                     control vs unstructured correction.
-  * ``neural``     — black-box baseline (1-hop message passing + MLP).
-  * ``neural_dK``  — depth-K message-passing student (imitation/expressivity
-                     study: how deep must a feed-forward GNN be to imitate the
-                     recurrent multi-hop program?).
+The trainer squashes forces to the action range. All policies share a
+``forward(perception, field_terms)`` interface. Kinds: ``expert`` (fixed
+program), ``parametric`` (learned static weights), ``hybrid`` (neural gates
+modulate program weights), ``hybrid_res`` (program plus residual force),
+``neural`` (1-hop baseline), and ``neural_dK`` (depth-K message-passing net).
 """
 
 from __future__ import annotations
@@ -35,58 +15,36 @@ from typing import TYPE_CHECKING, cast
 import torch
 from torch import Tensor, nn
 from torch_geometric.utils import scatter as pyg_scatter
-from vmas_diffield.vmas_env import SCENARIO_SPEC
+from vmas_diffield.scenarios import SCENARIO_SPEC
 
 if TYPE_CHECKING:
-    from vmas_diffield.vmas_env import FieldTerms, Perception, ScenarioSpec
+    from vmas_diffield.field_terms import FieldTerms
+    from vmas_diffield.scenarios import ScenarioSpec
+    from vmas_diffield.vmas_env import Perception
 
-# Hand-set program weights: the `expert` baseline and the imitation teacher.
-# Keys must mirror SCENARIO_SPEC[scenario].field_terms exactly. Magnitude
-# rationale (measured, session-5/6 notes): "drive" terms (goal/sense/recruit/
-# social/explore/disperse/follow/lead_dir) sit well above "formation" glue
-# (separation/avoid) because a comparably-weighted mix partially self-cancels,
-# and under VMAS drag (v* ~ 0.4*F) that leaves a barely-perceptible terminal
-# speed. ParametricFieldPolicy.forward is linear in the weights.
-#
-# The weight SCALE matters, not just the ratios: the actuator squashes the
-# summed force with tanh (vmas_env.pack_actions), so a resultant of ~1 cruises
-# at ~74% throttle at best. For tasks that pay by swept ground per step
-# (sampling: reward only on never-sampled cells) the drive terms must push the
-# resultant well past tanh saturation — that "full throttle" is exactly the
-# regime a trained GNN's unbounded output head lives in, and under-driving it
-# was measured to halve the program's speed (0.23 vs 0.44) and give the GNN a
-# +50% covered-cells lead despite the program picking better cells.
+# Fixed expert/teacher weights. Keys match each scenario's active terms.
+# Drive terms outweigh formation terms; sampling uses larger values to
+# compensate for tanh action squashing and sustain coverage speed.
 EXPERT_WEIGHTS: dict[str, dict[str, float]] = {
-    # follow/lead_dir modest under full observability: every agent already
-    # sees the goal, the leader field mainly adds cohesion of intent
+    # Under full observability, follow/lead_dir mainly reinforce shared intent.
     "flocking": {
         "w_separation": 0.5, "w_alignment": 1.0, "w_cohesion": 0.6, "w_goal": 0.5,
         "w_follow": 0.5, "w_lead_dir": 0.4,
     },
-    # partial obs: dissemination IS the drive — non-knowers can only steer
-    # from follow (descend toward the knower) and lead_dir (broadcast goal
-    # direction); goal only acts on the knower itself. A/B (64 envs, 60
-    # steps): zeroing lead_dir costs -26% goal_prox, zeroing follow costs ~0
-    # (the broadcast direction suffices; converging on the messenger mostly
-    # drags the formation) — hence lead_dir high, follow modest.
+    # With partial observability, lead_dir broadcasts goal direction to agents
+    # that cannot see it; follow provides a weaker attraction to informed agents.
     "flocking_beacon": {
         "w_separation": 0.5, "w_alignment": 0.8, "w_cohesion": 0.8, "w_goal": 1.5,
         "w_follow": 0.6, "w_lead_dir": 1.5,
     },
-    # PD arrival: goal is the P gain, brake the D gain (parks agents on their
-    # goals); avoid only fires on genuine collision courses
+    # PD arrival: goal attracts, brake damps at the target, avoid prevents collisions.
     "navigation": {"w_separation": 0.5, "w_goal": 2.5, "w_brake": 1.5, "w_avoid": 0.5},
-    # sense > recruit > explore mirrors the program's priority cascade: chase
-    # what you see, else join a teammate who sees something, else patrol
+    # Priority: pursue sensed targets, recruit informed teammates, then explore.
     "discovery": {
         "w_separation": 1.0, "w_sense": 2.5, "w_recruit": 2.0,
         "w_explore": 1.2, "w_disperse": 0.9,
     },
-    # saturation scale (see block comment): resultant ~3-4x past tanh's knee,
-    # priority cascade preserved (sense > social > explore/separation >
-    # disperse). Swept: x1 of this set covers 0.036 of the grid at speed 0.23;
-    # this set covers 0.050 at 0.36 and out-collects the trained GNN 1.01 vs
-    # 0.81 value/step (96 envs x 3 eval seeds).
+    # High drive compensates for tanh squashing; preserve the priority cascade.
     "sampling": {
         "w_separation": 4.0, "w_sense": 12.0, "w_social": 6.0,
         "w_explore": 4.0, "w_disperse": 3.0,
@@ -126,19 +84,8 @@ def _init_raw_weights(n_terms: int, init: float) -> nn.Parameter:
     return nn.Parameter(torch.full((n_terms,), raw))
 
 
-# Per-scenario softplus-weight initialisation for the LEARNED field policies
-# (parametric/hybrid). The default 0.3 is a deliberately *wrong* near-zero
-# start: every reported learning curve then shows the weights being learned
-# through the physics, not a hand prior being kept (navigation recovers its
-# whole PD structure from here — w_goal rises first, then the brake once agents
-# start arriving; see the phase-uniform-window note in train.py). Sampling is
-# the exception: its productive regime is the tanh-saturating high-drive scale
-# (see EXPERT_WEIGHTS[sampling]); from 0.3 the field LR needs far more than the
-# 150-update budget to crawl there (measured: the reward curve is still rising
-# monotonically at update 149, weights only reach ~1.3 of the ~6-12 optimum),
-# so the learned policy is left under-driven and loses coverage to the GNN. A
-# scalar warm start in the productive band lets the budget refine instead of
-# crawl.
+# Learned field-policy initialization. The small default lets training learn
+# weights from physics; sampling starts higher to reach its saturation regime.
 SCENARIO_INIT: dict[str, float] = {"sampling": 3.0}
 DEFAULT_INIT = 0.3
 

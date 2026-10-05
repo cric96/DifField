@@ -47,6 +47,12 @@ FILL_VALUE_DEFAULT: float = 0.0
 # ── Numerical stability ────────────────────────────────────────────────
 
 LOG_EPSILON: float = 1e-30
+
+DECISION_RESOLUTION: float = 1e-5
+"""Real values compared by discrete decisions (election order, parent choice,
+cast row selection) are quantised to this resolution.  Batch-shape-dependent
+float rounding of the same quantity must not flip a decision between a
+centralised run and independent devices."""
 """Clamp floor before ``log()`` in the logsumexp trick inside
 :func:`_scatter_softmin`, preventing ``log(0) = -inf``.
 """

@@ -452,3 +452,28 @@ def link_cat(exprs: list[LinkField | Tensor | float], dim: int = -1) -> LinkFiel
     return LinkField(
         evaluate, _repr="link_cat(" + ", ".join(str(part) for part in parts) + ")"
     )
+
+
+def link_map(fn: Callable[..., Tensor], *operands: LinkField | Tensor | float) -> LinkField:
+    """Apply *fn* edge-wise to evaluated operands: ``fn(op_1[e], ..., op_n[e])``.
+
+    Lets an ordinary tensor function (e.g. a learned metric module) define a
+    link field from several neighbour expressions.
+    """
+    parts = [as_scatter_expr(operand) for operand in operands]
+
+    def evaluate(ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor | None) -> Tensor:
+        return fn(
+            *(
+                part.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight)
+                for part in parts
+            )
+        )
+
+    return LinkField(evaluate, _repr=f"{getattr(fn, '__name__', type(fn).__name__)}(...)")
+
+
+def membership() -> LinkField:
+    """Soft region membership of each link: 1 outside a soft ``aligned_on``."""
+    ctx = current_context()
+    return ctx.membership if ctx.membership is not None else as_scatter_expr(1.0)

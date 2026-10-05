@@ -72,6 +72,7 @@ class DeviceRuntime:
             neighbor_ranges=list(neighbor_ranges),
             device_id=self.node_id,
             neighbor_ids=self.neighbor_ids,
+            message_driven=True,
         )
         self._self_loop = self_loop
         self._global_signals = dict(signals)
@@ -81,7 +82,7 @@ class DeviceRuntime:
         self.signals = {
             name: self._localize(v) for name, v in self._global_signals.items()
         }
-        self._last_inbox: dict[str, Tensor] = {}
+        self._last_inbox: dict[str, list[Tensor | None]] = {}
         self._ranges = list(neighbor_ranges)
 
     # ------------------------------------------------------------------
@@ -139,6 +140,7 @@ class DeviceRuntime:
             neighbor_ranges=self._ranges,
             device_id=self.node_id,
             neighbor_ids=neighbor_ids,
+            message_driven=True,
         )
         self._device.state.restore(
             _resize_states(carried, initializers, len(neighbor_ids) + 1)
@@ -160,7 +162,7 @@ class DeviceRuntime:
     # ------------------------------------------------------------------
     # message handling
     # ------------------------------------------------------------------
-    def _resolve_inbox(self, inbox: Mapping[str, InboxSlot] | None) -> dict[str, Tensor]:
+    def _resolve_inbox(self, inbox: Mapping[str, InboxSlot] | None) -> dict[str, InboxSlot]:
         """Turn per-neighbour messages into one dense row block per state slot.
 
         A neighbour that has not spoken this round keeps the value it last sent;
@@ -168,27 +170,13 @@ class DeviceRuntime:
         reads that neighbour's initialiser.  Under the synchronous barrier every
         neighbour speaks every round and neither fallback is ever taken.
         """
-        if not inbox:
-            return {}
-
-        resolved: dict[str, Tensor] = {}
-        for key, values in inbox.items():
-            previous = self._last_inbox.get(key)
-            rows: list[Tensor] = []
-            complete = True
-            for position, value in enumerate(values):
-                if value is not None:
-                    rows.append(value)
-                elif previous is not None:
-                    rows.append(previous[position])
-                else:
-                    complete = False
-                    break
-            if complete and rows:
-                resolved[key] = torch.stack(rows)
-
-        self._last_inbox.update(resolved)
-        return resolved
+        for key, values in (inbox or {}).items():
+            previous = self._last_inbox.get(key, [None] * len(self.neighbor_ids))
+            if len(values) != len(self.neighbor_ids):
+                raise ValueError("Inbox must contain one slot per neighbour")
+            self._last_inbox[key] = [value if value is not None else previous[position]
+                                     for position, value in enumerate(values)]
+        return dict(self._last_inbox)
 
     # ------------------------------------------------------------------
     # execution

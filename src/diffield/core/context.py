@@ -28,6 +28,8 @@ class RoundContext:
             )
         )
         self.message_weight: Tensor | None = None
+        # Soft region membership set by ``aligned_on``; read only by additive blocks.
+        self.membership = None
         self.num_nodes = num_nodes
         # Network-wide identity of each node, which a partial view (a single
         # device and its neighbours) can override with the real ids.
@@ -59,6 +61,7 @@ class RoundContext:
         self.exports.clear()
         self._neighbor_message_overrides.clear()
         self.message_weight = None
+        self.membership = None
 
     def get_message_override(self, tag: str) -> Tensor | None:
         """Get the message override for a specific tag.
@@ -94,6 +97,7 @@ def sub_context(
     sub.edge_index = edge_index
     sub.edge_weight = edge_weight if edge_weight is not None else ctx.edge_weight
     sub.message_weight = message_weight
+    sub.membership = ctx.membership
     sub.num_nodes = ctx.num_nodes
     sub.node_ids = ctx.node_ids
     sub.round_num = ctx.round_num

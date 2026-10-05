@@ -8,9 +8,11 @@ import torch
 from torch import Tensor
 
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from .scattering import LinkField
 
-from ..constants import DEFAULT_TAU_SOFT_AGGR, LOG_EPSILON
+from ..constants import DECISION_RESOLUTION, DEFAULT_TAU_SOFT_AGGR, LOG_EPSILON
 from ..core import RoundContext, resolve_context
 from ..functional import scatter_aggr, scatter_min_by_first
 
@@ -292,3 +294,78 @@ def scale_messages(messages: Tensor, weights: Tensor) -> Tensor:
     while scaled_weights.dim() < messages.dim():
         scaled_weights = scaled_weights.unsqueeze(-1)
     return messages * scaled_weights
+
+
+def quantize(value: Tensor) -> Tensor:
+    """Grid a real value for discrete comparisons (see ``DECISION_RESOLUTION``)."""
+    return (value.detach() / DECISION_RESOLUTION).round()
+
+
+def lexicographic_select(
+    keys: Iterable[Tensor], keep: Tensor, target: Tensor, nodes: int
+) -> Tensor:
+    """Row index of each target's lexicographic minimum over *keys* among *keep* rows.
+
+    Targets without a kept row get ``len(keep)``. Keys are compared detached.
+    """
+    for key in keys:
+        filtered = key.detach().masked_fill(~keep, torch.inf)
+        best = filtered.new_full((nodes,), torch.inf).scatter_reduce(
+            0, target, filtered, reduce="amin", include_self=True
+        )
+        keep = keep & (filtered == best[target])
+    rows = torch.arange(len(keep), device=target.device)
+    selected = torch.full((nodes,), len(keep), dtype=torch.long, device=target.device)
+    return selected.scatter_reduce(
+        0, target, rows.masked_fill(~keep, len(keep)), reduce="amin", include_self=True
+    )
+
+
+def group_pairs(index: Tensor, nodes: int) -> tuple[Tensor, Tensor]:
+    """All ordered pairs ``(i, j)``, ``i != j``, of rows that share a target."""
+    order = torch.argsort(index, stable=True)
+    counts = torch.bincount(index, minlength=nodes)
+    starts = counts.cumsum(0) - counts
+    size = counts[index[order]]
+    first = order.repeat_interleave(size)
+    offset = torch.arange(len(first), device=index.device) - (
+        size.cumsum(0) - size
+    ).repeat_interleave(size)
+    second = order[starts[index[order]].repeat_interleave(size) + offset]
+    keep = first != second
+    return first[keep], second[keep]
+
+
+def surrogate_probabilities(  # noqa: PLR0917 -- explicit continuous arguments for gradcheck
+    key: Tensor,
+    distance: Tensor,
+    valid: Tensor,
+    local: Tensor,
+    index: Tensor,
+    nodes: int,
+    temperature: float,
+    radius: float = 1.0,
+) -> Tensor:
+    """Relaxed "first admissible candidate in key order" for fixed candidates.
+
+    ``P(c) ~ admit(c) * prod_j (1 - admit(j) * sigmoid(margin(c, j) / T))``:
+    *c* is admissible and no admissible candidate beats it.  Lower *key* wins;
+    equal keys compare distances.  Local candidates are always admissible;
+    others have ``admit = sigmoid((radius - distance) / T)``.  As ``T -> 0``
+    this is the hard lexicographic choice up to ties.
+    """
+    admit = torch.where(
+        local, torch.ones_like(distance), torch.sigmoid((radius - distance) / temperature)
+    )
+    admit = admit * valid
+    i, j = group_pairs(index, nodes)
+    margin = torch.where(key[i] == key[j], distance[i] - distance[j], key[i] - key[j])
+    beaten = admit[j] * torch.sigmoid(margin / temperature)
+    first = torch.zeros_like(admit).index_add(0, i, torch.log1p(-beaten.clamp(max=1 - 1e-6)))
+    logits = (admit.clamp_min(1e-30).log() + first).masked_fill(~valid, -torch.inf)
+    maxima = logits.new_full((nodes,), -torch.inf).scatter_reduce(
+        0, index, logits.detach(), reduce="amax", include_self=True
+    )
+    weights = (logits - maxima[index]).exp()
+    totals = weights.new_zeros(nodes).index_add(0, index, weights)
+    return weights / totals[index]
