@@ -23,7 +23,6 @@ class RegionEpisode:
     fault_at: int
     restore_at: int
     metadata: dict
-    importance: Tensor | None = None  # per-device error weight (hotspot task)
 
     @property
     def nodes(self):
@@ -42,6 +41,10 @@ class RegionEpisode:
 
     def payload(self):
         return dict(vars(self))
+
+    def to(self, device):
+        moved = {k: v.to(device) if isinstance(v, Tensor) else v for k, v in vars(self).items()}
+        return RegionEpisode(**{**moved, "edges": [e.to(device) for e in self.edges]})
 
 
 def symmetric_edges(pairs, nodes):
@@ -265,5 +268,4 @@ def combine(episodes):
         first.fault_at,
         first.restore_at,
         {"batch_offsets": offsets},
-        None if first.importance is None else torch.cat([e.importance for e in episodes], 1),
     )

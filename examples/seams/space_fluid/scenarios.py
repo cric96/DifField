@@ -1,12 +1,13 @@
 """Does learning improve the program's initial configuration, wherever it was learned?
 
 Two training scenarios: a frozen phenomenon and a moving one. In each, Adam tunes the
-six weights of the SCR program (metric and candidacy strength), starting from the
-fixed-combined configuration, and a recurrent GNN is trained as the all-neural
-reference. Every model is tested on both scenarios (batched, clean) and, in its own
-scenario, on independent devices (asynchronous DeviceRuntime) under link loss, node
-stops, a partition and permanent crashes. Objective: reconstruction error + lambda x
-leader fraction, no hotspot weighting.
+six weights of the SCR program (metric and candidacy strength) and the hybrid (the same
+plus a neighbourhood GNN in the metric), both starting from the fixed-combined
+configuration, and a recurrent GNN is trained as the all-neural reference. Every
+model is tested on both scenarios (batched, clean) and, in its own scenario, on
+independent devices (asynchronous DeviceRuntime) under link loss, node stops, a
+partition and permanent crashes. Objective: reconstruction error + lambda x leader
+fraction.
 """
 
 import itertools
@@ -29,15 +30,17 @@ from .report import export, method_color
 from .training import load_program, objective, train_job
 
 SCENARIOS = ("static", "moving")
-LEARNERS = ("parametric", "gnn")
+LEARNERS = ("parametric", "hybrid", "gnn")
 METHODS = ("fixed-combined", *LEARNERS)
 CONDITIONS = ("clean", "link_loss", "node_stop", "partition", "crash")
 FAULT_FAMILIES = ("gaussian", "ring")  # one training family, one held out
 FAULT_EPISODES = 2
-# Adam rate for the six weights: best mean hard validation among 0.005/0.03/0.1 in a
-# seed-0 pilot over both scenarios. The GNN keeps its main-study rate.
-RATE = 0.1
-NAMES = {"fixed-combined": "initial configuration", "parametric": "Adam", "gnn": "GNN"}
+NAMES = {
+    "fixed-combined": "initial configuration",
+    "parametric": "parametric",
+    "hybrid": "hybrid",
+    "gnn": "GNN",
+}
 
 
 def banks(config):
@@ -56,7 +59,7 @@ def train(out, config, scenario, bank, norm, *, budget, methods=LEARNERS, seeds=
             print(f"train {scenario} {method} seed={seed}", flush=True)
             train_job(
                 directory,
-                replace(config, learning_rate=RATE),  # the GNN reads gnn_learning_rate
+                config,
                 bank,
                 norm,
                 method,
@@ -139,7 +142,10 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
                 "seed": seed,
                 "episode": spec_name(spec),
                 "metrics": metrics,
-                "curves": {k: curves[k] for k in ("nrmse", "leader_fraction", "regions")},
+                "curves": {
+                    k: curves[k]
+                    for k in ("nrmse", "leader_fraction", "regions", "assignment_stability")
+                },
                 "equivalence": check,
             },
         )
@@ -173,8 +179,10 @@ def report(out, config):
         "# Space-Fluid learned in a static and in a moving world",
         "",
         f"Profile **{config.profile}**. Objective: reconstruction error / sigma^2 + "
-        f"{config.main_lambda:g} x leader fraction. Adam tunes the six weights (rate {RATE:g}) "
-        "from the initial configuration (fixed-combined); the GNN (rate "
+        f"{config.main_lambda:g} x leader fraction. Full-batch Adam (rate "
+        f"{config.learning_rate:g}, hybrid network {config.network_learning_rate:g}, cosine "
+        "decay) tunes the parametric and hybrid programs from the initial configuration "
+        "(fixed-combined); the GNN (rate "
         f"{config.gnn_learning_rate:g}) is the all-neural reference: every device is its own "
         f"sampler, so its leader term is the constant {config.main_lambda:g}. Seeds "
         f"{len(config.seeds)}; test families {', '.join(TEST_FAMILIES)} (ring and front held "
@@ -310,10 +318,70 @@ def figures(out, config):
             ax.grid(alpha=0.15)
         row[0].legend(fontsize=7)
     export(fig, out, "scenarios-faults")
+    stabilization(out, config)
 
 
-def campaign(out, profile, seconds):
-    config = protocol(profile)
+def stabilization(out, config):
+    """Per-round state of each program, trained and tested in the same scenario."""
+    columns = (
+        ("nrmse", "NRMSE"),
+        ("regions", "regions"),
+        ("leaders", "elected leaders"),
+        ("orphans", "regions - leaders"),
+        ("assignment_stability", "share keeping its leader"),
+    )
+    panels = [
+        (scenario, panel, executor)
+        for scenario in SCENARIOS
+        for panel, executor in (("cross", "batched"), ("faults", "async-0.5"))
+    ]
+    fig, axes = plt.subplots(
+        len(panels), len(columns), figsize=(3.3 * len(columns), 2.7 * len(panels)),
+        layout="constrained", sharex=True,
+    )  # fmt: skip
+    for index, (row, (scenario, panel, executor)) in enumerate(zip(axes, panels, strict=True)):
+        rows = [
+            r
+            for r in rows_of(out, scenario)
+            if r["panel"] == panel and r["test"] == scenario and r["condition"] == "clean"
+        ]
+        for method in METHODS:
+            selected = [r for r in rows if r["method"] == method]
+            if not selected:
+                continue
+            for ax, (key, _) in zip(row, columns, strict=True):
+                if method == "gnn" and key != "nrmse":
+                    continue  # every device is its own region
+                ax.plot(
+                    np.mean([per_round(r, key, config.nodes) for r in selected], 0),
+                    color=method_color(method),
+                    label=NAMES[method],
+                )
+        for ax, (_, title) in zip(row, columns, strict=True):
+            ax.set(title=title if index == 0 else None)
+            ax.grid(alpha=0.15)
+        row[0].set(ylabel=f"{scenario}, {executor}")
+        row[0].legend(fontsize=7)
+    for ax in axes[-1]:
+        ax.set(xlabel="Round")
+    export(fig, out, "scenarios-stabilization")
+
+
+def per_round(row, key, nodes):
+    """Clean episodes only: every device is active, so leaders = fraction * nodes."""
+    curves = row["curves"]
+    regions = np.array(curves["regions"], dtype=float)
+    leaders = np.array(curves["leader_fraction"]) * nodes
+    if key == "leaders":
+        return leaders
+    if key == "orphans":
+        return regions - leaders
+    values = np.array(curves[key], dtype=float)
+    return values if key != "assignment_stability" else np.r_[np.nan, values[1:]]
+
+
+def campaign(out, profile, seconds, *, device="cpu"):
+    config = replace(protocol(profile), device=device)
     with output_lock(out):
         torch.set_num_threads(config.threads)
         torch.use_deterministic_algorithms(True)
@@ -322,7 +390,7 @@ def campaign(out, profile, seconds):
         norms = {s: norm for s, (_, norm) in prepared.items()}
         json_write(
             out / "manifest.json",
-            {"profile": profile, "rate": RATE, "normalization": norms, "config": config.to_dict()},
+            {"profile": profile, "normalization": norms, "config": config.to_dict()},
         )
         try:
             for scenario, (bank, norm) in prepared.items():

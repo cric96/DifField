@@ -2,8 +2,9 @@
 
 This experiment asks whether learning the parameters of an explicitly coordinated
 collective program improves the tradeoff between reconstruction error and the
-number of samplers (regions), compared with the hand-designed program, black-box
-search and a pure neural network. Parameters are learned offline and frozen for
+number of samplers (regions), compared with the hand-designed program it starts
+from, a hybrid whose link metric is a GNN over the neighbourhood, and a pure neural
+network. Parameters are learned offline and frozen for
 evaluation. The same `program(runtime)` runs in a batched `AggregateContext` and in
 independent `DeviceRuntime` instances. Boids remains a separate, unchanged experiment.
 
@@ -12,33 +13,33 @@ independent `DeviceRuntime` instances. Boids remains a separate, unchanged exper
 From the repository root, after `uv sync --extra cpu --extra decentralized`:
 
 ```bash
-python -m examples.seams space-fluid --profile smoke --stage all \
-  --out generated/seams/space-fluid-smoke
-python -m examples.seams space-fluid --profile compact-cpu --stage all \
-  --budget-seconds 21600 --out generated/seams/space-fluid-compact
+# Whole comparison: the three campaigns in parallel, then SUMMARY.md with the figures.
+scripts/run_seams_comparison.sh generated/seams/comparison
+PROFILE=smoke scripts/run_seams_comparison.sh generated/seams/comparison-smoke
 
-# Resume the same configuration and sources; each invocation has a new time allowance.
-python -m examples.seams space-fluid --profile compact-cpu --stage train \
-  --out generated/seams/space-fluid-compact
-# Stages in order: train, insights, evaluate, report.
-
-# Zone clustering and the hotspot scaling study (resumable, own output directories).
-python -m examples.seams space-fluid-clusters --profile compact-cpu
-python -m examples.seams space-fluid-hotspot --profile compact-cpu
+# Single campaigns (resumable; --device cuda trains on the GPU, evaluation and
+# DeviceRuntime stay on the CPU).
+python -m examples.seams space-fluid --profile compact-cpu --device cuda --stage all \
+  --out generated/seams/comparison/main          # stages: train, insights, evaluate, report
+python -m examples.seams space-fluid-scenarios --profile compact-cpu --device cuda \
+  --out generated/seams/comparison/scenarios
+python -m examples.seams space-fluid-clusters --profile compact-cpu --device cuda \
+  --out generated/seams/comparison/clusters
+python -m examples.seams space-fluid-summary --out generated/seams/comparison
 
 # Existing standalone Boids command and checkpoints remain supported.
 python -m examples.seams boids --profile paper-cpu \
   --out generated/seams/boids-paper-cpu
 ```
 
-`uv run python` can replace `python`. `scripts/run_visual_campaign.py` delegates to
+`uv run python` can replace `python`; the GPU needs `uv sync --extra cuda`. `scripts/run_visual_campaign.py` delegates to
 these commands and accepts `--suite space-fluid|boids`. The check/render scripts
 inspect and render Space-Fluid runs.
 
 Source and data hashes prevent incompatible resumes; use a new directory after
 changing code or configuration. A kernel-owned file lock prevents concurrent runs
 or renderers from writing the same directory. `last.pt` contains model, optimizer,
-update index, best model and history. Mini-batches and search candidates come from
+update index, best model and history. Mini-batches (smoke profile only) come from
 named deterministic streams, so interruption does not change their order. `best.pt`
 is selected by the **hard validation objective**, including update zero. A deadline
 is checked between atomic units. No profile is reduced on timeout. Exit code 2
@@ -120,9 +121,11 @@ convergence objective; fragmentation is measured on the current graph.
 Let `d` be link length, `a,b` training-normalized observations and `delta=|a-b|`.
 The cost is `1e-4 + w_space*d + w_signal*delta + w_product*d*delta`, radius fixed
 to one. The strength is `priority + z . v` with `z` the normalized value,
-neighbourhood mean and neighbourhood variance. The neural variants add shared
-`3-16-16-1` tanh MLPs: a cost multiplier `exp(tanh(.))` and an additive strength
-term, both exactly inert at initialization. The paper's `min(eps, delta)` clip is
+neighbourhood mean and neighbourhood variance. The hybrid keeps every SCR block and
+multiplies the cost of link `(i,j)` by `exp(tanh(g(z_i,z_j) + g(z_j,z_i)))`, where `z`
+is a 2-float embedding from one message-passing layer over the normalized
+(value, mean, variance) of the device and its neighbours. `g` has a zero last layer,
+so the hybrid starts exactly as the parametric program. The paper's `min(eps, delta)` clip is
 not modelled.
 
 | Method | Specification |
@@ -131,12 +134,11 @@ not modelled.
 | Fixed combined | Cost `(2,1,1)`, random priority (paired reference) |
 | Fixed value | Cost `(2,1,1)`, strength `(4,0,0)`: the paper's "value" option |
 | Fixed variance | Cost `(2,1,1)`, strength `(0,0,-4)`: homogeneous neighbourhoods lead |
-| Parameter search | Combined cost scaled log-uniformly within `exp(+-2)`, strength weights uniform in `[-4,4]`; 48 candidates, hard validation selection (hotspot: see below) |
-| CEM (hotspot only) | Cross-entropy method over the same box: diagonal Gaussian, population 24, 6 elites |
 | Learned parametric | Three positive cost weights and three strength weights, Adam |
-| Neurosymbolic | Same plus the cost and strength MLPs, Adam |
+| Hybrid | Same plus the GNN link-metric modulator (529 parameters, 5 more floats per link), Adam |
 | Recurrent GNN | MPNN + GRU (edge MLP on both states and range, mean aggregation), same rounds, neighbours and signals; its state has the SCR wire width (17 floats per link); Adam |
 | Central K-means | Independent fits to `(x,y,normalized observation)` for several K; cluster means reconstruct |
+| Central GNN (clustering only) | 4-layer message passing over the whole current graph, every round, to 16 slots; a cluster is a connected component of neighbours in one slot; same objective, no K |
 
 **Fairness of the GNN.** It runs in the same batched, synchronous and asynchronous
 executors with identical per-link bytes, uses no IDs, and is trained on the same
@@ -158,9 +160,15 @@ MSE(regional estimate, simulator truth) / sigma_train^2 + lambda * active leader
 
 The grid was calibrated on validation data only: at 0.1 "every device samples"
 ties this objective. Only training and evaluation access truth and global
-statistics. Training batches combine four sequences as disjoint graphs; full
-backpropagation through rounds preserves state and message paths. Adam (rate
-0.005, 400 updates), gradients clipped at norm 5, weights bounded to `[-8,8]`.
+statistics. Every update uses all 64 training sequences as disjoint graphs (full
+batch, so updates are deterministic); full backpropagation through rounds preserves
+state and message paths. Adam (400 updates, rate 0.03, the hybrid's
+network 0.01, cosine decay to 10%), gradients clipped at norm 5, weights bounded to
+`[-8,8]`. The surrogate keeps hard leader IDs and partitions, so even a full-batch
+loss is only piecewise smooth. With full batches the parametric program is
+deterministic: its seeds coincide. The rates were chosen in a 150-update, seed-0
+validation pilot: 0.1 reaches lower objectives but diverges at `lambda = 3`; 0.03 is
+smooth at every tradeoff, and the hybrid's network at 0.01 removes its partition jumps.
 
 Training runs the same composition under `with with_mode("soft", tau=T)`. Each
 block then uses its own relaxation:
@@ -191,8 +199,7 @@ a member of the region the device would follow:
 
 Without `follow`, the hard partition hides the signal "this device would be
 better off in the next region". The relaxed error gradient was then about 20x
-too weak (reconstruction) or wrong-signed (clustering), and gradient learning
-lost to random search.
+too weak (reconstruction) or wrong-signed (clustering).
 
 Both studies were calibrated on validation data against hard central
 differences (step 0.15 on the six named weights):
@@ -202,8 +209,6 @@ differences (step 0.15 on the six named weights):
 - **Error gain:** the error slope is still about 3x weaker than the hard
   difference (least squares 3.1 in both studies), so training weights the error
   term by `error_gain = 3`.
-
-Selection and every reported number use the true hard objective.
 
 Evaluation, selection and every reported number use the hard program.
 `sensitivity.json` reports, for each named weight:
@@ -230,67 +235,37 @@ ring test episodes. It reports:
 A hard check perturbs the 10% most salient readings by 0.1 sigma and compares
 them with the same number of random readings.
 
-## Hotspot: when the gradient matters
+## Static and moving phenomenon (`space-fluid-scenarios`)
 
-With six global weights the black-box search and Adam reach the same program:
-the tuned behaviour has few effective degrees of freedom. `hotspot.py` asks what
-happens when a requirement needs more of them and the program gets more knobs.
+The reconstruction task with the phenomenon frozen (`static`) or moving as above.
+Fixed-combined, parametric, hybrid and the GNN are trained in each scenario, tested
+on both (clean, batched) and, in their own scenario, on asynchronous devices under
+link loss, paused nodes, a partition and permanent crashes.
+`figures/scenarios-stabilization` shows, round by round on clean episodes, NRMSE,
+regions, elected leaders, regions minus leaders and the share of devices keeping
+their leader: with a frozen phenomenon the partition settles and every region has
+exactly one leader; with a moving one it follows the field.
 
-**Requirement.** The reconstruction study with an alarm: errors where the truth
-exceeds `0.5` weigh `1 + gain * sigmoid((truth - 0.5) / 0.05)`, gain in
-{0, 3, 9, 27}. Gain 0 is the main-study objective. With a gain the best program
-wants fine regions on hotspots and coarse ones elsewhere.
+## Clustering of the phenomenon (`space-fluid-clusters`)
 
-**Knobs.** `EdgeMetric(knots=K)` turns the three cost weights into a
-piecewise-linear curve of the link's level: one weight triple per knot, knots
-evenly spaced from mean - 1 std to mean + 3 std, linear interpolation in between.
-`K = 1` is the main-study program (6 tuned scalars with the strength); K in
-{1, 2, 4, 8, 16, 32, 64} gives 6 to 195. The neurosymbolic program (712) and
-the GNN (4929) are the neural ends. The SCR composition is unchanged.
+Zones dominated by one Gaussian with distinct levels and blurred boundaries, static or
+drifting. Every learned method minimises the same objective from the phenomenon,
+region-mean error + 0.3 x regions / N, without labels; ARI against the zones is
+measured only at evaluation. The SCR programs form contiguous regions by construction;
+the central GNN sees the whole graph every round and its clusters are connected
+components of neighbours sharing a slot. Its training propagates the probability of
+sharing a slot along the likeliest path (a sum over paths saturates and stops the
+gradient), which is exact for one-hot slots. K-means and Ward are central references
+given the true K. Reported: ARI, cluster count, leaders versus regions, fragmentation
+and stability, batched and on asynchronous devices under faults.
 
-**Optimizers at equal compute.** Adam (400 updates), random search and CEM
-(diagonal Gaussian over the search box, population 24, 6 elites) each get about
-the same wall-clock: 528 hard validation evaluations take as long as 400 Adam
-updates. Hyperparameters were chosen on validation in a seed-0 pilot (gain 9):
-Adam rate 0.1 (parametric) and 0.03 (neural) among 0.005/0.03/0.1, the GNN keeps
-0.03; a search box of `exp(+-4)` around the default cost and `[-6, 6]` strength,
-wide enough to hold the pilot Adam solutions. Seeds 0 and 1, 24 held-out test
-episodes; a gain-9 run with three seeds is archived in
-`generated/seams/space-fluid-hotspot-3seeds`.
+## Comparison (`space-fluid-summary`)
 
-**Results** (hard weighted test objective, lower is better; `REPORT.md` and
-`gain*/REPORT.md` give intervals and paired differences):
-
-| Gain | Adam K=1 | Adam best K>1 | CEM K=1 / K=64 | Search K=1 / K=64 | Neural | GNN | Fixed |
-|---:|---:|---:|---:|---:|---:|---:|---:|
-| 0 | 0.082 | 0.080 (K=8) | 0.082 / 0.094 | 0.085 / 0.106 | 0.085 | 0.300 | 0.106 |
-| 3 | 0.101 | 0.091 (K=16) | 0.105 / 0.114 | 0.101 / 0.178 | 0.100 | 0.300 | 0.152 |
-| 9 | 0.118 | 0.100 (K=2) | 0.118 / 0.132 | 0.120 / 0.181 | 0.100 | 0.300 | 0.242 |
-| 27 | 0.137 | 0.111 (K=2) | 0.139 / 0.142 | 0.138 / 0.242 | 0.117 | 0.302 | 0.513 |
-
-- **Sanity check, `K = 1`.** At every gain search and CEM equal Adam within
-  0.004 (paired intervals contain zero except CEM at gain 3, +0.004). The surrogate gradient through
-  the whole program reaches the black-box optimum.
-- **The knobs pay off when the requirement is heterogeneous.** At gain 0 more
-  knots change nothing (K=8 against K=1: -0.001 [-0.004, +0.001]); at gain 9
-  K=2 gives -0.018 [-0.030, -0.010], at gain 27 -0.026 [-0.033, -0.019]. Two
-  knots, one for the background and one for hotspots, carry most of it.
-- **Only the gradient keeps its quality as the program grows.** Adam is flat in
-  K up to 195 scalars (one outlier, gain 27 K=32). Random search degrades from
-  K=4 (+0.02 to +0.12 against Adam at K >= 8). CEM stays within 0.01 of Adam up to
-  K=8 and then falls behind (K=64: +0.012 to +0.029; significant at gains 0, 3
-  and 9).
-- **Neural ends.** The neurosymbolic program matches the best parametric curve.
-  The GNN reconstructs almost perfectly (NRMSE below threshold 0.005-0.018) but
-  every device is its own sampler, so it pays the full leader term (0.3).
-- **Insight.** `gain9/figures/hotspot-curves`: Adam learns the same shape in
-  every seed, a low range weight below the threshold and a high one above it:
-  coarse regions in the background, fine regions on hotspots. Black-box curves
-  differ from seed to seed. The bottom row is the descent direction per knot at
-  the common start, from one backward pass. `hotspot-leaders`: more knots move
-  samplers from the background onto hotspots.
-- Synchronous central/device equivalence passed for the largest parametric
-  program and the GNN at every gain (8/8).
+`SUMMARY.md` and `figures/compare-*` put the three studies side by side: paired NRMSE
+difference to the initial configuration and samplers per generalisation panel; the
+objective across static and moving training/test and fault recovery; the
+stabilization figure; ARI per method and condition; hard validation over training for
+every learned method.
 
 ## Simulator and compact CPU protocol
 
@@ -315,14 +290,13 @@ through conditions by episode index; data generation is independent of model see
 | Protocol quantity | `compact-cpu` | `smoke` |
 |---|---:|---:|
 | Training seeds | 3 | 1 |
-| Adam updates / batch sequences | 400 / 4 | 2 / 2 |
+| Adam updates / batch sequences | 400 / 64 (full) | 2 / 2 |
 | Training nodes / rounds | 64 / 48 | 16 / 12 |
 | Train / validation episodes per family | 16 / 4 | 2 / 1 |
 | Test episodes per family and condition | 4 | 1 |
 | Evaluation rounds | 96 | 18 |
 | Transfer size / layout | 256 / uneven | 32 / uneven |
 | DeviceRuntime | 64 nodes; clean and partition; Gaussian and ring; 2 episodes | 16 nodes; 1 episode |
-| Search candidates | 48 | 3 |
 | K-means K | 4, 8, 16 | 2, 4 |
 
 The main panel crosses all six families with the four conditions. Tradeoff values
@@ -330,7 +304,7 @@ other than the main one are evaluated only on main/clean (the Pareto panel).
 The distributed panel evaluates fixed-combined and the learners at the main
 tradeoff; synchronous runs are an equivalence check at seed 0, asynchronous runs
 use all seeds. Fixed methods and K-means do not depend on the training seed; their
-seed-0 result is shared. `plan.json` contains the exact inventory (5264 jobs).
+seed-0 result is shared. `plan.json` contains the exact inventory (4672 jobs).
 
 ## Measurements and interpretation
 

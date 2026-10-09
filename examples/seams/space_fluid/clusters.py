@@ -26,6 +26,7 @@ from threadpoolctl import threadpool_limits
 from ..artifacts import Budget, json_write, read_json
 from ..metrics import interval
 from ..randomness import rng, seed_for
+from . import cluster_gnn
 from .campaign import output_lock
 from .config import protocol
 from .data import RegionEpisode, faults, topology
@@ -36,13 +37,13 @@ from .report import export, method_color
 from .training import load_program, train_job
 
 FIXED = ("combined",)  # the initial configuration of the learned program
-LEARNERS = ("parametric",)
+LEARNERS = ("parametric", "hybrid")
+CENTRAL = ("gnn-central", "kmeans", "ward")  # global view of every round
 SCENARIOS = ("static", "moving")  # zones fixed, or drifting during the episode
 CONDITIONS = ("clean", "link_loss", "node_stop", "partition", "crash")
 DRIFT = 0.08  # radius of each zone centre's circular drift in the moving scenario
-# Adam rate for the six weights: best mean hard validation among 0.005/0.03/0.1 in a
-# seed-0 pilot over both scenarios.
-RATE = 0.1
+# Full-batch rate of the main study (0.1 diverges at high lambda there).
+RATE = 0.03
 SOFTNESS = 0.3  # boundary blur (dominance softmax temperature), chosen on validation
 GAP = 0.12  # minimum difference between zone levels
 # (train, validation, test per cell, decentralized per cell) episodes.
@@ -131,15 +132,22 @@ def truth_labels(episode):
     return np.broadcast_to(labels, (episode.rounds, episode.nodes)) if labels.ndim == 1 else labels
 
 
-def cluster_metrics(episode, labels):
-    """ARI against the dominant Gaussian, cluster count and contiguity per round."""
+def cluster_metrics(episode, labels, elected=None):
+    """ARI against the dominant Gaussian, cluster count and contiguity per round.
+
+    With ``elected``, also the leaders and the regions whose label is not an elected leader.
+    """
     truth = truth_labels(episode)
-    ari, clusters, fragments, stable = [], [], [], []
+    ari, clusters, fragments, stable, leaders, orphans = [], [], [], [], [], []
     for t in range(episode.rounds):
         active = episode.active[t]
         predicted = labels[t].numpy()[active.numpy()]
         ari.append(float(adjusted_rand_score(truth[t][active.numpy()], predicted)))
         clusters.append(len(np.unique(predicted)))
+        if elected is not None:
+            heads = set(np.flatnonzero((elected[t] > 0.5).numpy() & active.numpy()).tolist())
+            leaders.append(len(heads))
+            orphans.append(len(set(predicted.tolist()) - heads))
         fragments.append(fragmentation(labels[t], episode.edges[t], active))
         if t:
             shared = active & episode.active[t - 1]
@@ -159,7 +167,15 @@ def cluster_metrics(episode, labels):
         "fault_recovery": recovery(errors, episode.fault_at, target),
         "restoration_recovery": recovery(errors, episode.restore_at, target),
     }
-    return metrics, {"ari": ari, "clusters": clusters}
+    curves = {"ari": ari, "clusters": clusters}
+    if elected is not None:
+        metrics |= {
+            "leaders_final": float(np.mean(leaders[last])),
+            "orphans_final": float(np.mean(orphans[last])),
+            "orphans_mean": float(np.mean(orphans)),
+        }
+        curves |= {"leaders": leaders, "orphans": orphans}
+    return metrics, curves
 
 
 @torch.no_grad()
@@ -223,7 +239,7 @@ def specs(sizes, scenario):
 
 
 def methods():
-    return [*(f"fixed-{m}" for m in FIXED), *LEARNERS, "kmeans", "ward"]
+    return [*(f"fixed-{m}" for m in FIXED), *LEARNERS, *CENTRAL]
 
 
 def bank(config, sizes, scenario):
@@ -241,15 +257,22 @@ def train(out, config, sizes, norm, budget, *, scenario):
         if not (directory / "best.pt").exists():
             print(f"train {method} seed={seed}", flush=True)
             train_job(directory, config, bank_, norm, method, seed, config.main_lambda, budget)
+    for seed in config.seeds:
+        budget.check()
+        directory = out / "checkpoints" / "gnn-central" / f"seed{seed}"
+        if not (directory / "best.pt").exists():
+            print(f"train gnn-central seed={seed}", flush=True)
+            cluster_gnn.train(directory, config, bank_, norm, seed=seed, penalty=config.main_lambda)
 
 
-def evaluate(out, config, sizes, norm, budget, *, scenario):
+def evaluate(out, config, sizes, norm, budget, *, scenario):  # noqa: PLR0912 -- one branch per executor
     models = {}
     for spec, method, seed in itertools.product(specs(sizes, scenario), methods(), config.seeds):
-        central_method = method in ("kmeans", "ward")
+        central_method = method in CENTRAL
         if spec["panel"] == "distributed" and central_method:
             continue
-        if seed != config.seeds[0] and (method not in LEARNERS or spec["executor"] == "sync"):
+        learned = method in (*LEARNERS, "gnn-central")
+        if seed != config.seeds[0] and (not learned or spec["executor"] == "sync"):
             continue  # deterministic methods and equivalence checks need one seed
         name = "-".join(
             str(spec[k]) for k in ("panel", "executor", "condition", "count", "separation", "index")
@@ -268,8 +291,14 @@ def evaluate(out, config, sizes, norm, budget, *, scenario):
             moving=spec["moving"],
         )
         print(f"evaluate {out.name} {name} {method} seed={seed}", flush=True)
-        check = None
-        if central_method:
+        check, elected = None, None
+        if method == "gnn-central":
+            if (method, seed) not in models:
+                models[method, seed] = cluster_gnn.load(
+                    out / "checkpoints" / method / f"seed{seed}" / "best.pt"
+                )
+            labels = cluster_gnn.labels(models[method, seed], episode)
+        elif central_method:
             labels = central_baseline(episode, method, norm, seed_for(config.data_seed, method))
         else:
             if (method, seed) not in models:
@@ -294,8 +323,8 @@ def evaluate(out, config, sizes, norm, budget, *, scenario):
                         check = equivalence(central(episode, model), trace)
                         if not (check["identifiers_equal"] and check["values_close"]):
                             raise AssertionError(f"Synchronous mismatch: {check}")
-            labels = trace.leaders
-        metrics, curves = cluster_metrics(episode, labels)
+            labels, elected = trace.leaders, trace.fields[..., ELECTED]
+        metrics, curves = cluster_metrics(episode, labels, elected)
         json_write(
             path,
             {
@@ -337,6 +366,9 @@ def report(out, config, scenario):
         ("count_error", "Final |K - true K| (lower is better)"),
         ("fragmentation", "Fragmentation (extra components per cluster)"),
         ("stability", "Assignment stability"),
+        ("clusters_final", "Final regions"),
+        ("leaders_final", "Final elected leaders (= regions when every region has its leader)"),
+        ("orphans_final", "Final regions without an elected leader"),
     ):
         text += [f"## {label}", "", "| Method | " + " | ".join(p for p, _ in PANELS) + " |"]
         text.append("|---|" + "---:|" * len(PANELS))
@@ -346,7 +378,10 @@ def report(out, config, scenario):
                 selected = [
                     r
                     for r in rows
-                    if r["method"] == method and r["panel"] == panel and r["executor"] == executor
+                    if r["method"] == method
+                    and r["panel"] == panel
+                    and r["executor"] == executor
+                    and metric in r["metrics"]
                 ]
                 if not selected:
                     cells.append("—")
@@ -484,16 +519,19 @@ def overview(out):
     (out / "REPORT.md").write_text("\n".join(text) + "\n")
 
 
-def settings(profile):
+def settings(profile, device="cpu"):
     """Temperatures as in the main study (calibrated on validation for the composed program:
     at T=0.1 the leader term dominates and validation diverges); Adam rate RATE."""
     return replace(
-        protocol(profile), validate_every=20 if profile != "smoke" else 1, learning_rate=RATE
+        protocol(profile),
+        validate_every=20 if profile != "smoke" else 1,
+        learning_rate=RATE,
+        device=device,
     )
 
 
-def campaign(out, profile="compact-cpu", seconds=14400):
-    config = settings(profile)
+def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
+    config = settings(profile, device)
     sizes = SIZES[profile]
     with output_lock(out):
         torch.set_num_threads(config.threads)

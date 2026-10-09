@@ -1,4 +1,4 @@
-"""Offline Adam/search, hard validation selection, atomic per-update resumption.
+"""Offline Adam, hard validation selection, atomic per-update resumption.
 
 Training differentiates a relaxed forward of the program with one temperature per
 loss term. Both were calibrated against hard central differences on validation
@@ -8,6 +8,7 @@ every reported number use the hard program.
 """
 
 import copy
+import math
 import time
 
 import torch
@@ -18,15 +19,11 @@ from ..artifacts import json_write, tensor_write
 from ..randomness import rng
 from .data import combine
 from .execution import central
-from .program import ELECTED, SAMPLE, make_program
-
-POPULATION, ELITES = 24, 6  # CEM generation size and refit set
+from .program import ELECTED, SAMPLE, HybridProgram, make_program
 
 
 def squared_error(episode, trace, scale):
     error = (trace.fields[..., SAMPLE] - episode.truth).square()
-    if episode.importance is not None:
-        error = error * episode.importance
     return error[episode.active].mean() / scale**2
 
 
@@ -88,122 +85,116 @@ def component_norms(model):
     }
 
 
-def candidate(model, draws, box):
-    """Unit-cube draws to metric and strength weights: the box of search and CEM.
-
-    ``box`` holds the half-widths of log metric weights (around the default) and
-    of strength weights.
-    """
-    knots, (metric, strength) = model.metric.knots, box
-    log_weights = metric * (2 * draws[: 3 * knots] - 1)
-    weights = torch.tensor((2.0, 1.0, 1.0)).repeat(knots) * log_weights.exp()
-    strength = strength * (2 * draws[3 * knots :] - 1)
-    model.metric.fixed_weights.copy_(weights)
-    model.strength.weights.copy_(strength)
-    return {"weights": weights.tolist(), "strength": strength.tolist()}
+def cpu_state(model):
+    return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
 
 
-def cem_draw(state, dimension, seed, step):
-    """Member of the current generation from a diagonal Gaussian over the unit cube."""
-    cem = state.setdefault("cem", {"mean": [0.5] * dimension, "std": [0.25] * dimension})
-    generation, member = divmod(step - 1, POPULATION)
-    noise = torch.randn(POPULATION, dimension, generator=rng(seed, "cem", generation))[member]
-    return (torch.tensor(cem["mean"]) + torch.tensor(cem["std"]) * noise).clamp(0, 1)
+def scheduled_rate(rate, config, step, total):
+    """Cosine decay from ``rate`` to ``final_rate_fraction * rate``."""
+    final = rate * config.final_rate_fraction
+    return final + (rate - final) * 0.5 * (1 + math.cos(math.pi * (step - 1) / max(total - 1, 1)))
 
 
-def cem_update(state, draws, score):
-    """After a full generation, refit mean and std to its elites."""
-    cem = state["cem"]
-    cem.setdefault("scored", []).append((score, draws.tolist()))
-    if len(cem["scored"]) == POPULATION:
-        elites = torch.tensor([d for _, d in sorted(cem["scored"])[:ELITES]])
-        cem.update(mean=elites.mean(0).tolist(), std=elites.std(0).clamp_min(0.02).tolist())
-        cem["scored"] = []
+def parameter_groups(model, rate, config):
+    """The hybrid's network learns at ``network_learning_rate``; everything else at ``rate``."""
+    if not isinstance(model, HybridProgram):
+        return [{"params": list(model.parameters()), "lr": rate, "base_lr": rate}]
+    symbolic = [*model.metric.parameters(), *model.strength.parameters()]
+    network = [p for p in model.parameters() if all(p is not q for q in symbolic)]
+    network_rate = config.network_learning_rate
+    return [
+        {"params": symbolic, "lr": rate, "base_lr": rate},
+        {"params": network, "lr": network_rate, "base_lr": network_rate},
+    ]
 
 
-def train_job(directory, config, bank, norm, method, seed, penalty, budget, *, knots=1):  # noqa: PLR0912, PLR0917, PLR0915 -- one atomic resumable update loop
+def train_job(directory, config, bank, norm, method, seed, penalty, budget):  # noqa: PLR0917
+    device = torch.device(config.device)
+    with torch.device(device):
+        model = _train_job(directory, config, bank, norm, method, seed, penalty, budget, device)
+    return model.cpu(), torch.load(directory / "best.pt", weights_only=True)
+
+
+def _train_job(directory, config, bank, norm, method, seed, penalty, budget, device):  # noqa: PLR0917, PLR0915 -- one atomic resumable update loop
     directory.mkdir(parents=True, exist_ok=True)
-    model = make_program(method, seed, **norm, knots=knots)
+    model = make_program(method, seed, **norm).to(device)
+    training = [e.to(device) for e in bank["train"]]
+    validation = [e.to(device) for e in bank["validation"]]
+    full_batch = config.batch_size >= len(training)
+    batch = combine(training) if full_batch else None
     last_path = directory / "last.pt"
     rate = config.gnn_learning_rate if method == "gnn" else config.learning_rate
-    black_box = method in ("search", "cem")
-    optimizer = None if black_box else torch.optim.Adam(model.parameters(), lr=rate)
+    optimizer = torch.optim.Adam(parameter_groups(model, rate, config))
     if last_path.exists():
-        state = torch.load(last_path, weights_only=True)
+        state = torch.load(last_path, weights_only=True, map_location="cpu")
         model.load_state_dict(state["model"])
-        if optimizer is not None:
-            optimizer.load_state_dict(state["optimizer"])
+        optimizer.load_state_dict(state["optimizer"])
     else:
         budget.check()
-        scores = validate(model, bank["validation"], norm, penalty, config.batch_size)
+        scores = validate(model, validation, norm, penalty, config.batch_size)
         score = scores["objective"]
         state = {
             "step": 0,
-            "model": copy.deepcopy(model.state_dict()),
-            "best_model": copy.deepcopy(model.state_dict()),
+            "model": cpu_state(model),
+            "best_model": cpu_state(model),
             "best_score": score,
             "selected_update": 0,
             "history": [{"step": 0, **history_row(scores)}],
             "seconds": 0.0,
             "complete": False,
+            "optimizer": optimizer.state_dict(),
         }
-        if optimizer is not None:
-            state["optimizer"] = optimizer.state_dict()
         tensor_write(last_path, state)
-    total = config.search_candidates - 1 if black_box else config.updates
+    total = config.updates
     for step in range(state["step"] + 1, total + 1):
         budget.check()
         started = time.perf_counter()
-        if black_box:
-            dimension = 3 * knots + 3
-            draws = (
-                torch.rand(dimension, generator=rng(seed, "search", step))
-                if method == "search"
-                else cem_draw(state, dimension, seed, step)
-            )
-            row = {"step": step, **candidate(model, draws, config.search_box)}
+        if full_batch:
+            indices, episode = None, batch
         else:
             indices = torch.randint(
-                len(bank["train"]), (config.batch_size,), generator=rng(seed, "batch", step)
+                len(training),
+                (config.batch_size,),
+                generator=rng(seed, "batch", step),
+                device="cpu",
             ).tolist()
-            episode = combine([bank["train"][i] for i in indices])
-            optimizer.zero_grad(set_to_none=True)
-            loss = surrogate_objective(episode, model, norm["scale"], penalty, config)
-            if not torch.isfinite(loss):
-                raise FloatingPointError("Nonfinite training loss")
-            loss.backward()
-            gradient_norm = torch.nn.utils.clip_grad_norm_(
-                model.parameters(), 5.0, error_if_nonfinite=True
-            )
-            row = {
-                "step": step,
-                "batch_indices": indices,
-                "training_surrogate": float(loss.detach()),
-                "gradient_norm": float(gradient_norm),
-                **component_norms(model),
-            }
-            optimizer.step()
-            if hasattr(model, "metric"):
-                with torch.no_grad():
-                    model.metric.log_weights.clamp_(-8, 8)
-                    model.strength.weights.clamp_(-8, 8)
-        if black_box or step % config.validate_every == 0 or step == total:
-            scores = validate(model, bank["validation"], norm, penalty, config.batch_size)
+            episode = combine([training[i] for i in indices])
+        for group in optimizer.param_groups:
+            group["lr"] = scheduled_rate(group["base_lr"], config, step, total)
+        optimizer.zero_grad(set_to_none=True)
+        loss = surrogate_objective(episode, model, norm["scale"], penalty, config)
+        if not torch.isfinite(loss):
+            raise FloatingPointError("Nonfinite training loss")
+        loss.backward()
+        gradient_norm = torch.nn.utils.clip_grad_norm_(
+            model.parameters(), 5.0, error_if_nonfinite=True
+        )
+        row = {
+            "step": step,
+            "batch_indices": indices,
+            "training_surrogate": float(loss.detach()),
+            "gradient_norm": float(gradient_norm),
+            **component_norms(model),
+        }
+        optimizer.step()
+        if hasattr(model, "metric"):
+            with torch.no_grad():
+                model.metric.log_weights.clamp_(-8, 8)
+                model.strength.weights.clamp_(-8, 8)
+        if step % config.validate_every == 0 or step == total:
+            scores = validate(model, validation, norm, penalty, config.batch_size)
             score = scores["objective"]
             if not torch.isfinite(torch.tensor(score)):
                 raise FloatingPointError("Nonfinite hard validation loss")
             row.update(history_row(scores))
-            if method == "cem":
-                cem_update(state, draws, score)
             if score < state["best_score"]:
                 state.update(
                     best_score=score,
-                    best_model=copy.deepcopy(model.state_dict()),
+                    best_model=cpu_state(model),
                     selected_update=step,
                 )
-        state.update(step=step, model=copy.deepcopy(model.state_dict()), complete=False)
-        if optimizer is not None:
-            state["optimizer"] = optimizer.state_dict()
+        state.update(step=step, model=cpu_state(model), complete=False)
+        state["optimizer"] = optimizer.state_dict()
         state["history"].append(row)
         state["seconds"] += time.perf_counter() - started
         tensor_write(last_path, state)
@@ -213,7 +204,6 @@ def train_job(directory, config, bank, norm, method, seed, penalty, budget, *, k
         "method": method,
         "seed": seed,
         "lambda": penalty,
-        "knots": knots,
         "normalization": norm,
         "model": state["best_model"],
         "selected_update": state["selected_update"],
@@ -229,7 +219,7 @@ def train_job(directory, config, bank, norm, method, seed, penalty, budget, *, k
         },
     )
     model.load_state_dict(state["best_model"])
-    return model, checkpoint
+    return model
 
 
 def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
@@ -295,12 +285,7 @@ def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
 
 def load_program(path):
     checkpoint = torch.load(path, weights_only=True)
-    model = make_program(
-        checkpoint["method"],
-        checkpoint["seed"],
-        **checkpoint["normalization"],
-        knots=checkpoint.get("knots", 1),
-    )
+    model = make_program(checkpoint["method"], checkpoint["seed"], **checkpoint["normalization"])
     model.load_state_dict(checkpoint["model"])
     model.eval()
     model.requires_grad_(False)

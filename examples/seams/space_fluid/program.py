@@ -44,64 +44,39 @@ FIXED = {
     "value": ((2.0, 1.0, 1.0), (4.0, 0.0, 0.0)),
     "variance": ((2.0, 1.0, 1.0), (0.0, 0.0, -4.0)),
 }
-KINDS = ("fixed", "search", "cem", "parametric", "neural")
-
-
-def modulator():
-    """3-16-16-1 tanh MLP whose zero last layer makes it exactly inert at start."""
-    network = nn.Sequential(
-        nn.Linear(3, 16), nn.Tanh(), nn.Linear(16, 16), nn.Tanh(), nn.Linear(16, 1)
-    )
-    nn.init.zeros_(network[-1].weight)
-    nn.init.zeros_(network[-1].bias)
-    return network
+KINDS = ("fixed", "parametric", "hybrid")
+EMBEDDING = 2  # floats of the hybrid neighbourhood embedding
+HYBRID_WIRE_FLOATS = WIRE_FLOATS + 3 + EMBEDDING  # plus nbr(features) and nbr(embedding)
 
 
 class EdgeMetric(nn.Module):
     """Positive symmetric link cost; radius is always one.
 
-    Features are range, normalized absolute difference, normalized mean.
-    The product term uses the first two features. With ``knots`` > 1 the three
-    weights are a piecewise-linear curve of the link's level: one triple per knot,
-    knots evenly spaced from mean - 1 std to mean + 3 std (one knot = one triple
-    everywhere). The neural modulator multiplies the cost by exp(tanh(.)),
-    exactly one at initialization.
+    Features are range, normalized absolute difference and their product.
     """
 
-    def __init__(self, kind="parametric", weights=(2.0, 1.0, 1.0), mean=0.0, scale=1.0, *, knots=1):
+    def __init__(self, kind="parametric", weights=(2.0, 1.0, 1.0), mean=0.0, scale=1.0):
         super().__init__()
         if kind not in KINDS:
             raise ValueError(f"Unknown metric: {kind}")
         self.kind = kind
-        self.knots = knots
         self.register_buffer("normalization", torch.tensor([mean, scale]))
-        # Flat (knots * 3,): one knot keeps the original parameter shape.
-        initial = torch.tensor(weights, dtype=torch.float32).repeat(knots)
-        if kind in ("parametric", "neural"):
+        initial = torch.tensor(weights, dtype=torch.float32)
+        if kind == "fixed":
+            self.register_buffer("fixed_weights", initial)
+        else:
             if not bool((initial > 0).all()):
                 raise ValueError("Learned metric weights must be positive")
             self.log_weights = nn.Parameter(initial.log())
-        else:
-            self.register_buffer("fixed_weights", initial)
-        if kind == "neural":
-            self.network = modulator()
 
     @property
     def weights(self):
         return self.log_weights.exp() if hasattr(self, "log_weights") else self.fixed_weights
 
     def forward(self, distance, a, b):
-        mean, scale = self.normalization.unbind()
-        delta = (a - b).abs() / scale
-        average = ((a + b) / 2 - mean) / scale
+        delta = (a - b).abs() / self.normalization[1]
         terms = torch.stack((distance, delta, distance * delta), dim=-1)
-        level = ((average + 1) / 4).clamp(0, 1) * (self.knots - 1)
-        hat = (1 - (level[..., None] - torch.arange(self.knots)).abs()).clamp(0)
-        cost = (terms * (hat @ self.weights.view(self.knots, 3))).sum(-1) + 1e-4
-        if self.kind == "neural":
-            inputs = torch.stack((distance, delta, average), dim=-1)
-            cost = cost * self.network(inputs).squeeze(-1).tanh().exp()
-        return cost
+        return (terms * self.weights).sum(-1) + 1e-4
 
 
 class LeaderStrength(nn.Module):
@@ -119,12 +94,10 @@ class LeaderStrength(nn.Module):
         self.kind = kind
         self.register_buffer("normalization", torch.tensor([mean, scale]))
         initial = torch.tensor(weights, dtype=torch.float32)
-        if kind in ("parametric", "neural"):
-            self.weights = nn.Parameter(initial)
-        else:
+        if kind == "fixed":
             self.register_buffer("weights", initial)
-        if kind == "neural":
-            self.network = modulator()
+        else:
+            self.weights = nn.Parameter(initial)
 
     def forward(self, value, neighbourhood_mean, neighbourhood_variance, priority):
         mean, scale = self.normalization.unbind()
@@ -136,10 +109,7 @@ class LeaderStrength(nn.Module):
             ),
             dim=-1,
         )
-        strength = priority + (features * self.weights).sum(-1)
-        if self.kind == "neural":
-            strength = strength + self.network(features).squeeze(-1)
-        return strength
+        return priority + (features * self.weights).sum(-1)
 
 
 class RegionProgram(nn.Module):
@@ -149,12 +119,15 @@ class RegionProgram(nn.Module):
         self.strength = strength
         self.probe = None  # A list collects block outputs for the gradient analysis.
 
+    def link_metric(self, neighbours, obs, mean, variance):
+        return link_map(self.metric, scatter_range(), neighbours, obs)
+
     def forward(self, runtime):
         obs, time = runtime.signals["observation"], runtime.signals["time"]
         neighbours = nbr(obs)
-        metric = link_map(self.metric, scatter_range(), neighbours, obs)
         mean = gather_avg(neighbours, include_self=True)
         variance = (gather_avg(neighbours * neighbours, include_self=True) - mean.square()).clamp(0)
+        metric = self.link_metric(neighbours, obs, mean, variance)
         strength = self.strength(obs, mean, variance, runtime.signals["priority"])
 
         election = bounded_election(strength, radius=1.0, metric=metric)  # S
@@ -172,6 +145,51 @@ class RegionProgram(nn.Module):
              election.elected, obs, total, count),
             -1,
         )  # fmt: skip
+
+
+def mlp(inputs, hidden, outputs):
+    return nn.Sequential(
+        nn.Linear(inputs, hidden), nn.Tanh(), nn.Linear(hidden, hidden), nn.Tanh(),
+        nn.Linear(hidden, outputs),
+    )  # fmt: skip
+
+
+class HybridProgram(RegionProgram):
+    """SCR program whose link cost is modulated by a GNN over the neighbourhood.
+
+    One message-passing layer embeds each device's (value, mean, variance) with its
+    neighbours'; the cost of a link is the parametric cost times
+    exp(tanh(g(z_i, z_j) + g(z_j, z_i))), exactly the parametric cost at start.
+    """
+
+    def __init__(self, metric: EdgeMetric, strength: LeaderStrength, hidden=8):
+        super().__init__(metric, strength)
+        self.message = mlp(7, hidden, hidden)
+        self.node = mlp(3 + hidden, hidden, EMBEDDING)
+        self.edge = mlp(2 * EMBEDDING + 1, hidden, 1)
+        nn.init.zeros_(self.edge[-1].weight)
+        nn.init.zeros_(self.edge[-1].bias)
+
+    def link_metric(self, neighbours, obs, mean, variance):
+        centre, scale = self.metric.normalization.unbind()
+        features = torch.stack(
+            ((obs - centre) / scale, (mean - centre) / scale, variance / scale**2), -1
+        )
+        messages = gather_avg(
+            link_map(
+                lambda d, other, own: self.message(torch.cat((other, own, d[:, None]), -1)),
+                scatter_range(), nbr(features), features,
+            ),
+            fill_value=0.0,
+        )  # fmt: skip
+        embedding = self.node(torch.cat((features, messages), -1))
+
+        def cost(d, a, b, other, own):
+            pair = self.edge(torch.cat((own, other, d[:, None]), -1))
+            swap = self.edge(torch.cat((other, own, d[:, None]), -1))
+            return self.metric(d, a, b) * (pair + swap).squeeze(-1).tanh().exp()
+
+        return link_map(cost, scatter_range(), neighbours, obs, nbr(embedding), embedding)
 
 
 class GraphProgram(nn.Module):
@@ -216,14 +234,15 @@ class GraphProgram(nn.Module):
         )
 
 
-def make_program(method, seed=0, *, mean=0.0, scale=1.0, weights=(2.0, 1.0, 1.0), knots=1):
+def make_program(method, seed=0, *, mean=0.0, scale=1.0, weights=(2.0, 1.0, 1.0)):
     with torch.random.fork_rng():
         torch.manual_seed(seed)
         if method == "gnn":
             return GraphProgram(mean, scale)
         metric_weights, strength_weights = FIXED.get(method, (weights, (0.0, 0.0, 0.0)))
         kind = "fixed" if method in FIXED else method
-        return RegionProgram(
-            EdgeMetric(kind, metric_weights, mean, scale, knots=knots),
+        program = HybridProgram if method == "hybrid" else RegionProgram
+        return program(
+            EdgeMetric(kind, metric_weights, mean, scale),
             LeaderStrength(kind, strength_weights, mean, scale),
         )

@@ -59,8 +59,8 @@ def methods(config):
     )
 
 
-# Search has no gradient; the GNN has no discrete election whose surrogate could be biased.
-UNDIAGNOSED = ("search", "gnn")
+# The GNN has no discrete election whose surrogate could be biased.
+UNDIAGNOSED = ("gnn",)
 
 
 def checkpoint_directory(out, method, seed):
@@ -221,7 +221,7 @@ def timing(out, config, bank, norm, budget):
     if path.exists():
         return
     budget.check()
-    model = make_program("neural", **norm)
+    model = make_program("hybrid", **norm)
     episode = combine(bank["train"][: config.batch_size])
     started = time.perf_counter()
     surrogate_objective(episode, model, norm["scale"], config.main_lambda, config).backward()
@@ -251,7 +251,7 @@ def timing(out, config, bank, norm, budget):
             * config.updates
             * training_jobs,
             "note": (
-                "single CPU pilot, not a full campaign estimate; validation, search, "
+                "single pilot, not a full campaign estimate; validation, "
                 "larger networks and DeviceRuntime panels add cost"
             ),
             "equivalence": check,

@@ -35,10 +35,8 @@ COLORS = {
     "fixed-combined": "#202020",
     "fixed-value": "#c49b2a",
     "fixed-variance": "#8c6d1f",
-    "search": "#a05285",
-    "cem": "#d4a017",
     "parametric": "#147d92",
-    "neural": "#d46532",
+    "hybrid": "#d46532",
     "kmeans": "#769751",
     "gnn": "#5b4fb3",
 }
@@ -142,7 +140,7 @@ def learning_figure(out):
             alpha=0.6,
             label=f"{method}/{path.parent.name}",
         )
-    ax.set(xlabel="Adam update / search candidate", ylabel="Hard validation objective")
+    ax.set(xlabel="Adam update", ylabel="Hard validation objective")
     ax.grid(alpha=0.15)
     ax.legend(fontsize=6, ncol=3)
     export(fig, out, "hard-validation")

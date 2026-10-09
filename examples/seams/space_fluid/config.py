@@ -6,7 +6,7 @@ TRAIN_FAMILIES = ("constant", "gaussian", "mixture", "ellipse")
 TEST_FAMILIES = (*TRAIN_FAMILIES, "ring", "front")
 CONDITIONS = ("clean", "link_loss", "node_stop", "partition")
 LAYOUTS = ("jittered", "uniform", "uneven")
-LEARNERS = ("search", "parametric", "neural", "gnn")
+LEARNERS = ("parametric", "hybrid", "gnn")
 FIXED = ("spatial", "combined", "value", "variance")
 
 
@@ -15,7 +15,7 @@ class RegionConfig:
     profile: str
     seeds: tuple[int, ...] = (0, 1, 2)
     updates: int = 400
-    batch_size: int = 4
+    batch_size: int = 64  # >= training episodes: full batch, deterministic updates
     nodes: int = 64
     train_rounds: int = 48
     eval_rounds: int = 96
@@ -40,13 +40,14 @@ class RegionConfig:
     error_temperature: float = 0.07
     leader_temperature: float = 0.1
     error_gain: float = 3.0
-    search_candidates: int = 48
-    search_box: tuple[float, float] = (2.0, 4.0)  # half-widths: log metric weights, strength
     validate_every: int = 20
-    learning_rate: float = 0.005
-    gnn_learning_rate: float = 0.03  # best hard validation among 0.003/0.01/0.03, 120 updates
+    learning_rate: float = 0.03  # full-batch pilot, seed 0, validation: stable at every lambda
+    network_learning_rate: float = 0.01  # hybrid GNN modulator
+    final_rate_fraction: float = 0.1  # cosine decay of every learning rate
+    gnn_learning_rate: float = 0.03  # best hard validation among 0.003/0.01/0.03, full batch
     degree: int = 6
     threads: int = 1
+    device: str = "cpu"  # training only; evaluation and DeviceRuntime stay on CPU
     data_seed: int = 20260930
     recovery_threshold: float = 0.2
     recovery_rounds: int = 5
@@ -74,7 +75,6 @@ def protocol(profile: str) -> RegionConfig:
             transfer_nodes=(32,),
             distributed_nodes=(16,),
             distributed_episodes=1,
-            search_candidates=3,
             validate_every=1,
             k_values=(2, 4),
         )

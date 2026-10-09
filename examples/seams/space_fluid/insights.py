@@ -22,7 +22,7 @@ from .program import ELECTED, LEADER, SAMPLE, make_program
 from .report import export, method_color
 from .training import load_program, objective, surrogate_objective
 
-METHODS = ("parametric", "neural", "gnn")
+METHODS = ("parametric", "hybrid", "gnn")
 FAMILIES = ("gaussian", "ring")
 WINDOW = 8  # late-window loss used for the spatial map and temporal horizon
 
@@ -162,7 +162,7 @@ def insights(out, config, norm, budget):
                     "truth": episode.truth[-1],
                 }
     models = {"fixed-combined": make_program("combined", **norm)}
-    models |= {m: load_program(paths[(m, config.seeds[0])]) for m in ("parametric", "neural")}
+    models |= {m: load_program(paths[(m, config.seeds[0])]) for m in ("parametric", "hybrid")}
     components = learned_components(models, norm)
     tensor_write(out / "insights.pt", {"spatial": spatial, "components": components})
     json_write(path, {"window": WINDOW, "temperature": config.error_temperature, "rows": rows})
@@ -202,7 +202,7 @@ def figures(out, config):  # noqa: PLR0915 -- five fixed panels
     region_rows = [r for r in rows if "roles" in r]
     fig, left = plt.subplots(figsize=(5.5, 3.6), layout="constrained")
     names = ("interior", "boundary", "leader")
-    for offset, method in enumerate(("parametric", "neural")):
+    for offset, method in enumerate(("parametric", "hybrid")):
         selected = [r for r in region_rows if r["method"] == method]
         for i, name in enumerate(names):
             values = [r["roles"][name] for r in selected if r["roles"][name] is not None]
@@ -236,7 +236,7 @@ def figures(out, config):  # noqa: PLR0915 -- five fixed panels
     export(fig, out, "insights-horizon")
 
     fig, (left, right) = plt.subplots(1, 2, figsize=(10, 3.6), layout="constrained")
-    for offset, method in enumerate(("parametric", "neural")):
+    for offset, method in enumerate(("parametric", "hybrid")):
         selected = [r for r in region_rows if r["method"] == method]
         blocks = [[r["blocks"][b] for r in selected] for b in ("S", "G", "C", "B")]
         for i, values in enumerate(blocks):
