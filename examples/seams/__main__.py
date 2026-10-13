@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 
-def main(argv=None):
+def main(argv=None):  # noqa: PLR0911, PLR0912 -- one dispatcher per experiment
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
@@ -16,6 +16,10 @@ def main(argv=None):
             "space-fluid-scenarios",
             "space-fluid-summary",
             "boids",
+            "channel-adaptation",
+            "boids-adaptation",
+            "boids-devices",
+            "paper-figures",
         ),
     )
     parser.add_argument("--profile", choices=("smoke", "compact-cpu", "paper-cpu"), default="smoke")
@@ -25,6 +29,9 @@ def main(argv=None):
     parser.add_argument("--out", type=Path)
     parser.add_argument("--source-run", type=Path, help="Optional historical Boids source")
     parser.add_argument("--budget-seconds", type=float, default=14400)
+    parser.add_argument(
+        "--figures-dir", type=Path, help="Where paper-figures writes (default: the paper)"
+    )
     parser.add_argument("--device-policy", choices=("cpu", "hybrid"), default="cpu")
     parser.add_argument(
         "--device", choices=("cpu", "cuda"), default="cpu", help="Space-Fluid training device"
@@ -36,6 +43,27 @@ def main(argv=None):
         if args.command not in ("space-fluid", "space-fluid-clusters", "space-fluid-scenarios"):
             parser.error("--device cuda is supported by the space-fluid campaigns only")
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
+    if args.command == "channel-adaptation":
+        from .channel_adaptation import campaign as channel  # noqa: PLC0415
+
+        channel(args.out or Path("generated/seams") / f"channel-adaptation-{args.profile}",
+                args.profile)  # fmt: skip
+        return 0
+    if args.command == "boids-adaptation":
+        from .boids_adaptation import campaign as adaptation  # noqa: PLC0415
+
+        adaptation(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
+        return 0
+    if args.command == "boids-devices":
+        from .boids_devices import campaign as devices  # noqa: PLC0415
+
+        devices(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
+        return 0
+    if args.command == "paper-figures":
+        from .paper_figures import paper_figures  # noqa: PLC0415
+
+        paper_figures(args.profile, args.figures_dir)
+        return 0
     if args.command == "boids":
         from .boids import campaign  # noqa: PLC0415 -- load only the requested experiment
 
