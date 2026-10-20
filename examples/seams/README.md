@@ -356,10 +356,8 @@ verifiability. They do not themselves establish novelty or a successful result.
 ## Verification and unchanged Boids
 
 ```bash
-python -m pytest tests/test_space_fluid.py -q
-python -m pytest tests/test_boids.py tests/test_boids_flocking.py \
-  tests/decentralized/test_mesa_equivalence.py -q
-python -m pytest tests -q
+uv run pytest examples/seams -q    # the campaigns: Space-Fluid, Boids, adaptation
+uv run pytest tests -q             # the library, including device-by-device equivalence
 ```
 
 The second command preserves the 38-test Boids/equivalence regression. Shared

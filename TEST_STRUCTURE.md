@@ -80,13 +80,14 @@ uv run pytest -m "not slow"
 
 ## SEAMS experiment invariants
 
-`tests/test_space_fluid.py` verifies lexicographic elections, strict cumulative
+`examples/seams/test_space_fluid.py` verifies lexicographic elections, strict cumulative
 radius, delayed samples, partition/rejoin and leader removal, isolated nodes,
 metric symmetry/positivity, oracle isolation and edge-order independence. It checks
 exact hard training forwards, numerical derivatives of the continuous surrogate,
 identical synchronous IDs, asynchronous message delivery, batch isolation,
 deterministic checkpoint resumption, data splits and honest incomplete reports.
 
-The 38 selected Boids/distributed regression tests remain in `test_boids.py`,
-`test_boids_flocking.py` and `decentralized/test_mesa_equivalence.py`. The retired
-sensor experiment tests were removed; general runtime tests were retained.
+The Boids and adaptation regression tests sit next to it, in `test_boids.py`,
+`test_boids_flocking.py` and `test_rq2_adaptation.py`. The tests of the experiments
+live in `examples/`, with the code they check, and nothing in `tests/` imports
+`examples/`: the experiments will move to a repository of their own.

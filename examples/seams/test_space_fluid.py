@@ -438,7 +438,7 @@ def test_budget_records_pending_work_without_reducing_protocol(tmp_path):
 
 
 def test_cli_has_space_fluid_and_rejects_retired_commands(monkeypatch, tmp_path):
-    from examples.seams.__main__ import main  # noqa: PLC0415 -- test CLI import isolation
+    from examples.seams.__main__ import main
 
     calls = []
     monkeypatch.setattr(
@@ -463,7 +463,7 @@ def test_output_lock_excludes_concurrent_runs_and_releases_after_failure(tmp_pat
 
 
 def test_zone_clusters_levels_ari_and_peak_crash():
-    from examples.seams.space_fluid.clusters import (  # noqa: PLC0415
+    from examples.seams.space_fluid.clusters import (
         GAP,
         cluster_episode,
         cluster_metrics,
@@ -482,7 +482,7 @@ def test_zone_clusters_levels_ari_and_peak_crash():
 
 
 def test_static_and_moving_scenarios_and_crash():
-    from examples.seams.space_fluid.clusters import cluster_episode, truth_labels  # noqa: PLC0415
+    from examples.seams.space_fluid.clusters import cluster_episode, truth_labels
 
     c = replace(protocol("smoke"), nodes=36, eval_rounds=12)
     frozen = make_episode(c, "test", "gaussian", 0, static=True, condition="crash")
