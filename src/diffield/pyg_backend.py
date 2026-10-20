@@ -72,10 +72,7 @@ def build_grid_edge_index(
     chebyshev = delta.max(dim=-1).values
     is_self = manhattan == 0
 
-    if connectivity == 4:
-        keep = manhattan == 1
-    else:
-        keep = chebyshev == 1
+    keep = manhattan == 1 if connectivity == 4 else chebyshev == 1
 
     if include_self_loops:
         keep = keep | is_self
@@ -151,7 +148,9 @@ def build_spatial_edge_index(
         raise ValueError("edge_radius must be > 0 when k_neighbors is not used")
     max_nbrs = max(1, num_nodes)
     try:
-        return radius_graph(positions, r=float(edge_radius), loop=self_loops, max_num_neighbors=max_nbrs).long()
+        return radius_graph(
+            positions, r=float(edge_radius), loop=self_loops, max_num_neighbors=max_nbrs
+        ).long()
     except ImportError:
         dist = torch.cdist(positions, positions)
         mask = dist <= float(edge_radius)

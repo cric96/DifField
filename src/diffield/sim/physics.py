@@ -10,7 +10,11 @@ def normalize_vectors(x: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
     return x / (x.norm(dim=-1, keepdim=True) + eps)
 
 
-def limit_speed(velocities: torch.Tensor, max_speed: float | torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
+def limit_speed(
+    velocities: torch.Tensor,
+    max_speed: float | torch.Tensor,
+    eps: float = 1e-8,
+) -> torch.Tensor:
     """Clamp per-node speed without changing direction."""
     speed = velocities.norm(dim=-1, keepdim=True).clamp_min(eps)
     scale = torch.clamp(max_speed / speed, max=1.0)

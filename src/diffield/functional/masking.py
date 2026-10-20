@@ -44,10 +44,14 @@ def mask_edges_for_partition(
 
     if mode == "hard":
         node_mask = cond.bool() if partition else ~cond.bool()
-        edge_index_out, edge_weight_out = subgraph_for_nodes(node_mask, edge_index, edge_weight=edge_weight)
+        edge_index_out, edge_weight_out = subgraph_for_nodes(
+            node_mask, edge_index, edge_weight=edge_weight
+        )
         message_weight_out = None
         if message_weight is not None:
-            _, message_weight_out = subgraph_for_nodes(node_mask, edge_index, edge_weight=message_weight)
+            _, message_weight_out = subgraph_for_nodes(
+                node_mask, edge_index, edge_weight=message_weight
+            )
         return edge_index_out, edge_weight_out, message_weight_out
 
     p_src = cond[src].float() if partition else (1.0 - cond[src].float())
