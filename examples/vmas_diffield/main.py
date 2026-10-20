@@ -43,26 +43,26 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.metrics import aggregate, aggregate_curve  # noqa: E402
-from shared.plotting import (  # noqa: E402
+from shared.metrics import aggregate, aggregate_curve
+from shared.plotting import (
     apply_paper_style,
     color_of,
     export_moving_gif,
     label_of,
     panel_label,
 )
-from shared.plotting import band as _band  # noqa: E402
-from shared.plotting import savefig as _savefig  # noqa: E402
-from vmas_diffield.policies import build_policy  # noqa: E402
-from vmas_diffield.scenarios import SCENARIO_SPEC  # noqa: E402
-from vmas_diffield.train import (  # noqa: E402
+from shared.plotting import band as _band
+from shared.plotting import savefig as _savefig
+from vmas_diffield.policies import build_policy
+from vmas_diffield.scenarios import SCENARIO_SPEC
+from vmas_diffield.train import (
     evaluate,
     evaluate_perturbed,
     make_program,
     train_imitation,
     train_shac,
 )
-from vmas_diffield.vmas_env import (  # noqa: E402
+from vmas_diffield.vmas_env import (
     env_action_range,
     make_diff_env,
     obs_to_perception,

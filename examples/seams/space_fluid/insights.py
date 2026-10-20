@@ -169,7 +169,7 @@ def insights(out, config, norm, budget):
     figures(out, config)
 
 
-def figures(out, config):  # noqa: PLR0915 -- five fixed panels
+def figures(out, config):
     rows = read_json(out / "insights.json")["rows"]
     saved = torch.load(out / "insights.pt", weights_only=True)
     spatial, components = saved["spatial"], saved["components"]

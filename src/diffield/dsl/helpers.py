@@ -336,7 +336,7 @@ def group_pairs(index: Tensor, nodes: int) -> tuple[Tensor, Tensor]:
     return first[keep], second[keep]
 
 
-def surrogate_probabilities(  # noqa: PLR0917 -- explicit continuous arguments for gradcheck
+def surrogate_probabilities(
     key: Tensor,
     distance: Tensor,
     valid: Tensor,

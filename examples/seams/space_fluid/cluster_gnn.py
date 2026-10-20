@@ -172,7 +172,7 @@ def train(directory, config, bank, norm, *, seed, penalty, rate=0.01):
     return model.eval().requires_grad_(False)
 
 
-def fit(model, config, training, validation, norm, penalty, rate):  # noqa: PLR0917
+def fit(model, config, training, validation, norm, penalty, rate):
     optimizer = torch.optim.Adam(model.parameters(), lr=rate)
     scale, started = norm["scale"], time.perf_counter()
     scores = hard_scores(model, validation, scale, penalty)

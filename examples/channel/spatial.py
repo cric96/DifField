@@ -16,14 +16,14 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from channel.core import (  # noqa: E402
+from channel.core import (
     CHANNEL_THRESHOLD,
     build_snapshot_payloads,
     channel_body,
     count_channel_nodes,
 )
-from shared.plotting.common import LineCollection, plt, save_gif  # noqa: E402
-from shared.plotting.style import (  # noqa: E402
+from shared.plotting.common import LineCollection, plt, save_gif
+from shared.plotting.style import (
     BLUE,
     FIG_WIDTH_1COL,
     FIG_WIDTH_2COL,
@@ -38,13 +38,13 @@ from shared.plotting.style import (  # noqa: E402
 if plt is not None:
     apply_paper_style()
 
-from diffield.dsl import branch, field  # noqa: E402
-from diffield.sim import (  # noqa: E402
+from diffield.dsl import branch, field
+from diffield.sim import (
     SimulationEngine,
     SnapshotRecorder,
     SpatialScenario,
 )
-from diffield.utils import get_device  # noqa: E402
+from diffield.utils import get_device
 
 
 @dataclass(frozen=True)
@@ -795,7 +795,7 @@ def _select_source_index(positions: torch.Tensor, requested_source: int) -> int:
     return source_idx
 
 
-def main():  # noqa: PLR0915
+def main():
     args = parse_args()
     device = get_device(args.device)
     torch.manual_seed(args.seed)

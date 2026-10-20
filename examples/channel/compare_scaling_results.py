@@ -26,7 +26,7 @@ from matplotlib.colors import TwoSlopeNorm
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting.style import (  # noqa: E402
+from shared.plotting.style import (
     BLUE,
     FIG_WIDTH_1COL,
     FIG_WIDTH_2COL,

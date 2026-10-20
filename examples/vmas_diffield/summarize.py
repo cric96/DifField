@@ -17,10 +17,10 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting import apply_paper_style, color_of, label_of, panel_label  # noqa: E402
-from shared.plotting import savefig as _savefig  # noqa: E402
-from shared.plotting.style import MUTED  # noqa: E402
-from vmas_diffield.scenarios import SCENARIO_SPEC  # noqa: E402
+from shared.plotting import apply_paper_style, color_of, label_of, panel_label
+from shared.plotting import savefig as _savefig
+from shared.plotting.style import MUTED
+from vmas_diffield.scenarios import SCENARIO_SPEC
 
 try:
     import matplotlib

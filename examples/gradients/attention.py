@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import torch  # noqa: E402
+import torch
 
-from diffield.utils import get_device  # noqa: E402
+from diffield.utils import get_device
 
 try:
     from .domain.specs import AttentionGradientSpec, GridSpec, TrainingSpec

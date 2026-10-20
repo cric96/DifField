@@ -138,7 +138,7 @@ def make_program(tolerance):
     return program
 
 
-def run_seed(config, seed, extra=()):  # noqa: PLR0915 -- one episode loop with its metrics
+def run_seed(config, seed, extra=()):
     """One episode; returns per-round curves and per-event recovery.
 
     ``extra`` adds rounds to the saved channel snapshots (e.g. for paper figures).

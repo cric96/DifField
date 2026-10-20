@@ -10,20 +10,20 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-import torch  # noqa: E402
+import torch
 
-from diffield.utils import get_device  # noqa: E402
+from diffield.utils import get_device
 
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting import (  # noqa: E402
+from shared.plotting import (
     export_moving_gif,
     plot_moving_snapshots,
     plot_node_trajectories,
 )
 
-from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
-from diffield.sim import (  # noqa: E402
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.sim import (
     EventSchedule,
     ScheduledEvent,
     SimulationEngine,
@@ -193,7 +193,7 @@ def main():
     )
 
     scenario = runtime.scenario
-    assert isinstance(scenario, SpatialScenario)  # noqa: S101
+    assert isinstance(scenario, SpatialScenario)
     center = torch.tensor([0.5, 0.5], device=scenario.device)
     closest_idx = int(torch.argmin(
         torch.norm(scenario.positions - center, dim=1)

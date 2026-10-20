@@ -267,7 +267,7 @@ def boids_device_curves(run, size, executor="async", key="spread"):
     return curves
 
 
-def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", condition="crash"):  # noqa: PLR0915
+def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", condition="crash"):
     channel_runs = [read_json(p) for p in sorted((channel / "runs").glob("seed*.json"))]
     channel_config = read_json(channel / "summary.json")["config"]
     scr_async = scr_curves(scr_root, scenario, condition, executor="async-0.5")
@@ -605,7 +605,7 @@ def rq1_boids_trajectories(boids, out, *, episode=0, seed=0, early=10, gnn="gnn6
             "position_rmse": errors}  # fmt: skip
 
 
-def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):  # noqa: PLR0915
+def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
     """Validation loss (a), learned weights relative to the teacher's (b), and free-running
     trajectories of the untrained and trained program, a GNN, and the teacher (c-f)."""
     data = torch.load(boids / "data/traces.pt", weights_only=True)

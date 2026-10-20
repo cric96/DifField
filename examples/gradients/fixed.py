@@ -11,9 +11,9 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import torch  # noqa: E402
+import torch
 
-from diffield.utils import get_device  # noqa: E402
+from diffield.utils import get_device
 
 try:
     import matplotlib.pyplot as plt
@@ -30,9 +30,9 @@ except ImportError:
     from gradients.domain.grid import build_corner_source_grid
     from gradients.domain.program import auto_rounds, run_gradient_program
 
-from shared.plotting import panel_label, save_grid_simulation_gif  # noqa: E402
+from shared.plotting import panel_label, save_grid_simulation_gif
 
-from diffield.sim import SnapshotRecorder  # noqa: E402
+from diffield.sim import SnapshotRecorder
 
 
 def parse_args():

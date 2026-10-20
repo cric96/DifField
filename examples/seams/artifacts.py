@@ -47,7 +47,7 @@ def software():
             cwd=PROJECT,
             capture_output=True,
             text=True,
-            check=False,  # noqa: S607
+            check=False,
         ).stdout.strip()
 
     files = sorted((PROJECT / "src/diffield").rglob("*.py"))

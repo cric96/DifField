@@ -7,7 +7,6 @@ import torch
 
 from diffield.sim import normalize_vectors
 
-from .directories import separate
 from .artifacts import checksum, json_write, read_json, software, tensor_write
 from .boids_dynamics import (
     DAMPING,
@@ -32,6 +31,7 @@ from .boids_learning import (
     transitions,
     weights,
 )
+from .directories import separate
 from .randomness import rng
 
 

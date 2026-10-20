@@ -4,8 +4,8 @@ No flock centroid, destination or camera state enters the agent program. The
 renderer follows the flock; positions are world coordinates and never wrap.
 """
 
-from dataclasses import dataclass
 import math
+from dataclasses import dataclass
 
 import torch
 from torch import nn
@@ -55,7 +55,7 @@ class FlockingConfig:
     max_turn_rate: float = 1.3  # radians / second
 
     def __post_init__(self):
-        if not (0 < self.dt and 0 < self.separation < self.radius):
+        if not (self.dt > 0 and 0 < self.separation < self.radius):
             raise ValueError("Positive timestep and separation < radius are required")
         if not (0 < self.min_speed <= self.cruise_speed <= self.max_speed):
             raise ValueError("Expected positive min <= cruise <= max speed")

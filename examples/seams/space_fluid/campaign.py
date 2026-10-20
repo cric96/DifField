@@ -314,7 +314,7 @@ def save_replay(spec, seed):
     )
 
 
-def evaluate(out, config, norm, budget):  # noqa: PLR0912, PLR0915 -- explicit executor and checkpoint cases
+def evaluate(out, config, norm, budget):
     cache = {}
     current_spec, episode = None, None
     for spec, method, seed in evaluation_jobs(config):
@@ -489,7 +489,7 @@ def campaign(out: Path, config, stage="all", seconds=14400):
 
 
 def _campaign(out, config, stage, seconds):
-    from .report import report  # noqa: PLC0415 -- report reads the campaign inventory
+    from .report import report
 
     if seconds <= 0:
         raise ValueError("Budget must be positive")

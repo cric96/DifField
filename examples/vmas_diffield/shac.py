@@ -32,7 +32,7 @@ from vmas_diffield.train import (
 from vmas_diffield.vmas_env import env_action_range, obs_to_perception, pack_actions
 
 
-def train_shac(scenario: str, kind: str, *, seed: int, args, env) -> RunResult:  # noqa: PLR0912, PLR0915
+def train_shac(scenario: str, kind: str, *, seed: int, args, env) -> RunResult:
     torch.manual_seed(seed)
     device = torch.device(args.device)
     spec = SCENARIO_SPEC[scenario]

@@ -108,14 +108,14 @@ def parameter_groups(model, rate, config):
     ]
 
 
-def train_job(directory, config, bank, norm, method, seed, penalty, budget):  # noqa: PLR0917
+def train_job(directory, config, bank, norm, method, seed, penalty, budget):
     device = torch.device(config.device)
     with torch.device(device):
         model = _train_job(directory, config, bank, norm, method, seed, penalty, budget, device)
     return model.cpu(), torch.load(directory / "best.pt", weights_only=True)
 
 
-def _train_job(directory, config, bank, norm, method, seed, penalty, budget, device):  # noqa: PLR0917, PLR0915 -- one atomic resumable update loop
+def _train_job(directory, config, bank, norm, method, seed, penalty, budget, device):
     directory.mkdir(parents=True, exist_ok=True)
     model = make_program(method, seed, **norm).to(device)
     training = [e.to(device) for e in bank["train"]]

@@ -12,10 +12,10 @@ import torch
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 
-from diffield import DeviceContext  # noqa: E402
-from diffield.dsl import gradient, scatter  # noqa: E402
-from diffield.sim import GridScenario, SimulationEngine  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield import DeviceContext
+from diffield.dsl import gradient, scatter
+from diffield.sim import GridScenario, SimulationEngine
+from diffield.utils import get_device
 
 
 def parse_args():

@@ -6,7 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 
 
-def main(argv=None):  # noqa: PLR0911, PLR0912 -- one dispatcher per experiment
+def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
@@ -44,49 +44,49 @@ def main(argv=None):  # noqa: PLR0911, PLR0912 -- one dispatcher per experiment
             parser.error("--device cuda is supported by the space-fluid campaigns only")
         os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
     if args.command == "channel-adaptation":
-        from .channel_adaptation import campaign as channel  # noqa: PLC0415
+        from .channel_adaptation import campaign as channel
 
         channel(args.out or Path("generated/seams") / f"channel-adaptation-{args.profile}",
                 args.profile)  # fmt: skip
         return 0
     if args.command == "boids-adaptation":
-        from .boids_adaptation import campaign as adaptation  # noqa: PLC0415
+        from .boids_adaptation import campaign as adaptation
 
         adaptation(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
         return 0
     if args.command == "boids-devices":
-        from .boids_devices import campaign as devices  # noqa: PLC0415
+        from .boids_devices import campaign as devices
 
         devices(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
         return 0
     if args.command == "paper-figures":
-        from .paper_figures import paper_figures  # noqa: PLC0415
+        from .paper_figures import paper_figures
 
         paper_figures(args.profile, args.figures_dir)
         return 0
     if args.command == "boids":
-        from .boids import campaign  # noqa: PLC0415 -- load only the requested experiment
+        from .boids import campaign
 
         if args.stage != "all":
             parser.error("Boids retains its existing all-stage campaign command")
         out = args.out or Path("generated/seams") / f"boids-{args.profile}"
         return campaign(args.source_run, out, args.profile, args.budget_seconds)
     if args.command == "space-fluid-summary":
-        from .space_fluid.summary import summary  # noqa: PLC0415
+        from .space_fluid.summary import summary
 
         return summary(args.out or Path("generated/seams/comparison"))
     if args.command == "space-fluid-scenarios":
-        from .space_fluid.scenarios import campaign as scenarios  # noqa: PLC0415
+        from .space_fluid.scenarios import campaign as scenarios
 
         out = args.out or Path("generated/seams") / f"space-fluid-scenarios-{args.profile}"
         return scenarios(out, args.profile, args.budget_seconds, device=args.device)
     if args.command == "space-fluid-clusters":
-        from .space_fluid.clusters import campaign as clusters  # noqa: PLC0415
+        from .space_fluid.clusters import campaign as clusters
 
         out = args.out or Path("generated/seams") / f"space-fluid-clusters-{args.profile}"
         return clusters(out, args.profile, args.budget_seconds, device=args.device)
-    from .space_fluid.campaign import campaign  # noqa: PLC0415
-    from .space_fluid.config import protocol  # noqa: PLC0415
+    from .space_fluid.campaign import campaign
+    from .space_fluid.config import protocol
 
     if args.source_run is not None:
         parser.error("Space-Fluid resumes directly from --out; --source-run is for Boids")

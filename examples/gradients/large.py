@@ -19,19 +19,19 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting import apply_paper_style, panel_label, save_grid_simulation_gif  # noqa: E402
+from shared.plotting import apply_paper_style, panel_label, save_grid_simulation_gif
 
 apply_paper_style()
 
-from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
 
 try:
     from .domain.program import auto_rounds, run_gradient_program  # noqa: F401
 except ImportError:
     from gradients.domain.program import auto_rounds
 
-from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.utils import get_device
 
 
 def parse_args():
@@ -198,7 +198,7 @@ def main():
     loss.backward()
     backward_time = time.time() - start_time
     print(f"Backward pass in {backward_time:.4f}s")
-    assert weight.grad is not None  # noqa: S101
+    assert weight.grad is not None
     print(f"d(loss)/dw = {weight.grad.item():.1f}")
 
     plot_results(dist, snapshots, args)

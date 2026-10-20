@@ -2,7 +2,6 @@
 """Render saved Space-Fluid results without training or changing the protocol."""
 
 # Imports follow repository path setup for direct script execution.
-# ruff: noqa: PLC0415
 
 import argparse
 import sys

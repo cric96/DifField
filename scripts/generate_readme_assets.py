@@ -15,7 +15,7 @@ def run(cmd, description):
     print(f"Running: {description}")
     print(f"Command: {' '.join(cmd)}")
     print(f"{'='*60}")
-    result = subprocess.run(cmd, cwd=str(ROOT), check=False)  # noqa: S603
+    result = subprocess.run(cmd, cwd=str(ROOT), check=False)
     if result.returncode != 0:
         print(f"WARNING: {description} failed with return code {result.returncode}")
     return result.returncode == 0

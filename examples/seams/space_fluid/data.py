@@ -139,7 +139,7 @@ def phenomenon(points, rounds, family, parameters, *, static=False):
     return 0.1 + p["amplitude"] * envelope * field
 
 
-def faults(seed, points, base, rounds, condition, crashed=None):  # noqa: PLR0917 -- one event model
+def faults(seed, points, base, rounds, condition, crashed=None):
     """Active devices and current links per round; events at one and two thirds.
 
     ``crash`` removes ``crashed`` devices permanently at the fault time.

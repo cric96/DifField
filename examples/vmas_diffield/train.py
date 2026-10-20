@@ -383,7 +383,7 @@ def _make_actor_optimizer(policy: nn.Module, args) -> torch.optim.Adam:
 
 
 def train_shac(scenario: str, kind: str, *, seed: int, args, env) -> RunResult:
-    from vmas_diffield.shac import train_shac as train  # noqa: PLC0415
+    from vmas_diffield.shac import train_shac as train
 
     return train(scenario, kind, seed=seed, args=args, env=env)
 
@@ -400,6 +400,6 @@ class ImitationResult:
 
 
 def train_imitation(scenario: str, kind: str, *, seed: int, args, env) -> ImitationResult:
-    from vmas_diffield.imitation import train_imitation as train  # noqa: PLC0415
+    from vmas_diffield.imitation import train_imitation as train
 
     return train(scenario, kind, seed=seed, args=args, env=env)

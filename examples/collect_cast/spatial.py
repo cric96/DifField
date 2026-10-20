@@ -21,8 +21,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from shared.plotting.common import LineCollection, plt  # noqa: E402
-from shared.plotting.style import (  # noqa: E402
+from shared.plotting.common import LineCollection, plt
+from shared.plotting.style import (
     FIG_WIDTH_1COL,
     FIG_WIDTH_2COL,
     MUTED,
@@ -32,10 +32,10 @@ from shared.plotting.style import (  # noqa: E402
 
 apply_paper_style()
 
-from diffield.dsl import collect_cast, field, gradient  # noqa: E402
-from diffield.sim import SimulationEngine, SpatialScenario  # noqa: E402
-from diffield.sim.recording import SnapshotRecorder  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import collect_cast, field, gradient
+from diffield.sim import SimulationEngine, SpatialScenario
+from diffield.sim.recording import SnapshotRecorder
+from diffield.utils import get_device
 
 CIRCLE_CENTER = np.array([0.5, 0.5])
 CIRCLE_RADIUS = 0.2

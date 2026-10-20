@@ -11,8 +11,8 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
+import numpy as np
+import torch
 
 try:
     import matplotlib.patches as mpatches
@@ -24,17 +24,17 @@ except ImportError:
     mpatches = None
     plt = None
 
-from shared.plotting import (  # noqa: E402
+from shared.plotting import (
     draw_markers,
     draw_obstacles,
     save_grid_simulation_gif,
     to_grid,
 )
-from shared.plotting.style import MUTED  # noqa: E402
+from shared.plotting.style import MUTED
 
-from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
-from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
+from diffield.utils import get_device
 
 
 def parse_args():

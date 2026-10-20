@@ -33,7 +33,7 @@ def main():
     ]
     if args.out is not None:
         command += ["--out", str(args.out)]
-    return subprocess.run(command, cwd=ROOT, check=False).returncode  # noqa: S603 -- fixed module, validated CLI choices
+    return subprocess.run(command, cwd=ROOT, check=False).returncode
 
 
 if __name__ == "__main__":

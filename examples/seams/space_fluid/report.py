@@ -176,7 +176,7 @@ def recovery_figure(out, names):
         plt.close(fig)
 
 
-def animate(out, family, budget, names):  # noqa: PLR0915 -- shared scales and persistent animation artists
+def animate(out, family, budget, names):
     payloads = []
     for name in names:
         paths = sorted(
@@ -285,8 +285,8 @@ def animate(out, family, budget, names):  # noqa: PLR0915 -- shared scales and p
     return True
 
 
-def report(out, config, *, render=True, budget=None):  # noqa: PLR0912, PLR0915 -- complete and partial artifacts
-    from .campaign import (  # noqa: PLC0415 -- shared inventory
+def report(out, config, *, render=True, budget=None):
+    from .campaign import (
         evaluation_jobs,
         progress,
         result_path,

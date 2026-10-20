@@ -23,15 +23,15 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import matplotlib.patheffects as pe  # noqa: E402
-from channel.core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body  # noqa: E402
-from matplotlib.patches import Rectangle  # noqa: E402
-from shared.plotting.common import plt  # noqa: E402
-from shared.plotting.style import FIG_WIDTH_1COL, GREEN, INK, ORANGE, RED  # noqa: E402
+import matplotlib.patheffects as pe
+from channel.core import CHANNEL_THRESHOLD, build_snapshot_payloads, channel_body
+from matplotlib.patches import Rectangle
+from shared.plotting.common import plt
+from shared.plotting.style import FIG_WIDTH_1COL, GREEN, INK, ORANGE, RED
 
-from diffield.dsl import branch, field  # noqa: E402
-from diffield.sim import SimulationEngine, SnapshotRecorder, SpatialScenario  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import branch, field
+from diffield.sim import SimulationEngine, SnapshotRecorder, SpatialScenario
+from diffield.utils import get_device
 
 DEVICE_GREY = "#c9c8c2"
 WALL_GREY = "#5f5e5a"
@@ -137,7 +137,7 @@ def endpoints(ax, run, size):
                 color=colour, ha=align, va="center", zorder=11, path_effects=halo)
 
 
-def scalar_panel(ax, run, key, letter, title, dot):  # noqa: PLR0917
+def scalar_panel(ax, run, key, letter, title, dot):
     values = run[key]
     finite = np.isfinite(values)
     ax.scatter(*run["positions"][finite].T, c=values[finite], cmap="viridis",

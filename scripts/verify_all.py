@@ -8,7 +8,7 @@ def run_script(script_path, args=None):
     cmd = ["uv", "run", "python", script_path, *args]
     print(f"Running: {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)  # noqa: S603
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
     except subprocess.CalledProcessError as e:
         print(f"FAILED: {script_path}")
         print(f"Error:\n{e.stderr}")

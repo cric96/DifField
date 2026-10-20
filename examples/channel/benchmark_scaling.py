@@ -21,13 +21,13 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-from channel.core import CHANNEL_THRESHOLD, channel_body  # noqa: E402
-from channel.spatial import create_obstacle_mask  # noqa: E402
-from shared.training import parse_int_csv  # noqa: E402
+from channel.core import CHANNEL_THRESHOLD, channel_body
+from channel.spatial import create_obstacle_mask
+from shared.training import parse_int_csv
 
-from diffield.dsl import branch, field  # noqa: E402
-from diffield.sim import SimulationEngine, SpatialScenario  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import branch, field
+from diffield.sim import SimulationEngine, SpatialScenario
+from diffield.utils import get_device
 
 try:
     import matplotlib
@@ -791,7 +791,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def main() -> None:  # noqa: PLR0915
+def main() -> None:
     args = parse_args()
     node_counts = parse_int_csv(args.node_counts)
     k_neighbors_values = parse_int_csv(args.k_neighbors)

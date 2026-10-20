@@ -3,7 +3,13 @@
 import torch
 
 from examples.seams.boids_flocking import (
-    CoherentBoids, FlockingConfig, dense_step, diagnostics, initial_state, radius_edges, simulate,
+    CoherentBoids,
+    FlockingConfig,
+    dense_step,
+    diagnostics,
+    initial_state,
+    radius_edges,
+    simulate,
 )
 
 
