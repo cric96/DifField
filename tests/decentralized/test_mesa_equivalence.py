@@ -13,12 +13,11 @@ import torch
 
 pytest.importorskip("mesa", reason="needs the 'decentralized' extra")
 
-from channel.core import channel_body
-
 from diffield.decentralized import run_decentralized
 from diffield.decentralized.topology import in_edges_of
 from diffield.dsl import branch, field, gradient
 from diffield.sim import GridScenario, SimulationEngine
+from tests.decentralized.support import channel_body
 
 ROWS = 6
 COLS = 6
