@@ -1,13 +1,14 @@
-# Autofield Test Structure
+# Tests
 
-This document describes the organization and philosophy of the test suite for the `differentiable-field-calculus` (Autofield) repository, refactored to adhere to the highest software standards and Test-Driven Development (TDD) principles.
+How the test suite of DifField is organised. The rules for writing tests (test-driven,
+one behaviour per test, names and layout) are in [CLAUDE.md](../CLAUDE.md).
 
 ## General Organization
 
 Tests are logically divided based on the type of code being verified. We use **pytest** as the primary test runner and **hypothesis** for property-based testing. Tests are automatically tagged by pytest:
 
 - **Unit tests** (`pytest -m unit`): Located in the `tests/` directory, they verify the behavior of individual modules or framework components.
-- **Integration tests** (`pytest -m integration`): Located within `examples/` to ensure the framework works correctly on concrete use cases and complete training pipelines (boids, gradients, territories).
+- **Integration tests** (`pytest -m integration`): Located within `examples/`, next to the experiments they check (gradients, SEAMS campaigns).
 
 ## `tests/` Directory Structure
 
@@ -35,7 +36,7 @@ Tests are grouped by the layer they exercise.
 **`tests/device_context/`** — decentralized (node-centric) execution, verifying
 that single-device execution reproduces the globally computed state for
 programs within the local contract (see *Local execution* in
-`docs/architecture.md`).
+[the architecture](architecture.md#local-execution)).
 
 **`tests/functional/`** — the bare functional backend: PyG scatter operators and
 property-based tests on the vectorized functions.
@@ -65,17 +66,10 @@ Thanks to the integration of `hypothesis`, we apply property-based testing to cr
 ## Execution
 
 ```bash
-# Run all tests (unit and integration)
-uv run pytest 
-
-# Run only unit tests
-uv run pytest -m unit
-
-# Run only integration tests
-uv run pytest -m integration
-
-# Run fast tests ignoring any slow modules (if 'slow' marks are present in the future)
-uv run pytest -m "not slow"
+uv run pytest                 # everything
+uv run pytest tests           # the library, as the library job of CI
+uv run pytest examples        # the experiments, as the examples job of CI
+uv run pytest -m "not slow"   # skip the modules marked slow
 ```
 
 ## SEAMS experiment invariants

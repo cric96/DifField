@@ -59,7 +59,7 @@ Rules:
 - Test behaviour through the public API, not implementation details, so the
   refactor step stays free.
 - Tests are grouped by the layer they exercise (`tests/aggregate/`,
-  `tests/decentralized/`, …, see `TEST_STRUCTURE.md`). Reuse the fixtures of
+  `tests/decentralized/`, …, see [docs/testing.md](docs/testing.md)). Reuse the fixtures of
   `conftest.py` and the `support.py` helpers instead of building new ones.
 - Name tests after the behaviour: `test_<unit>_<does_what>_<when>`, and lay them
   out as Arrange / Act / Assert.
