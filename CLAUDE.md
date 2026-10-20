@@ -15,7 +15,8 @@ on a graph, and gradients flow through every round. The package lives in
 `examples/` holds the experiments (gradients, channels, boids, SEAMS, VMAS). They
 are a client of the library, and will move to a repository of their own: they use
 only the public API of `diffield`, and nothing in `src/` or `tests/` imports them.
-The documentation is plain Markdown in `docs/`, with its figures in `docs/assets/`.
+The documentation is the README and plain Markdown pages in `docs/`, with their figures
+in `docs/assets/`: SVG diagrams and GIF animations, each in a light and a dark variant.
 
 ## Commands
 
@@ -27,6 +28,8 @@ uv run pytest examples                  # the tests of the experiments
 uv run ruff check .                     # lint and style, line length 100
 uv run pyright                          # types, of src/ and tests/
 uvx pre-commit install                  # run all of the above before each commit
+uv run python docs/assets/diagrams.py   # redraw the figures of the docs, in both themes
+uv run python docs/assets/animations.py # render the animations of the README
 ```
 
 A change is done only when `pytest`, `ruff` and `pyright` all pass: CI and the

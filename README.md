@@ -1,418 +1,130 @@
+<div align="center">
+
+<img src="docs/dif-field.png" alt="DifField logo" width="96">
+
 # DifField
 
-**Differentiable Field Calculus for Graph-Based Learning and Simulation**
+Differentiable field programming for self-organising systems, on PyTorch.
 
-DifField is a PyTorch-based framework that brings **aggregate computing** and **field calculus** to differentiable programming. It lets you write spatial programs using high-level field operations — `iterate`, `scatter`, `branch`, `gradient` — that compile to message-passing on graphs and support end-to-end gradient-based learning.
+[![CI](https://github.com/cric96/differentiable-field-calculus/actions/workflows/ci.yml/badge.svg)](https://github.com/cric96/differentiable-field-calculus/actions/workflows/ci.yml)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-3776ab?logo=python&logoColor=white)](pyproject.toml)
+[![PyTorch Geometric](https://img.shields.io/badge/PyTorch%20Geometric-2.6%2B-3c2179)](https://pyg.org)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Conventional Commits](https://img.shields.io/badge/Conventional%20Commits-1.0.0-fe5196?logo=conventionalcommits&logoColor=white)](https://www.conventionalcommits.org/en/v1.0.0/)
 
-![DifField](docs/dif-field.png)
+**[Writing programs](docs/programs.md)** ·
+**[Simulation](docs/simulation.md)** ·
+**[Decentralized execution](docs/decentralized.md)** ·
+**[Architecture](docs/architecture.md)** ·
+**[Experiments](examples/README.md)**
 
-<div align="center" width="100%">
-    <table><tr>
-        <td align="center"><img src="pics/boids_flocking.gif" width="100%"/><br/><sub><b>Boids Flocking</b> — learned emergent behavior</sub></td>
-        <td align="center"><img src="pics/spatial_channel.gif" width="80%"/><br/><sub><b>Spatial Channel</b> — routing around obstacles</sub></td>
-        <td align="center"><img src="pics/gradient_large.gif" width="80%"/><br/><sub><b>Large-Scale Gradient</b> — 250K nodes diffusion</sub></td>
-    </tr></table>
 </div>
 
 ---
 
-## Install
+You write **one program** for a whole network, with a handful of field operations
+(`iterate`, `scatter`, `gather`, `branch`, `mux`). Every node runs it in rounds,
+exchanging values with its neighbours, and since the rounds are PyTorch operations a
+loss on the result reaches every parameter of the program, through every round.
 
-Requires [uv](https://github.com/astral-sh/uv). Pick the extra that matches your hardware:
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/program-dark.svg">
+    <img src="docs/assets/program.svg" alt="A program written once, run by every node as message passing, with gradients flowing back through the rounds" width="100%">
+  </picture>
+</p>
+
+<table align="center"><tr>
+  <td align="center" width="33%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/wave-dark.gif">
+      <img src="docs/assets/wave.gif" alt="A distance field spreading from a corner" width="100%">
+    </picture>
+    <br><sub><b>Gradient</b>: the distance from a corner</sub>
+  </td>
+  <td align="center" width="33%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/channel-dark.gif">
+      <img src="docs/assets/channel.gif" alt="A channel between two corners bending around an obstacle" width="100%">
+    </picture>
+    <br><sub><b>Channel</b>: the shortest way around an obstacle</sub>
+  </td>
+  <td align="center" width="33%">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/assets/learning-dark.gif">
+      <img src="docs/assets/learning.gif" alt="Costs learnt from distances alone outlining a hidden obstacle" width="100%">
+    </picture>
+    <br><sub><b>Learning</b>: costs learnt from distances find a hidden obstacle</sub>
+  </td>
+</tr></table>
+
+## Installation
+
+Requires [uv](https://github.com/astral-sh/uv) and Python 3.12+. Pick the extra that
+matches your hardware:
 
 ```bash
-# CPU
-uv sync --extra cpu
-
-# NVIDIA GPU (CUDA)
-uv sync --extra cuda
-
-# AMD GPU (ROCm) — build from source
-bash install-rocm-7.2.sh
+uv sync --extra cpu                    # CPU
+uv sync --extra cuda                   # NVIDIA GPU
+uv sync --extra cpu --extra decentralized   # also run programs device by device, on Mesa
 ```
 
-Add `--extra decentralized` to any of these to enable
-[decentralized execution](#decentralized-execution), and `--extra vmas` for the
-[VMAS experiments](#vmas-experiments):
+## A taste
 
-```bash
-uv sync --extra cpu --extra decentralized --extra vmas
-```
-
----
-
-## Quick Start
-
-Build a distance field from a source node on a 10×10 grid:
+The distance of every node from a source, the "hello world" of field programming:
 
 ```python
-from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.dsl import field, gather_min, iterate, mux, scatter, scatter_range
 from diffield.sim import GridScenario, SimulationEngine
 
-scenario = GridScenario(10, 10, connectivity=4)
-engine = SimulationEngine.from_scenario(scenario)
-source = scenario.marker(0, 0)  # source at top-left
-
 def program(runtime):
-    src = runtime.signals["source"]
+    source = runtime.signals["source"]
     return iterate(
         field.inf(),
-        lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
+        lambda d: mux(source, field.of(0.0), gather_min(scatter(d) + scatter_range())),
         name="dist",
     )
 
-output, runtime = engine.run(rounds=40, program=program, signals={"source": source})
-```
-
-The program converges to a **hop-distance field** — every node holds its minimum distance from the source.
-
----
-
-## Architecture
-
-DifField is organized in five conceptual layers:
-
-```mermaid
-flowchart TB
-    subgraph DSL["DSL Primitives"]
-        direction LR
-        DSL_API["iterate · scatter · branch · mux · gradient · broadcast"]
-    end
-
-    subgraph Layers["Differentiable Layers"]
-        direction LR
-        LAYERS_API["IterateLayer · GatherLayer · BranchLayer · MuxLayer"]
-    end
-
-    subgraph Core["Core Runtime"]
-        direction LR
-        CORE_API["AggregateContext · RoundContext · StateManager"]
-    end
-
-    subgraph Sim["Simulation Layer"]
-        direction LR
-        SIM_API["SimulationEngine · Scenario · EventSchedule · Recorder"]
-    end
-
-    User["User Program"] --> DSL
-    DSL -->|"instantiates"| Layers
-    Layers -->|"uses"| Core
-    Sim -->|"orchestrates"| Core
-    Sim -->|"returns"| User
-```
-
-Each layer builds on the one below it. The **Core Runtime** manages graph topology and per-node state; **Layers** wrap operations as differentiable `nn.Module`s; **DSL Primitives** provide the user-facing API; and the **Simulation Layer** orchestrates multi-round executions with events, dynamic topologies, and recording.
-
----
-
-## DSL Primitives
-
-The DSL provides composable field operators that run on every node of the graph simultaneously.
-
-### Core Operators
-
-| Primitive | Description |
-|-----------|-------------|
-| `iterate(init, fn, name=...)` | Per-node recurrent state — evolves over rounds |
-| `scatter(value)` | Build edge-wise neighbor messages from a node field |
-| `gather(expr, aggr)` | Aggregate a `LinkField` into a node field |
-| `branch(cond, if_true, if_false)` | Domain restriction with communication isolation |
-| `mux(cond, if_true, if_false)` | Pointwise conditional selection (no topology change) |
-
-### Building Blocks
-
-| Primitive | Description |
-|-----------|-------------|
-| `gradient(source, weight=None)` | Minimum-cost distance field from source nodes |
-| `gradient_cast(source, center, accumulation, weight=None)` | Propagate payloads along gradient paths |
-| `broadcast(mask, value, weight=None)` | Spread a value from root nodes through the network |
-| `collect_cast(potential, local, null, accumulation, weight=None)` | Collect payloads toward potential minima |
-| `elect(key, eligible=None, grain=inf, weight=None)` | Leader election (S block) — returns `(leader_mask, adopted_key)` |
-| `descend(potential, toward, tau=None)` | Soft steepest-descent direction on a potential field |
-| `nbr_count()` / `has_neighbors()` | Neighbour degree as a float field / as a boolean field |
-
-### Field Helpers
-
-```python
-from diffield.dsl import field
-
-field.of(0.0)     # constant field
-field.zeros()     # zero field
-field.ones()      # one field
-field.inf()       # infinity field
-```
-
-`Field` inputs are always explicit tensors, typically built with `field.of(...)`, `field.zeros()`, `field.inf()`, or scenario helpers. Neighborhood aggregation always works on `LinkField`, so write `gather_min(scatter(x))`, `gather_sum(scatter(x) * w)`, or `gather(scatter(x) + scatter_range(), aggr="min")`.
-
----
-
-## Simulation Layer
-
-The simulation layer provides reusable components for running aggregate programs over multiple rounds.
-
-### Components
-
-- **`Scenario`** — defines graph topology and helper builders (`GridScenario`, `SpatialScenario`, `FullyConnectedScenario`, `RelaxedRadiusScenario`)
-- **`SimulationEngine`** — steps aggregate programs round by round
-- **`EventSchedule`** + **`ScheduledEvent`** — deterministic round-based dynamic updates
-- **`SnapshotRecorder`** — structured capture of fields, exports, and outputs
-
-### Example: Dynamic Simulation with Events
-
-```python
-from diffield.dsl import field, gather_min, iterate, mux, scatter
-from diffield.sim import (
-    EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder,
-)
-
 scenario = GridScenario(10, 10, connectivity=4)
 engine = SimulationEngine.from_scenario(scenario)
-
-source = scenario.marker(0, 0)
-
-def move_source(runtime):
-    runtime.signals["source"] = scenario.marker(9, 9)
-
-schedule = EventSchedule([
-    ScheduledEvent(round_idx=20, callback=move_source, name="move"),
-])
-
-recorder = SnapshotRecorder(state_fields=["dist"], capture_output=True, record_rounds={0, 20, 39})
-
-def program(runtime):
-    src = runtime.signals["source"]
-    return iterate(
-        field.inf(),
-        lambda d: mux(src, field.of(0.0), gather_min(scatter(d + 1.0))),
-        name="dist",
-    )
-
-output, runtime = engine.run(
-    rounds=40,
-    program=program,
-    signals={"source": source},
-    schedule=schedule,
-    recorder=recorder,
-)
+output, runtime = engine.run(rounds=20, program=program, signals={"source": scenario.marker(0, 0)})
 ```
 
----
+- `iterate` keeps a field `d` across rounds, starting from infinity everywhere;
+- `scatter(d) + scatter_range()` puts on each link the distance through that neighbour;
+- `gather_min` keeps, at each node, the shortest of the links that reach it;
+- `mux` holds the source at zero.
 
-## Decentralized Execution
+After 20 rounds `output` holds each node's hop distance from the corner. Put a
+parameter in the program (a cost per node, a weight per link, a network) and
+`loss.backward()` trains it: [Writing programs](docs/programs.md#learning-through-a-program)
+shows how, and what else the language offers.
 
-The simulation layer evaluates a round as one batched operation over the whole graph.
-The same program can also be run **the way the model says it should be executable** —
-one device at a time, each seeing only its neighbours' messages — inside
-[Mesa](https://mesa.readthedocs.io), a general-purpose agent-based modelling framework
-that knows nothing about field calculus.
+## What's inside
+
+- **Language** (`diffield.dsl`): the primitives, link fields and the building blocks
+  of aggregate computing (`gradient`, `broadcast`, `collect_cast`, `elect`, …), exact in
+  hard mode and smooth in soft mode. [Writing programs](docs/programs.md)
+- **Simulation** (`diffield.sim`): grid and spatial scenarios, moving devices, events
+  and recording. [Simulation](docs/simulation.md)
+- **Decentralized execution** (`diffield.decentralized`): the same program, one device
+  at a time on Mesa, node for node equal to the batched run.
+  [Decentralized execution](docs/decentralized.md)
+- **Experiments** (`examples/`): distance fields, channels, Boids, the SEAMS campaigns
+  and VMAS controllers, on their way to a repository of their own.
+  [Experiments](examples/README.md)
+
+## Development
 
 ```bash
 uv sync --extra cpu --extra decentralized
+uv run pytest tests        # the library; `uv run pytest examples` for the experiments
+uv run ruff check .
+uv run pyright
+uvx pre-commit install     # run them before each commit
 ```
 
-```python
-from diffield.decentralized import run_decentralized
-
-# Everything the program needs comes from `runtime.signals`: centrally those are
-# global [N] fields, on a device they are that device's local [1 + k] view.
-def program(runtime):
-    return gradient(runtime.signals["source"], name="dist")
-
-central, _ = engine.run(rounds=20, program=program, signals=signals)
-local = run_decentralized(scenario=scenario, program=program, signals=signals, rounds=20)
-
-assert torch.equal(central, local.final)
-```
-
-A device's outbound message is its `iterate` state table keyed by **alignment path**, and
-its neighbours' sensor readings travel with it — `branch` keeps a link only when both of
-its endpoints are in the partition, so a device cannot mask its own in-edges without them.
-
-`mode="sync"` (default) puts a barrier between rounds. For programs satisfying the
-causality conditions below it reproduces the batched run node for node.
-`mode="async"` drops the barrier: devices are
-shuffled, publish as they go, and may skip rounds with probability `1 - activation_prob`.
-
-### Running the comparison
-
-`examples/decentralized/channel_obstacles.py` runs the channel-with-obstacles program
-both ways in a single invocation — centrally through `SimulationEngine`, then device by
-device through Mesa — and diffs them round by round.
-
-```bash
-# synchronous: expect 0 mismatched nodes on every round
-uv run --extra cpu --extra decentralized \
-    python examples/decentralized/channel_obstacles.py --rows 12 --cols 12 --rounds 40
-
-# asynchronous: expect a divergent transient, identical fixed point
-uv run --extra cpu --extra decentralized \
-    python examples/decentralized/channel_obstacles.py --rows 12 --cols 12 --rounds 40 --async
-```
-
-Figures land in `generated/decentralized_channel_*.png`: centralized field, decentralized
-field, and their difference, plus a convergence curve in async mode. Useful flags:
-`--tolerance` (channel width), `--activation-prob` (async duty cycle), `--seed`, `--no-viz`.
-
-```bash
-uv run --extra cpu --extra decentralized pytest tests/decentralized -v
-```
-
-### Moving devices
-
-Devices may move. Pass the same `EventSchedule` both runs take; when a callback moves the
-nodes, each affected device's star graph is rebuilt at its new degree and carries its own
-state across, so the two runs still agree node for node while links form and break.
-
-```python
-def drift(runtime):
-    runtime.scenario.step_positions(runtime.metadata["velocities"])
-
-schedule = EventSchedule([ScheduledEvent(round_idx=i, callback=drift) for i in range(rounds)])
-
-engine.run(rounds=rounds, program=program, signals=signals,
-           metadata={"velocities": velocities}, schedule=schedule)
-run_decentralized(scenario=scenario, program=program, signals=signals, rounds=rounds,
-                  metadata={"velocities": velocities}, schedule=schedule)
-```
-
-`result.retopologized_rounds` lists the rounds in which some device's neighbour set changed.
-Let the devices slow to a halt and the field re-converges on the true shortest-path metric
-of wherever they ended up — `tests/decentralized/test_moving_devices.py` checks that against
-a NetworkX Dijkstra.
-
-`examples/decentralized/moving_devices.py` animates it: devices drift at full speed, then
-slow to a halt, while the field they are computing keeps up.
-
-```bash
-uv run --extra cpu --extra decentralized \
-    python examples/decentralized/moving_devices.py                  # GIF
-uv run --extra cpu --extra decentralized \
-    python examples/decentralized/moving_devices.py --format mp4     # needs ffmpeg
-uv run --extra cpu --extra decentralized \
-    python examples/decentralized/moving_devices.py --async --rounds 160
-```
-
-The left panel is the live network, nodes coloured by their distance to the source and links
-redrawn every round; the right panel tracks the mean distance for both executions against the
-true metric of the final layout. The run reports how many rounds rewired someone's
-neighbourhood, when the devices parked, and how far the field ended from that true metric.
-
-Two honest caveats it will tell you about. Re-convergence after a link breaks is slow — a
-distance has to *grow*, and a min-based gradient raises it a step at a time rather than a hop
-per round, so give it rounds after the devices park. And a group of devices cut off from the
-source entirely will sit on stale finite estimates that climb very slowly rather than jumping
-to infinity: that is count-to-infinity, a property of the program and not of decentralization,
-which is why both executions do it identically.
-
-**Limits.** Reproducible only for programs whose every `gather` scatters a sensor, a
-constant, or a previous-round `iterate` state — the condition documented on `DeviceContext`.
-It holds for `gradient`, `gradient_cast`, `broadcast` and the channel, subject to
-causal initializers and locally computable payload transformations. `branch`
-conditions must likewise be sensors or previous-round state. The legacy default
-`collect_cast` reconstructs parent choices globally and is **not** equivalent on
-independent devices. Use `collect_cast(..., mode="hard", causal=True)` on symmetric
-networks: each device publishes its potential, stable-ID parent choice and payload;
-receivers accept previously published nominations. Initialization assumes no remote
-contributions, adding potential/parent publication latency before collection.
-`causal=True, mode="soft"` is explicitly unsupported. A changing tree can temporarily
-omit or duplicate contributions; conservation is checked after convergence.
-
-## SEAMS Space-Fluid evaluation
-
-[`examples/seams/`](examples/seams/README.md) learns positive link metrics offline
-for Space-Fluid coordination regions. It compares fixed, searched, parametric and
-neural costs with central K-means on moving spatial phenomena, held-out shapes,
-faults and network-size transfer. Frozen programs execute both in batched form and
-through actual `DeviceRuntime` messages. Boids remains an independent experiment.
-
-```bash
-uv run python -m examples.seams space-fluid --profile smoke --stage all \
-    --out generated/seams/space-fluid-smoke
-uv run python -m examples.seams space-fluid --profile paper-cpu --stage all \
-    --out generated/seams/space-fluid-paper-cpu
-uv run python -m examples.seams boids --profile paper-cpu \
-    --out generated/seams/boids-paper-cpu
-```
-
-The suite README documents the algorithm, biased straight-through gradient,
-complete protocol and scientific limits. Runs include resumable checkpoints,
-provenance, raw results, figures and animations. Incomplete work stays explicit;
-a smoke run does not establish a scientific advantage.
-
----
-
-## VMAS Experiments
-
-`examples/vmas_diffield/` trains differentiable field-calculus controllers inside
-[VMAS](https://github.com/proroklab/VectorizedMultiAgentSimulator), comparing a
-hand-tuned aggregate program against a learned-θ version of the same program, a
-GNN-gated hybrid, and a pure GNN — under SHAC (analytic-gradient policy learning)
-and behaviour cloning. Five scenarios: `flocking`, `flocking_beacon`, `navigation`,
-`discovery`, `sampling`.
-
-Requires the `vmas` extra:
-
-```bash
-uv sync --extra cpu --extra vmas
-```
-
-The programs in `examples/vmas_diffield/programs.py` are written entirely in the DSL —
-`elect` picks a flock leader, `descend` reads out a steering direction from a `gradient`
-field, and `collect_cast`/`broadcast` run the discovery recruit quota. Agents move each
-physics step, so the rollout calls `AggregateContext.update_topology(edge_index,
-positions=pos)` to swap the graph in place while the recurrent field state persists and
-self-heals.
-
-```bash
-# one scenario, quick pass
-uv run --extra cpu --extra vmas python examples/vmas_diffield/main.py \
-    --mode shac --scenarios flocking_beacon --updates 20 --seeds 0 --num-envs 32
-
-# behaviour cloning instead
-uv run --extra cpu --extra vmas python examples/vmas_diffield/main.py \
-    --mode imitation --scenarios flocking,navigation
-
-# cross-scenario figures and master CSV
-uv run --extra cpu --extra vmas python examples/vmas_diffield/summarize.py
-
-# the whole suite (~6-7 h; `--pilot` for a ~15 min sanity pass)
-bash examples/vmas_diffield/run_all.sh --pilot
-```
-
-Artifacts land under `generated/vmas-<scenario>-{shac,imitation}/` and
-`generated/vmas-comparison/`. Training is checkpointed per `(policy, seed)`, so a
-re-run resumes rather than restarting.
-
----
-
-## Spatial Neighborhood Range
-
-For spatial scenarios, `edge_weight` can represent the geometric distance between neighbouring devices. Use `edge_weight_mode="distance"` when building a `SpatialScenario` to carry Euclidean edge lengths instead of unit hop weights.
-
-```python
-from diffield.dsl import gradient
-from diffield.sim import SpatialScenario
-
-scenario = SpatialScenario(positions=positions, edge_radius=0.2, edge_weight_mode="distance")
-
-# Uses geometric edge distances by default
-dist = gradient(source, name="dist")
-```
-
-The convenience operator `gradient(source)` uses the range sensor by default, keeping hop-based programs explicit while allowing geometric graphs to use distances coherent with node positions.
-
-When you provide a custom edge cost to `gradient`, `gradient_cast`, `broadcast`, or `collect_cast`, pass it as a neighborhood expression such as `scatter(weight_field)` or `scatter_range()`.
-
----
-
-## Testing
-
-```bash
-uv run pytest
-```
-
----
-
-## Further Reading
-
-- [Architecture & Design](docs/architecture.md) — UML diagrams and conceptual model
+The rules of the project (test-driven development, Conventional Commits, the Python
+style) are in [CLAUDE.md](CLAUDE.md), and the tests are described in
+[docs/testing.md](docs/testing.md). The figures are drawn by `docs/assets/diagrams.py`
+and the animations rendered by `docs/assets/animations.py`.

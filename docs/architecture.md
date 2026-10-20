@@ -8,70 +8,16 @@ High-level conceptual model of DifField — focusing on **what** each component 
 
 DifField implements a **field calculus** runtime on top of PyTorch. The core idea is that programs are written as **field operations** — computations that happen simultaneously across all nodes of a graph — and are executed through rounds of message passing.
 
-```mermaid
-graph TB
-    subgraph User["User Code"]
-        P[Aggregate Program]
-    end
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/architecture-dark.svg">
+    <img src="assets/architecture.svg" alt="The packages of diffield: dsl, layers, functional and core stacked, with sim and decentralized building on core" width="100%">
+  </picture>
+</p>
 
-    subgraph DSL["DSL Layer"]
-        R[iterate]
-        N[scatter]
-        B[branch]
-        M[mux]
-        G[gradient]
-        C[collect_cast]
-    end
-
-    subgraph Layers["PyTorch Layers"]
-        RL[IterateLayer]
-        NL[GatherLayer]
-        BL[BranchLayer]
-        ML[MuxLayer]
-    end
-
-    subgraph Functional["Functional Primitives"]
-        SA[scatter_aggr]
-        SW[soft_where]
-        MK[masking]
-        FL[folding]
-    end
-
-    subgraph Core["Core Runtime"]
-        AC[AggregateContext]
-        SM[StateManager]
-        RC[RoundContext]
-    end
-
-    subgraph Sim["Simulation Layer"]
-        SC[Scenario]
-        SE[SimulationEngine]
-        EV[EventSchedule]
-        SR[SnapshotRecorder]
-    end
-
-    P --> DSL
-    R --> RL
-    N --> NL
-    B --> BL
-    M --> ML
-    G --> R
-    G --> N
-    C --> R
-    C --> N
-    RL --> SA
-    NL --> SA
-    BL --> SW
-    ML --> SW
-    SA --> AC
-    SW --> AC
-    AC --> SM
-    AC --> RC
-    SE --> SC
-    SE --> AC
-    SE --> EV
-    SE --> SR
-```
+The rest of this page details each package with class diagrams; the user-facing
+side is in [Writing programs](programs.md), [Simulation](simulation.md) and
+[Decentralized execution](decentralized.md).
 
 ---
 
