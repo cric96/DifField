@@ -23,8 +23,10 @@ class AggregateContext:
     ) -> None:
         if isinstance(edge_index, Data):
             data = edge_index
-            if data.num_nodes is None:
-                raise ValueError("PyG Data must define num_nodes for AggregateContext")
+            if data.num_nodes is None or data.edge_index is None:
+                raise ValueError(
+                    "PyG Data must define edge_index and num_nodes for AggregateContext"
+                )
             data_edge_weight = edge_weight
             if data_edge_weight is None and hasattr(data, "edge_attr"):
                 data_edge_weight = data.edge_attr

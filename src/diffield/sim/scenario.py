@@ -146,9 +146,12 @@ class GridScenario:
 
     def sync_context(self, round_ctx) -> None:
         """Push current topology into a round context before a DSL round."""
+        edge_weight = self.edge_weight
+        if not isinstance(edge_weight, torch.Tensor):  # assigned after construction
+            edge_weight = self.set_edge_weight(edge_weight)
         round_ctx.edge_index = self.edge_index
-        round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        round_ctx.edge_weight = edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, edge_weight)
 
 
 @dataclass
@@ -200,9 +203,12 @@ class FullyConnectedScenario:
 
     def sync_context(self, round_ctx) -> None:
         """Push current topology into a round context before a DSL round."""
+        edge_weight = self.edge_weight
+        if not isinstance(edge_weight, torch.Tensor):  # assigned after construction
+            edge_weight = self.set_edge_weight(edge_weight)
         round_ctx.edge_index = self.edge_index
-        round_ctx.edge_weight = self.edge_weight
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
+        round_ctx.edge_weight = edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, edge_weight)
 
 
 @dataclass
