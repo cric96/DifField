@@ -47,9 +47,9 @@ from channel.core import channel_body
 from shared.plotting.common import plt
 from shared.plotting.grid import draw_markers, draw_obstacles, to_grid
 
-from diffield import GridScenario, SimulationEngine, SnapshotRecorder, branch
 from diffield.decentralized import run_decentralized
-from diffield.dsl import field
+from diffield.dsl import branch, field
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
 
 
 def parse_args():

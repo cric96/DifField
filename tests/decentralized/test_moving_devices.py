@@ -16,17 +16,10 @@ pytest.importorskip("mesa", reason="needs the 'decentralized' extra")
 
 import networkx as nx
 
-from diffield import (
-    EventSchedule,
-    ScheduledEvent,
-    SimulationEngine,
-    SpatialScenario,
-    gradient,
-    iterate,
-)
 from diffield.decentralized import run_decentralized
 from diffield.decentralized.runtime import _resize_states
-from diffield.dsl import field
+from diffield.dsl import field, gradient, iterate
+from diffield.sim import EventSchedule, ScheduledEvent, SimulationEngine, SpatialScenario
 
 NUM_DEVICES = 40
 EDGE_RADIUS = 0.30

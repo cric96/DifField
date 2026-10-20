@@ -15,15 +15,10 @@ pytest.importorskip("mesa", reason="needs the 'decentralized' extra")
 
 from channel.core import channel_body
 
-from diffield import (
-    GridScenario,
-    SimulationEngine,
-    branch,
-    gradient,
-)
 from diffield.decentralized import run_decentralized
 from diffield.decentralized.topology import in_edges_of
-from diffield.dsl import field
+from diffield.dsl import branch, field, gradient
+from diffield.sim import GridScenario, SimulationEngine
 
 ROWS = 6
 COLS = 6

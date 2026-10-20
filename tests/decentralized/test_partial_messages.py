@@ -2,8 +2,8 @@
 
 import torch
 
-from diffield import gather_sum, iterate, scatter
 from diffield.decentralized.runtime import DeviceRuntime
+from diffield.dsl import gather_sum, iterate, scatter
 
 
 def program(runtime):

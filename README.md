@@ -46,8 +46,8 @@ uv sync --extra cpu --extra decentralized --extra vmas
 Build a distance field from a source node on a 10×10 grid:
 
 ```python
-from diffield import GridScenario, SimulationEngine, iterate, scatter, mux, gather_min
-from diffield.dsl import field
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.sim import GridScenario, SimulationEngine
 
 scenario = GridScenario(10, 10, connectivity=4)
 engine = SimulationEngine.from_scenario(scenario)
@@ -160,11 +160,10 @@ The simulation layer provides reusable components for running aggregate programs
 ### Example: Dynamic Simulation with Events
 
 ```python
-from diffield import (
-    GridScenario, SimulationEngine, EventSchedule, ScheduledEvent,
-    SnapshotRecorder, iterate, scatter, mux, gather_min,
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.sim import (
+    EventSchedule, GridScenario, ScheduledEvent, SimulationEngine, SnapshotRecorder,
 )
-from diffield.dsl import field
 
 scenario = GridScenario(10, 10, connectivity=4)
 engine = SimulationEngine.from_scenario(scenario)
@@ -391,7 +390,8 @@ re-run resumes rather than restarting.
 For spatial scenarios, `edge_weight` can represent the geometric distance between neighbouring devices. Use `edge_weight_mode="distance"` when building a `SpatialScenario` to carry Euclidean edge lengths instead of unit hop weights.
 
 ```python
-from diffield import SpatialScenario, gradient
+from diffield.dsl import gradient
+from diffield.sim import SpatialScenario
 
 scenario = SpatialScenario(positions=positions, edge_radius=0.2, edge_weight_mode="distance")
 

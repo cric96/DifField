@@ -5,8 +5,7 @@ from __future__ import annotations
 import torch
 
 from conftest import field_zeros
-from diffield import branch, gather_max, gather_sum, iterate, mux, scatter
-from diffield.dsl import field
+from diffield.dsl import branch, field, gather_max, gather_sum, iterate, mux, scatter
 from tests.aggregate.support import ROUNDS, flags, values
 
 

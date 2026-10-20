@@ -6,8 +6,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.decentralized import run_decentralized
+from diffield.dsl import (
     aligned_on,
     bounded_election,
     broadcast,
@@ -20,7 +21,6 @@ from diffield import (
     nbr,
     scatter,
 )
-from diffield.decentralized import run_decentralized
 
 pytest.importorskip("mesa")
 

@@ -5,9 +5,10 @@ from __future__ import annotations
 import torch
 
 from conftest import field_from_values, field_with_overrides
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     branch,
+    field,
     gather,
     gather_max,
     gather_min,
@@ -17,7 +18,6 @@ from diffield import (
     scatter,
     scatter_range,
 )
-from diffield.dsl import field
 from diffield.dsl.scattering import LinkField
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,

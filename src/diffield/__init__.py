@@ -1,6 +1,10 @@
-"""diffield — aggregate computing and differentiable field calculus."""
+"""diffield — aggregate computing and differentiable field calculus.
 
-from .constants import ELECTION_NONE
+The top level holds the execution context and the mode; the primitives live in
+:mod:`diffield.dsl`, the simulator in :mod:`diffield.sim`, the device-by-device
+runtime in :mod:`diffield.decentralized`.
+"""
+
 from .core import (
     AggregateContext,
     DeviceContext,
@@ -11,139 +15,16 @@ from .core import (
     set_default_mode,
     with_mode,
 )
-from .dsl import (
-    Election,
-    aligned_on,
-    as_scatter_expr,
-    bounded_election,
-    branch,
-    broadcast,
-    collect_cast,
-    const,
-    converge_cast,
-    descend,
-    distance,
-    distance_to,
-    elect,
-    field,
-    follow,
-    gather,
-    gather_avg,
-    gather_max,
-    gather_min,
-    gather_sum,
-    gradient,
-    gradient_cast,
-    has_neighbors,
-    iterate,
-    link_cat,
-    link_map,
-    membership,
-    mid,
-    mux,
-    nbr,
-    nbr_count,
-    scatter,
-    scatter_range,
-)
-from .functional import field_where, mask_edges, mask_edges_for_partition, scatter_aggr
-from .layers import BranchLayer, GatherLayer, IterateLayer, MuxLayer
 from .pyg_backend import HAS_PYG
-from .sim import (
-    EventSchedule,
-    FullyConnectedScenario,
-    GridScenario,
-    RelaxedRadiusScenario,
-    ScheduledEvent,
-    SimulationEngine,
-    SimulationRuntime,
-    SnapshotRecorder,
-    SpatialScenario,
-    boids_acceleration_dense,
-    bounce_in_box,
-    build_relaxed_radius_graph,
-    build_spatial_graph,
-    limit_speed,
-    normalize_vectors,
-)
-from .utils import get_device, get_grid_distances, make_grid_graph
 
 __all__ = [
-    # Constants
-    "ELECTION_NONE",
-    # Core
+    "HAS_PYG",
+    "AggregateContext",
+    "DeviceContext",
     "RoundContext",
     "StateManager",
     "aggregate",
-    # DSL
-    "AggregateContext",
-    "DeviceContext",
-    "iterate",
-    "scatter",
-    "gather",
-    "gather_min",
-    "gather_max",
-    "gather_sum",
-    "gather_avg",
-    "has_neighbors",
-    "nbr_count",
-    "nbr",
-    "aligned_on",
-    "bounded_election",
-    "converge_cast",
-    "distance",
-    "distance_to",
-    "link_map",
-    "membership",
-    "Election",
-    "follow",
-    "as_scatter_expr",
-    "link_cat",
-    "scatter_range",
-    "branch",
-    "broadcast",
-    "gradient_cast",
-    "collect_cast",
-    "descend",
-    "elect",
-    "mux",
-    "const",
-    "field",
-    "gradient",
-    "mid",
-    # Layers (nn.Module)
-    "IterateLayer",
-    "GatherLayer",
-    "BranchLayer",
-    "MuxLayer",
-    # Functional
-    "scatter_aggr",
-    "mask_edges",
-    "mask_edges_for_partition",
-    "field_where",
-    "HAS_PYG",
-    # Mode configuration
     "get_default_mode",
     "set_default_mode",
     "with_mode",
-    # Simulation
-    "GridScenario",
-    "SimulationEngine",
-    "SimulationRuntime",
-    "EventSchedule",
-    "ScheduledEvent",
-    "SnapshotRecorder",
-    "SpatialScenario",
-    "RelaxedRadiusScenario",
-    "build_relaxed_radius_graph",
-    "FullyConnectedScenario",
-    "build_spatial_graph",
-    "normalize_vectors",
-    "limit_speed",
-    "bounce_in_box",
-    "boids_acceleration_dense",
-    # Utilities
-    "make_grid_graph",
-    "get_device",
-    "get_grid_distances",
 ]

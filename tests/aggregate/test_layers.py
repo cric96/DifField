@@ -5,8 +5,7 @@ from __future__ import annotations
 import torch
 
 from conftest import field_from_values, field_with_overrides, field_zeros
-from diffield import iterate, mux
-from diffield.dsl import field
+from diffield.dsl import field, iterate, mux
 from diffield.layers import BranchLayer, GatherLayer, IterateLayer, MuxLayer
 from tests.aggregate.support import AddConstant, flags, values
 

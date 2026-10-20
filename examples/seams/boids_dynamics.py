@@ -5,7 +5,8 @@ from typing import NamedTuple
 import torch
 from torch import nn
 
-from diffield import AggregateContext, gather_avg, gather_sum, scatter
+from diffield import AggregateContext
+from diffield.dsl import gather_avg, gather_sum, scatter
 from diffield.sim import bounce_in_box, limit_speed, normalize_vectors
 
 TEACHER = (0.05, 0.9, 0.35)

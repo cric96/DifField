@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from diffield import branch, gather_max, gather_sum, iterate, scatter
-from diffield.dsl import DeviceContext
+from diffield.dsl import DeviceContext, branch, gather_max, gather_sum, iterate, scatter
 
 from .support import (
     FALSE_BRANCH_VALUE,

@@ -3,10 +3,11 @@
 import torch
 
 from conftest import assert_finite_gradients, field_from_values, field_with_overrides
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.dsl import (
     broadcast,
     collect_cast,
+    field,
     gather_min,
     gradient,
     gradient_cast,
@@ -15,7 +16,6 @@ from diffield import (
     scatter,
     scatter_range,
 )
-from diffield.dsl import field
 from diffield.utils import make_grid_graph
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,

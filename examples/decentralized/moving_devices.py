@@ -38,14 +38,9 @@ sys.path.insert(0, str(ROOT / "examples"))
 import torch
 from shared.plotting.common import FuncAnimation, LineCollection, PillowWriter, plt
 
-from diffield import (
-    EventSchedule,
-    ScheduledEvent,
-    SimulationEngine,
-    SpatialScenario,
-    gradient,
-)
 from diffield.decentralized import run_decentralized
+from diffield.dsl import gradient
+from diffield.sim import EventSchedule, ScheduledEvent, SimulationEngine, SpatialScenario
 
 SOURCE = 0
 #: Below this the devices count as parked and the topology stops changing.

@@ -2,7 +2,8 @@
 
 import torch
 
-from diffield import (
+from diffield.dsl import field, gather_min, gradient, iterate, mux, scatter
+from diffield.sim import (
     EventSchedule,
     RelaxedRadiusScenario,
     ScheduledEvent,
@@ -11,15 +12,9 @@ from diffield import (
     boids_acceleration_dense,
     bounce_in_box,
     build_spatial_graph,
-    gather_min,
-    gradient,
-    iterate,
     limit_speed,
-    mux,
     normalize_vectors,
-    scatter,
 )
-from diffield.dsl import field
 
 
 class TestBuildSpatialGraph:

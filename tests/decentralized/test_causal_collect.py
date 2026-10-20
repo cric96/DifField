@@ -5,8 +5,9 @@ from types import SimpleNamespace
 import pytest
 import torch
 
-from diffield import AggregateContext, collect_cast, gradient
+from diffield import AggregateContext
 from diffield.decentralized import run_decentralized
+from diffield.dsl import collect_cast, gradient
 
 
 def graph(pairs):

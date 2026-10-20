@@ -9,8 +9,7 @@ from __future__ import annotations
 import torch
 
 from conftest import field_from_values, field_of, field_ones
-from diffield import branch, gather_max, gather_sum, iterate, scatter
-from diffield.dsl import field
+from diffield.dsl import branch, field, gather_max, gather_sum, iterate, scatter
 from tests.aggregate.support import ROUNDS, flags, values
 
 

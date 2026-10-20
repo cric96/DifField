@@ -8,11 +8,12 @@ import pytest
 import torch
 from torch import Tensor
 
-from diffield import AggregateContext, branch, iterate
+from diffield.dsl import branch, iterate
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
+    from diffield import AggregateContext
     from diffield.dsl import DeviceContext
 
 ABS_TOL = 1e-6

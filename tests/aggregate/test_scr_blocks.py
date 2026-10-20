@@ -4,8 +4,8 @@ from operator import add
 
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext, with_mode
+from diffield.dsl import (
     aligned_on,
     bounded_election,
     broadcast,
@@ -16,7 +16,6 @@ from diffield import (
     mid,
     nbr,
     scatter_range,
-    with_mode,
 )
 from diffield.dsl.helpers import surrogate_probabilities
 

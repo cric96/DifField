@@ -17,9 +17,14 @@ import torch
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components, dijkstra
 
-from diffield import SimulationEngine, SnapshotRecorder, SpatialScenario, branch
-from diffield.dsl import field
-from diffield.sim import EventSchedule, ScheduledEvent
+from diffield.dsl import branch, field
+from diffield.sim import (
+    EventSchedule,
+    ScheduledEvent,
+    SimulationEngine,
+    SnapshotRecorder,
+    SpatialScenario,
+)
 
 from ..channel.core import CHANNEL_THRESHOLD, channel_body
 from .artifacts import json_write, software

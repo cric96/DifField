@@ -14,7 +14,7 @@ from operator import add
 import torch
 from torch import nn
 
-from diffield import (
+from diffield.dsl import (
     aligned_on,
     bounded_election,
     broadcast,

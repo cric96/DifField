@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from diffield import branch, gather_sum, iterate, mux, scatter
-from diffield.dsl import DeviceContext
+from diffield.dsl import DeviceContext, branch, gather_sum, iterate, mux, scatter
 
 from .support import (
     BRANCH_THRESHOLD,

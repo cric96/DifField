@@ -6,17 +6,9 @@ import pytest
 import torch
 
 from conftest import field_from_values
-from diffield import (
-    AggregateContext,
-    branch,
-    gather_max,
-    gather_sum,
-    iterate,
-    mux,
-    scatter,
-)
+from diffield import AggregateContext
 from diffield.core import AlignmentError
-from diffield.dsl import field
+from diffield.dsl import branch, field, gather_max, gather_sum, iterate, mux, scatter
 from tests.aggregate.support import ROUNDS, flags, values
 
 

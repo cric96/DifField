@@ -7,15 +7,14 @@ import torch
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from diffield import (
+from diffield import get_default_mode, with_mode
+from diffield.functional import (
     field_where,
-    get_default_mode,
     mask_edges,
     mask_edges_for_partition,
     scatter_aggr,
-    with_mode,
+    scatter_min_by_first,
 )
-from diffield.functional import scatter_min_by_first
 
 
 class TestScatterAggr:

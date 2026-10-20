@@ -14,19 +14,19 @@ import textwrap
 import pytest
 import torch
 
-from diffield import (
-    AggregateContext,
+from diffield import AggregateContext
+from diffield.core import AlignmentError, aggregate
+from diffield.dsl import (
     branch,
     broadcast,
     collect_cast,
+    field,
     gather,
     gather_min,
     gradient,
     iterate,
     scatter,
 )
-from diffield.core import AlignmentError, aggregate
-from diffield.dsl import field
 
 
 def _line_graph(num_nodes: int) -> tuple[torch.Tensor, int]:
@@ -204,8 +204,8 @@ class TestStability:
         program = textwrap.dedent(
             """
             import torch
-            from diffield import AggregateContext, gradient, iterate
-            from diffield.dsl import field
+            from diffield import AggregateContext
+            from diffield.dsl import field, gradient, iterate
 
             ctx = AggregateContext(torch.tensor([[0, 1], [1, 0]]), 2)
             with ctx.round():

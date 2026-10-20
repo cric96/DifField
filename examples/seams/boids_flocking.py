@@ -10,7 +10,8 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 
-from diffield import AggregateContext, gather_sum, link_cat, scatter
+from diffield import AggregateContext
+from diffield.dsl import gather_sum, link_cat, scatter
 
 X_AXIS = 0
 Y_AXIS = 1

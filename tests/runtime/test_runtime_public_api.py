@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 import torch
 
-from diffield import (
+from diffield.dsl import field, gather_min, gather_sum, gradient, iterate, mux, scatter
+from diffield.sim import (
     EventSchedule,
     FullyConnectedScenario,
     GridScenario,
@@ -13,14 +14,7 @@ from diffield import (
     SimulationEngine,
     SnapshotRecorder,
     build_spatial_graph,
-    gather_min,
-    gather_sum,
-    gradient,
-    iterate,
-    mux,
-    scatter,
 )
-from diffield.dsl import field
 from diffield.utils import get_device, get_grid_distances
 
 
