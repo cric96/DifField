@@ -550,7 +550,7 @@ def campaign(source: Path | None, out: Path, profile="paper-cpu", seconds=14400)
         from .boids_report import report
 
         if not report(out, data, config, budget):
-            raise RuntimeError("Boids evaluation panel is incomplete")
+            raise RuntimeError("Boids evaluation panel is incomplete")  # noqa: TRY301
         json_write(
             progress, {"status": "complete", "stage": "complete", "training_jobs": len(expected)}
         )

@@ -176,7 +176,7 @@ def report(central: list[torch.Tensor], local: list[torch.Tensor]) -> int:
     print(f"  {'round':>5}  {'mismatched':>10}  {'silent':>6}  {'max |diff|':>10}")
     print(f"  {'-' * 5}  {'-' * 10}  {'-' * 6}  {'-' * 10}")
     bad_rounds = 0
-    for idx, (c, d) in enumerate(zip(central, local)):
+    for idx, (c, d) in enumerate(zip(central, local, strict=True)):
         wrong = int(mismatches(c, d).sum())
         bad_rounds += wrong > 0
         silent = int(torch.isnan(d).sum())

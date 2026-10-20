@@ -58,7 +58,7 @@ def all_in_edges(
 
     table: list[tuple[list[int], list[float]]] = [([], []) for _ in range(num_nodes)]
     for source, target, weight in zip(
-        sources.tolist(), targets.tolist(), weights.tolist()
+        sources.tolist(), targets.tolist(), weights.tolist(), strict=True
     ):
         neighbor_ids, ranges = table[target]
         neighbor_ids.append(source)
@@ -84,7 +84,7 @@ def require_symmetric(edge_index: Tensor) -> None:
 
 def edge_index_to_networkx(edge_index: Tensor, num_nodes: int):
     """Build the undirected graph a simulator can navigate from *edge_index*."""
-    import networkx as nx
+    import networkx as nx  # noqa: PLC0415 - networkx is an optional extra
 
     require_symmetric(edge_index)
     graph = nx.Graph()

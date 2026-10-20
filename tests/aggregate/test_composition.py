@@ -81,12 +81,13 @@ class TestMultipleAssignmentsComposition:
         for _ in range(ROUNDS):
             with line_ctx.round():
                 x = iterate(field.zeros(), lambda s: s + 1.0)
+                # The lambdas run within this round, so they read its x and y.
                 y = branch(
                     cond,
-                    lambda: iterate(field.zeros(), lambda s: gather_sum(scatter(s)) + x),
-                    lambda: iterate(field.zeros(), lambda s: gather_max(scatter(s)) + x * 2),
+                    lambda: iterate(field.zeros(), lambda s: gather_sum(scatter(s)) + x),  # noqa: B023
+                    lambda: iterate(field.zeros(), lambda s: gather_max(scatter(s)) + x * 2),  # noqa: B023
                 )
-                z = iterate(field.zeros(), lambda s: gather_sum(scatter(s + y)))
+                z = iterate(field.zeros(), lambda s: gather_sum(scatter(s + y)))  # noqa: B023
 
             results_x.append(x.clone())
             results_y.append(y.clone())

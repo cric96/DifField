@@ -142,7 +142,7 @@ def plot_results(dist: torch.Tensor, snapshots: dict[int, torch.Tensor], args) -
     if len(snapshots) == 1:
         axes = [axes]
     letters = "abcdefghijklmnopqrstuvwxyz"
-    for index, (round_idx, snapshot) in enumerate(sorted(snapshots.items())):
+    for index, (_, snapshot) in enumerate(sorted(snapshots.items())):
         im = axes[index].imshow(snapshot.numpy(), cmap="magma")
         axes[index].axis("off")
         panel_label(axes[index], letters[index % len(letters)])

@@ -83,7 +83,9 @@ def scatter_min_by_first(
     logits = torch.where(finite, logits_raw, torch.full_like(cost, float("-inf")))
     bucket_max = scatter_hard(logits, index, num_nodes, aggr="max", fill_value=float("-inf"))
     safe_bucket_max = torch.where(finite, bucket_max[index], torch.zeros_like(cost))
-    shifted = torch.where(finite, logits_raw - safe_bucket_max, torch.full_like(cost, float("-inf")))
+    shifted = torch.where(
+        finite, logits_raw - safe_bucket_max, torch.full_like(cost, float("-inf"))
+    )
     score = torch.where(finite, shifted.exp(), torch.zeros_like(cost))
     score_sum = scatter_hard(score, index, num_nodes, aggr="sum", fill_value=0.0)
 

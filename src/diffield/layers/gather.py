@@ -133,7 +133,7 @@ class GatherLayer(nn.Module):
         ctx = resolve_context(ctx)
         effective_tag = tag if tag is not None else getattr(x, "tag", None)
 
-        from ..dsl.scattering import LinkField
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         if effective_tag is not None:
             # We can only export if we have a source field (i.e. not a complex expression)
@@ -176,8 +176,8 @@ class GatherLayer(nn.Module):
         ctx: RoundContext,
         edge_idx: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        from ..dsl.helpers import scale_messages
-        from ..dsl.scattering import LinkField
+        from ..dsl.helpers import scale_messages  # noqa: PLC0415 - dsl and layers import each other
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         source_index, target_index = edge_sources_targets(edge_idx)
         include_self = self.include_self
@@ -228,7 +228,7 @@ class GatherLayer(nn.Module):
         return messages, kept_target_index
 
     def _self_messages(self, src: Tensor | LinkField, ctx: RoundContext) -> Tensor:
-        from ..dsl.scattering import LinkField
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         if isinstance(src, LinkField):
             self_index = torch.arange(

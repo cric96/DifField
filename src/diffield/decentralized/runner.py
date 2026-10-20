@@ -100,7 +100,7 @@ def run_decentralized(
     way the new neighbourhoods reach the devices before the round executes,
     matching the engine's event-then-topology-then-round ordering.
     """
-    from .mesa_backend import DecentralizedModel
+    from .mesa_backend import DecentralizedModel  # noqa: PLC0415 - mesa is an optional extra
 
     if getattr(scenario, "self_loops", False):
         raise NotImplementedError(

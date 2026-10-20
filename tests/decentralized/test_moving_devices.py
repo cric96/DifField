@@ -124,7 +124,7 @@ def true_distance_field(scenario, source: int) -> torch.Tensor:
     graph.add_nodes_from(range(scenario.num_nodes))
     edges = scenario.edge_index.cpu().t().tolist()
     weights = scenario.edge_weight.detach().cpu().tolist()
-    for (source_node, target_node), weight in zip(edges, weights):
+    for (source_node, target_node), weight in zip(edges, weights, strict=True):
         if source_node != target_node:
             graph.add_edge(int(source_node), int(target_node), weight=weight)
 
@@ -165,7 +165,7 @@ def test_moving_devices_match_round_by_round(layout):
     assert len(local.retopologized_rounds) > TOTAL_ROUNDS // 2
     assert torch.equal(central_scenario.edge_index, local_scenario.edge_index)
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
 
@@ -201,7 +201,7 @@ def test_slow_drift_keeps_links_but_restretches_them(layout):
     # Most rounds move the devices without rewiring anything.
     assert 0 < len(local.retopologized_rounds) < TOTAL_ROUNDS // 2
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
 
@@ -296,7 +296,7 @@ def test_device_memory_survives_rewiring(layout):
 
     assert len(local.retopologized_rounds) > TOTAL_ROUNDS // 2
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
     # Every device ran every round and remembers all of them, rewiring or not.

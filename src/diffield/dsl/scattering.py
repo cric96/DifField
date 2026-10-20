@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import torch
 from torch import Tensor
 
-from ..core import RoundContext, current_context
+from ..core import RoundContext, context_stack, current_context
 from .helpers import edge_sources_targets, ensure_field
 
 if TYPE_CHECKING:
@@ -51,9 +51,7 @@ class LinkField:
         return f"<{base}>"
 
     def full_repr(self, max_nodes: int = 8) -> str:
-        """Evaluate the expression in the current context and return a visual grid representation of the messages."""
-        from ..core import context_stack
-
+        """Evaluate in the current context and return a grid of the messages."""
         if not context_stack():
             return f"<{self.__str__()} (no active context for evaluation)>"
 
@@ -123,7 +121,8 @@ class LinkField:
 
             if num_nodes > max_nodes:
                 lines.append(
-                    f"  ... and {num_nodes - max_nodes} more nodes not shown. (Showing top-left {max_nodes}x{max_nodes} corner)"
+                    f"  ... and {num_nodes - max_nodes} more nodes not shown. "
+                    f"(Showing top-left {max_nodes}x{max_nodes} corner)"
                 )
 
             return "\n".join(lines)

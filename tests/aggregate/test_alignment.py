@@ -215,7 +215,7 @@ class TestStability:
             """
         )
         runs = {
-            subprocess.run(
+            subprocess.run(  # noqa: S603 - this interpreter, a program of the test
                 [sys.executable, "-c", program],
                 capture_output=True,
                 text=True,

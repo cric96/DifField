@@ -127,7 +127,7 @@ class StateManager:
         :func:`field_where` is used rather than ``torch.where`` so that soft mode
         stays differentiable through the restriction.
         """
-        from ..functional import field_where
+        from ..functional import field_where  # noqa: PLC0415 - functional imports core
 
         for key in keys:
             state = self._states.get(key)
@@ -168,10 +168,6 @@ class StateManager:
             return self._states[self.resolve(name)]
         except KeyError:
             return None
-
-    def keys(self) -> list[str]:
-        """Return a list of all state keys."""
-        return list(self._states.keys())
 
     def initializers(self) -> dict[str, Tensor]:
         """The initial value recorded for each slot by its last ``get_or_init``.

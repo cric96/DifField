@@ -234,7 +234,8 @@ def simulate(scene, *, seconds=20, nodes=144, seed=3, config=None):
     for step in range(round(seconds / config.dt)):
         gust = wind(p, step * config.dt) if scene == "flock" else None
         p, v = model.step(p, v, external=gust)
-        positions.append(p); velocities.append(v)
+        positions.append(p)
+        velocities.append(v)
     return {"positions": torch.stack(positions), "velocities": torch.stack(velocities),
             "group": group, "scene": scene, "seed": seed, "config": vars(config)}
 
@@ -248,7 +249,8 @@ def diagnostics(replay):
         direction[:-1, :, X_AXIS] * direction[1:, :, Y_AXIS]
         - direction[:-1, :, Y_AXIS] * direction[1:, :, X_AXIS]
     )
-    turn = torch.atan2(cross, (direction[:-1] * direction[1:]).sum(-1)).abs() / replay["config"]["dt"]
+    alignment = (direction[:-1] * direction[1:]).sum(-1)
+    turn = torch.atan2(cross, alignment).abs() / replay["config"]["dt"]
     spacing = []
     for positions in p:
         d = torch.cdist(positions, positions)

@@ -85,7 +85,7 @@ def resolve_edge_cost(
     weight: Tensor | LinkField | None, ctx: RoundContext
 ) -> Tensor:
     """Resolve an edge cost tensor from various input types."""
-    from .scattering import LinkField
+    from .scattering import LinkField  # noqa: PLC0415 - scattering imports helpers
 
     if weight is None:
         if ctx.edge_weight is not None:
@@ -238,7 +238,7 @@ def soft_parent_weights_with_edge_cost(
     ctx = resolve_context(ctx)
     edges = ctx.edge_index if edge_index is None else edge_index
     child, parent = edge_sources_targets(edges)
-    src, tgt = child, parent
+    src = child
     if isinstance(tau, Tensor):
         effective_tau = tau.to(
             device=potential.device, dtype=potential.dtype

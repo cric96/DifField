@@ -110,8 +110,11 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["S101", "PLR2004"]
-# Experiment scripts: long training and plotting routines, run from the repository root.
-"examples/**" = ["E402", "PLC0415", "PLR0912", "PLR0915", "S101"]
+# Experiment scripts: long training and plotting routines, run from the repository root,
+# whose figures use typographic minus signs and dashes.
+"examples/**" = ["E402", "PLC0415", "PLR0912", "PLR0915", "RUF001", "S101"]
+# Writes the Markdown report of the campaign, whose prose lines stay whole.
+"examples/seams/boids_report.py" = ["E501"]
 "scripts/**" = ["E402", "PLC0415", "PLR0912", "PLR0915", "S603", "S607"]
 
 [tool.pyright]

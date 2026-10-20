@@ -105,7 +105,7 @@ def test_gradient_matches_round_by_round(grid):
         scenario=grid, program=gradient_program, signals=signals, rounds=ROUNDS
     )
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
 
@@ -118,7 +118,7 @@ def test_channel_matches_round_by_round(grid, channel_signals):
         rounds=ROUNDS,
     )
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
 
@@ -137,7 +137,7 @@ def test_obstacle_branch_matches_round_by_round(grid, channel_signals):
         rounds=ROUNDS,
     )
 
-    for idx, (expected, actual) in enumerate(zip(central, local.fields)):
+    for idx, (expected, actual) in enumerate(zip(central, local.fields, strict=True)):
         assert_same_field(expected, actual, idx)
 
 

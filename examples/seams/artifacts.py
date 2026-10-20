@@ -42,8 +42,8 @@ def read_json(path: Path):
 
 def software():
     def git(*args):
-        return subprocess.run(  # noqa: S603 -- fixed read-only git commands below
-            ["git", *args],
+        return subprocess.run(  # noqa: S603 - fixed read-only git commands below
+            ["git", *args],  # noqa: S607
             cwd=PROJECT,
             capture_output=True,
             text=True,

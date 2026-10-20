@@ -425,7 +425,9 @@ def report(out, data, config, budget, render=True):
         for method in methods:
             stats = [s for s in summaries if s["regime"] == regime and s["method"] == method]
             p, v = stats
-            fmt = lambda x: "incomplete" if x is None else f"{x:.6f}"
+            def fmt(x):
+                return "incomplete" if x is None else f"{x:.6f}"
+
             ci = "N/A" if not p["ci95"] else f"[{p['ci95'][0]:.6f}, {p['ci95'][1]:.6f}]"
             selected = [r for r in rows if r["regime"] == regime and r["method"] == method]
             params = selected[0]["parameters"] if selected else "—"

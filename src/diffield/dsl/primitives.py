@@ -51,7 +51,7 @@ def iterate(
     is optional and labels the occurrence, which keeps its store key stable and
     readable — ``iterate(..., name="dist")`` becomes ``/it:dist``.
     """
-    from ..layers import IterateLayer
+    from ..layers import IterateLayer  # noqa: PLC0415 - dsl and layers import each other
 
     return IterateLayer(init, fn, name=name)(torch.empty(0))
 
@@ -74,8 +74,7 @@ def gather(
     occurrence's alignment path, where it can be overridden by runtime message
     overrides.  ``tag`` is optional and labels the occurrence.
     """
-    from ..core import current_context
-    from ..layers import GatherLayer
+    from ..layers import GatherLayer  # noqa: PLC0415 - dsl and layers import each other
 
     ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
@@ -175,7 +174,7 @@ def branch(
     matching field-calculus alignment, so ``reset_states`` is no longer needed
     and is ignored.  ``branch_name`` optionally labels the occurrence.
     """
-    from ..layers import BranchLayer
+    from ..layers import BranchLayer  # noqa: PLC0415 - dsl and layers import each other
 
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_BRANCH
@@ -226,7 +225,7 @@ def mid() -> Tensor:
     return ctx.node_ids
 
 
-class field:
+class field:  # noqa: N801 - a namespace, read as field.of(...) in programs
     """Context-aware constructors for node field tensors."""
 
     @staticmethod
@@ -261,6 +260,7 @@ class field:
         tensor = torch.as_tensor(values, dtype=torch.float32, device=ctx.edge_index.device)
         if tensor.shape[0] != ctx.num_nodes:
             raise ValueError(
-                f"Length of values ({tensor.shape[0]}) does not match number of nodes ({ctx.num_nodes})"
+                f"Length of values ({tensor.shape[0]}) does not match "
+                f"number of nodes ({ctx.num_nodes})"
             )
         return tensor

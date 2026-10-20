@@ -1,4 +1,4 @@
-"""Tests for higher-order aggregate building blocks: gradient, gradient_cast, broadcast, collect_cast."""
+"""Tests for the building blocks: gradient, gradient_cast, broadcast, collect_cast."""
 
 import torch
 
@@ -16,6 +16,7 @@ from diffield import (
     scatter_range,
 )
 from diffield.dsl import field
+from diffield.utils import make_grid_graph
 from tests.aggregate.support import (
     GRADIENT_ROUNDS,
     LINE_SOURCE,
@@ -29,8 +30,6 @@ from tests.aggregate.support import (
 
 class TestGradient:
     def test_fixed_hop_count(self):
-        from diffield.utils import make_grid_graph
-
         rows, cols = 5, 5
         edge_index, n = make_grid_graph(rows, cols)
         w = torch.tensor(1.0)

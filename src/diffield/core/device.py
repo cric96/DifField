@@ -32,7 +32,9 @@ class _MessageStateManager(StateManager):
                 continue
             for position, value in enumerate(values):
                 if value is not None:
-                    state[position + 1] = torch.as_tensor(value, dtype=state.dtype, device=state.device)
+                    state[position + 1] = torch.as_tensor(
+                        value, dtype=state.dtype, device=state.device
+                    )
         return state
 
 

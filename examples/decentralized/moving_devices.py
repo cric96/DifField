@@ -187,7 +187,7 @@ def true_distance_field(scenario, source: int) -> torch.Tensor:
     graph.add_nodes_from(range(scenario.num_nodes))
     edges = scenario.edge_index.cpu().t().tolist()
     weights = scenario.edge_weight.detach().cpu().tolist()
-    for (source_node, target_node), weight in zip(edges, weights):
+    for (source_node, target_node), weight in zip(edges, weights, strict=True):
         if source_node != target_node:
             graph.add_edge(int(source_node), int(target_node), weight=weight)
 
@@ -290,7 +290,8 @@ def animate(geometry, central, local, target_mean, args, paths):
         ax_net.set_xticks([])
         ax_net.set_yticks([])
         ax_net.set_title(
-            f"round {round_idx:>3}   links {len(undirected_segments(positions, frame['edge_index']))}"
+            f"round {round_idx:>3}   "
+            f"links {len(undirected_segments(positions, frame['edge_index']))}"
             f"   devices {'moving' if moving else 'parked'}\n"
             f"max |centralized − decentralized| = {worst:.3g}"
         )
@@ -391,7 +392,7 @@ def main():
     assert torch.allclose(central_scenario.positions, local_scenario.positions)
     assert torch.equal(central_scenario.edge_index, local_scenario.edge_index)
 
-    bad = sum(int(mismatches(c, d).any()) for c, d in zip(central, result.fields))
+    bad = sum(int(mismatches(c, d).any()) for c, d in zip(central, result.fields, strict=True))
     parked = next(
         (idx for idx, frame in enumerate(geometry) if frame["speed"] < STOPPED), None
     )

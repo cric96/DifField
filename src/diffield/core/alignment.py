@@ -49,7 +49,7 @@ def set_alignment_check(mode: str) -> None:
     evaluation tree changed shape between rounds — usually a Python-level
     ``if`` reshuffling occurrence counters, which silently re-keys state.
     """
-    global _check_mode
+    global _check_mode  # noqa: PLW0603 - private, read through get_alignment_check
     if mode not in _CHECK_MODES:
         raise ValueError(f"mode must be one of {_CHECK_MODES}, got {mode!r}")
     _check_mode = mode
