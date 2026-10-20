@@ -1,0 +1,362 @@
+"""Draw the conceptual figures of the docs as SVG, in a light and in a dark theme.
+
+Each figure is written to ``docs/assets/<name>.svg`` and ``docs/assets/<name>-dark.svg``;
+the pages pick one with ``<picture>`` and ``prefers-color-scheme``:
+
+    uv run python docs/assets/diagrams.py
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from html import escape
+from pathlib import Path
+
+ASSETS = Path(__file__).resolve().parent
+SANS = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
+MONO = "'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace"
+# Distances along the colours of the logo: near is blue, far is orange; white text on all.
+RAMP = ("#1f5fa8", "#1f7f74", "#3f7f2f", "#b45309", "#9a3412")
+
+
+@dataclass(frozen=True)
+class Theme:
+    """The colours of a figure on a page of one theme, and the suffix of its file."""
+
+    suffix: str
+    text: str
+    muted: str
+    card: str
+    border: str
+    edge: str
+    blue: str
+    green: str
+    orange: str
+    tint: str  # behind a highlighted element
+
+
+LIGHT = Theme(
+    suffix="", text="#1f2328", muted="#59636e", card="#f6f8fa", border="#d1d9e0",
+    edge="#afb8c1", blue="#1f5fa8", green="#2f7d4f", orange="#b45309", tint="#fff4e5",
+)
+DARK = Theme(
+    suffix="-dark", text="#f0f6fc", muted="#9198a1", card="#151b23", border="#3d444d",
+    edge="#57606a", blue="#6ea8fe", green="#7ee2a8", orange="#f5a35c", tint="#2d2116",
+)
+
+
+class Svg:
+    """A figure under construction: shapes are appended in drawing order."""
+
+    def __init__(self, width: int, height: int, theme: Theme) -> None:
+        self.width, self.height, self.theme = width, height, theme
+        self.parts: list[str] = []
+
+    def add(self, element: str) -> None:
+        """Append raw SVG markup."""
+        self.parts.append(element)
+
+    def card(self, x: float, y: float, w: float, h: float, *, fill: str | None = None,
+             stroke: str | None = None, dashed: bool = False, radius: float = 14) -> None:
+        """A rounded panel."""
+        dash = ' stroke-dasharray="6 5"' if dashed else ""
+        self.add(
+            f'<rect x="{x}" y="{y}" width="{w}" height="{h}" rx="{radius}" '
+            f'fill="{fill or self.theme.card}" stroke="{stroke or self.theme.border}" '
+            f'stroke-width="1.5"{dash}/>'
+        )
+
+    def text(self, x: float, y: float, content: str, *, size: float = 14,
+             color: str | None = None, weight: int = 400, anchor: str = "start",
+             mono: bool = False) -> None:
+        """A line of text, escaped unless it is already made of tspans."""
+        body = content if content.startswith("<tspan") else escape(content)
+        self.add(
+            f'<text x="{x}" y="{y}" font-family="{MONO if mono else SANS}" font-size="{size}" '
+            f'font-weight="{weight}" fill="{color or self.theme.text}" '
+            f'text-anchor="{anchor}" xml:space="preserve">{body}</text>'
+        )
+
+    def line(self, x1: float, y1: float, x2: float, y2: float, *, color: str | None = None,
+             width: float = 1.5, arrow: bool = False, dashed: bool = False) -> None:
+        """A straight segment, with an arrowhead at its end if asked."""
+        marker = f' marker-end="url(#{self._marker(color or self.theme.edge)})"' if arrow else ""
+        dash = ' stroke-dasharray="5 4"' if dashed else ""
+        self.add(
+            f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color or self.theme.edge}" '
+            f'stroke-width="{width}" stroke-linecap="round"{dash}{marker}/>'
+        )
+
+    def path(self, d: str, *, color: str, width: float = 2, dashed: bool = False) -> None:
+        """A path ending in an arrowhead."""
+        dash = ' stroke-dasharray="6 5"' if dashed else ""
+        self.add(
+            f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{width}" '
+            f'stroke-linecap="round"{dash} marker-end="url(#{self._marker(color)})"/>'
+        )
+
+    def node(self, x: float, y: float, label: str, fill: str, *, r: float = 15,
+             ring: str | None = None) -> None:
+        """A device: a filled disc with its value in white."""
+        stroke = ring or self.theme.card
+        self.add(f'<circle cx="{x}" cy="{y}" r="{r}" fill="{fill}" stroke="{stroke}" '
+                 f'stroke-width="{3 if ring else 2}"/>')
+        self.text(x, y + 4.5, label, size=13, color="#ffffff", weight=700, anchor="middle")
+
+    def chip(self, x: float, y: float, label: str, color: str) -> None:
+        """A small tag on a link, centred on (x, y)."""
+        width = 14 + 8.4 * len(label)
+        self.add(f'<rect x="{x - width / 2}" y="{y - 12}" width="{width}" height="24" rx="12" '
+                 f'fill="{self.theme.card}" stroke="{color}" stroke-width="1.5"/>')
+        self.text(x, y + 5, label, size=14, color=color, weight=700, anchor="middle", mono=True)
+
+    def _marker(self, color: str) -> str:
+        return "arrow-" + color.lstrip("#")
+
+    def render(self) -> str:
+        """The finished document."""
+        colors = {part.split("url(#arrow-")[1].split(")")[0]
+                  for part in self.parts if "url(#arrow-" in part}
+        markers = "".join(
+            f'<marker id="arrow-{color}" viewBox="0 0 10 10" refX="8.5" refY="5" '
+            f'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+            f'<path d="M0,0 L10,5 L0,10 z" fill="#{color}"/></marker>'
+            for color in sorted(colors)
+        )
+        return (
+            f'<svg xmlns="http://www.w3.org/2000/svg" width="{self.width}" '
+            f'height="{self.height}" viewBox="0 0 {self.width} {self.height}">'
+            f"<defs>{markers}</defs>{''.join(self.parts)}</svg>\n"
+        )
+
+
+def code(*tokens: tuple[str, str | None]) -> str:
+    """A line of code as tspans: each token is (text, colour or None for the default)."""
+    return "".join(
+        f'<tspan fill="{color}">{escape(text)}</tspan>' if color else
+        f"<tspan>{escape(text)}</tspan>"
+        for text, color in tokens
+    )
+
+
+def program(theme: Theme) -> Svg:
+    """The idea in three steps: write one program, run it as message passing, learn through it."""
+    svg = Svg(960, 340, theme)
+    blue, green, orange = theme.blue, theme.green, theme.orange
+    headings = ("1. Write one program", "2. Every node runs it", "3. Gradients flow back")
+    for index, heading in enumerate(headings):
+        x = 10 + index * 318
+        svg.card(x, 10, 302, 320)
+        svg.text(x + 151, 44, heading, size=17, weight=700, anchor="middle",
+                 color=(blue, green, orange)[index])
+
+    lines = [
+        code(("iterate", blue), ("(", None)),
+        code(("  field.inf(),", None)),
+        code(("  lambda", theme.muted), (" d: ", None), ("mux", blue), ("(", None)),
+        code(("    source, field.of(0.0),", None)),
+        code(("    ", None), ("gather_min", blue), ("(", None)),
+        code(("      ", None), ("scatter", blue), ("(d)", None)),
+        code(("      + ", None), ("scatter_range", blue), ("()", None)),
+        code(("    ),", None)),
+        code(("  ),", None)),
+        code((")", None)),
+    ]
+    for row, line in enumerate(lines):
+        svg.text(36, 82 + row * 21, line, size=13.5, mono=True)
+    svg.text(161, 314, "the distance to the nearest source", size=13, color=theme.muted,
+             anchor="middle")
+
+    # A small network: the value of each device is its distance from the source.
+    nodes = {
+        "s": (372, 120, "0"), "a": (440, 82, "1"), "b": (446, 168, "1"),
+        "c": (516, 122, "2"), "d": (520, 214, "2"), "e": (586, 170, "3"),
+        "f": (590, 262, "3"), "g": (380, 230, "1"),
+    }
+    links = [("s", "a"), ("s", "b"), ("a", "c"), ("b", "c"), ("b", "d"), ("c", "e"),
+             ("d", "e"), ("d", "f"), ("s", "g"), ("g", "d"), ("e", "f")]
+    for first, second in links:
+        (x1, y1, _), (x2, y2, _) = nodes[first], nodes[second]
+        svg.line(x1, y1, x2, y2)
+    for x1, y1, x2, y2 in ((446, 168, 512, 199), (586, 170, 530, 202), (380, 230, 502, 217)):
+        svg.line(x1, y1, x2, y2, color=green, width=2.5, arrow=True)
+    for key, (x, y, label) in nodes.items():
+        svg.node(x, y, label, RAMP[int(label)], ring=green if key == "d" else None)
+    svg.text(479, 300, "values cross the links, each node", size=13, color=theme.muted,
+             anchor="middle")
+    svg.text(479, 318, "keeps the least: a round of message passing", size=13,
+             color=theme.muted, anchor="middle")
+
+    # Rounds unroll in time; the loss at the end reaches the parameters of every round.
+    for row, label in enumerate(("round 1", "round 2", "⋮", "round T")):
+        y = 70 + row * 48
+        if label == "⋮":
+            svg.text(770, y + 22, label, size=18, color=theme.muted, anchor="middle")
+            continue
+        svg.card(712, y, 116, 34, fill=theme.tint, stroke=theme.border, radius=8)
+        svg.text(770, y + 22, label, size=14, weight=600, anchor="middle")
+        svg.line(690, 248, 711, y + 17, color=theme.muted, width=1)
+    for y1, y2 in ((104, 118), (152, 166), (200, 214)):
+        svg.line(770, y1, 770, y2, color=blue, width=2, arrow=True)
+    svg.card(712, 262, 116, 34, fill=theme.card, stroke=orange, radius=8)
+    svg.text(770, 284, "loss", size=14, weight=700, anchor="middle", color=orange)
+    svg.line(770, 248, 770, 260, color=blue, width=2, arrow=True)
+    svg.path("M 832 279 C 862 279, 862 87, 832 87", color=orange, width=2.2, dashed=True)
+    svg.text(902, 190, "∂loss/∂θ", size=14, weight=700, color=orange, anchor="middle")
+    svg.card(656, 232, 34, 32, fill=theme.card, stroke=theme.muted, radius=16)
+    svg.text(673, 253, "θ", size=16, weight=700, anchor="middle", color=theme.muted)
+    svg.text(797, 318, "θ: link costs, weights, networks", size=13, color=theme.muted,
+             anchor="middle")
+    return svg
+
+
+def round_anatomy(theme: Theme) -> Svg:
+    """One round of the distance program: a node field, a link field, a node field again."""
+    svg = Svg(960, 342, theme)
+    blue, green, orange = theme.blue, theme.green, theme.orange
+    graph = {"s": (0, 40), "b": (78, 30), "c": (150, 78), "d": (98, 128)}
+    links = [("s", "b"), ("b", "c"), ("b", "d"), ("c", "d")]
+    stages = (
+        ("node field  d  [N]", "what each node holds", ("0", "1", "2", "∞")),
+        ("link field  [E]", "scatter(d) + scatter_range()", None),
+        ("node field  [N]", "gather_min, then mux at the source", ("0", "1", "2", "2")),
+    )
+    for index, (title, caption, values) in enumerate(stages):
+        x0 = 10 + index * 318
+        svg.card(x0, 10, 290, 250)
+        svg.text(x0 + 145, 42, title, size=15, weight=700, anchor="middle", mono=True,
+                 color=(blue, green, orange)[index])
+        svg.text(x0 + 145, 244, caption, size=13, color=theme.muted, anchor="middle",
+                 mono=index == 1)
+        ox, oy = x0 + 70, 80
+        for first, second in links:
+            (x1, y1), (x2, y2) = graph[first], graph[second]
+            svg.line(ox + x1, oy + y1, ox + x2, oy + y2,
+                     color=theme.edge if index != 1 else theme.border)
+        if index == 1:
+            # The values the links into d carry: the distance of the sender, plus one.
+            for sender, value in (("b", "2"), ("c", "3")):
+                (x1, y1), (x2, y2) = graph[sender], graph["d"]
+                svg.line(ox + x1, oy + y1, ox + x2 + (x1 - x2) * 0.22, oy + y2 + (y1 - y2) * 0.22,
+                         color=green, width=2.5, arrow=True)
+                svg.chip(ox + (x1 + x2) / 2 + (14 if sender == "c" else -16), oy + (y1 + y2) / 2,
+                         value, green)
+        for position, (key, (x, y)) in enumerate(graph.items()):
+            if index == 1:
+                svg.add(f'<circle cx="{ox + x}" cy="{oy + y}" r="15" fill="{theme.card}" '
+                        f'stroke="{green if key == "d" else theme.edge}" stroke-width="2"/>')
+                svg.text(ox + x, oy + y + 4.5, key, size=13, weight=700, anchor="middle",
+                         color=theme.muted)
+                continue
+            value = values[position]
+            fill = RAMP[min(int(value), 4)] if value != "∞" else theme.edge
+            ring = orange if index == 2 and key == "d" else None
+            svg.node(ox + x, oy + y, value, fill, ring=ring)
+    for x in (302, 620):
+        svg.line(x, 135, x + 14, 135, color=theme.muted, width=2, arrow=True)
+    svg.path("M 790 262 C 790 312, 160 312, 160 266", color=blue, width=2)
+    svg.text(475, 330, "iterate keeps the result: the next round starts from it", size=13.5,
+             color=blue, anchor="middle", weight=600)
+    return svg
+
+
+def architecture(theme: Theme) -> Svg:
+    """The packages of diffield, from the programs down to the runtime."""
+    svg = Svg(960, 420, theme)
+    blue, green, orange = theme.blue, theme.green, theme.orange
+    svg.card(10, 10, 600, 56, fill="none", dashed=True)
+    svg.text(30, 36, "programs", size=15, weight=700)
+    svg.text(30, 56, "your code, and the experiments in examples/ (moving to a repository of "
+             "their own)", size=13, color=theme.muted)
+    stack = (
+        ("diffield.dsl",
+         "iterate · scatter · gather · branch · mux · gradient · broadcast · elect"),
+        ("diffield.layers", "the primitives as torch.nn.Module: IterateLayer, GatherLayer, …"),
+        ("diffield.functional", "scatter_aggr, masks, folds: exact in hard mode, smooth in soft"),
+        ("diffield.core", "AggregateContext · RoundContext · StateManager · alignment"),
+    )
+    for row, (name, content) in enumerate(stack):
+        y = 96 + row * 78
+        svg.card(10, y, 600, 60)
+        svg.text(30, y + 26, name, size=15, weight=700, mono=True, color=blue)
+        svg.text(30, y + 47, content, size=13, color=theme.muted)
+        svg.line(310, y - 28 if row == 0 else y - 16, 310, y - 2, color=theme.muted, width=1.8,
+                 arrow=True)
+    side = (
+        (96, "diffield.sim", green,
+         ("scenarios, SimulationEngine,", "events, recording:", "rounds over the whole graph")),
+        (252, "diffield.decentralized", orange,
+         ("the same program, one device", "at a time on Mesa,", "talking by messages")),
+    )
+    for y, name, color, rows in side:
+        svg.card(650, y, 300, 138)
+        svg.text(670, y + 28, name, size=15, weight=700, mono=True, color=color)
+        for index, row in enumerate(rows):
+            svg.text(670, y + 56 + index * 20, row, size=13, color=theme.muted)
+    svg.path("M 649 165 H 626 V 350 H 614", color=green, width=2)
+    svg.path("M 649 321 H 636 V 372 H 614", color=orange, width=2)
+    svg.text(310, 412, "dsl, sim and decentralized build on core, never the other way round",
+             size=13, color=theme.muted, anchor="middle")
+    return svg
+
+
+def execution(theme: Theme) -> Svg:
+    """The same program, batched over the graph or run device by device, gives the same field."""
+    svg = Svg(960, 320, theme)
+    blue, orange = theme.blue, theme.orange
+    graph = {
+        0: (60, 70), 1: (140, 50), 2: (120, 140), 3: (210, 110),
+        4: (200, 200), 5: (290, 170), 6: (90, 220), 7: (300, 70),
+    }
+    links = [(0, 1), (0, 2), (1, 2), (1, 3), (2, 3), (2, 4), (3, 5), (4, 5), (2, 6), (6, 4),
+             (3, 7), (5, 7)]
+    distance = {0: 0, 1: 1, 2: 1, 3: 2, 4: 2, 5: 3, 6: 2, 7: 3}
+    titles = (
+        ("Batched", "SimulationEngine", blue),
+        ("Device by device", "run_decentralized", orange),
+    )
+    for index, (title, api, color) in enumerate(titles):
+        x0 = 10 + index * 520
+        svg.card(x0, 10, 420, 300)
+        svg.text(x0 + 24, 42, title, size=17, weight=700, color=color)
+        svg.text(x0 + 396, 42, api, size=13, mono=True, color=theme.muted, anchor="end")
+        ox, oy = x0 + 40, 40
+        focus = {2} | {b for a, b in links if a == 2} | {a for a, b in links if b == 2}
+        for first, second in links:
+            (x1, y1), (x2, y2) = graph[first], graph[second]
+            in_star = index == 1 and 2 in (first, second)
+            svg.line(ox + x1, oy + y1, ox + x2, oy + y2, color=orange if in_star else theme.edge,
+                     width=2.5 if in_star else 1.5, dashed=index == 1 and not in_star)
+        for key, (x, y) in graph.items():
+            faded = index == 1 and key not in focus
+            fill = theme.edge if faded else RAMP[distance[key]]
+            svg.node(ox + x, oy + y, str(distance[key]), fill,
+                     ring=orange if index == 1 and key == 2 else None)
+        caption = (
+            "one tensor operation per round, over all N nodes"
+            if index == 0 else "each device sees its neighbours' last messages"
+        )
+        svg.text(x0 + 210, 296, caption, size=13, color=theme.muted, anchor="middle")
+    svg.text(480, 152, "=", size=44, weight=700, anchor="middle", color=theme.text)
+    svg.text(480, 182, "same field,", size=13, color=theme.muted, anchor="middle")
+    svg.text(480, 200, "node for node", size=13, color=theme.muted, anchor="middle")
+    return svg
+
+
+FIGURES = {
+    "program": program,
+    "round": round_anatomy,
+    "architecture": architecture,
+    "execution": execution,
+}
+
+
+def main() -> None:
+    """Write every figure in both themes."""
+    for name, draw in FIGURES.items():
+        for theme in (LIGHT, DARK):
+            (ASSETS / f"{name}{theme.suffix}.svg").write_text(draw(theme).render())
+
+
+if __name__ == "__main__":
+    main()
