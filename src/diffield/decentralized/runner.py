@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from dataclasses import field as dataclass_field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import torch
 from torch import Tensor
@@ -13,6 +12,9 @@ from torch import Tensor
 from ..sim.events import SimulationRuntime
 from .runtime import DeviceRuntime
 from .topology import all_in_edges, edge_index_to_networkx, in_edges_of, require_symmetric
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
 
 
 @dataclass

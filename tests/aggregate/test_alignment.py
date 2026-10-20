@@ -165,7 +165,7 @@ class TestBranchAlignment:
                 branch(
                     cond,
                     lambda: broadcast(root, payload, name="bc"),
-                    lambda: field.zeros(),
+                    field.zeros,
                     mode=mode,
                 )
 
@@ -190,7 +190,7 @@ class TestBranchAlignment:
                     lambda: collect_cast(
                         potential, local, torch.tensor(0.0), torch.add, name="cc"
                     ),
-                    lambda: field.zeros(),
+                    field.zeros,
                     mode=mode,
                 )
 

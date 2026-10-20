@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor, nn
@@ -15,6 +15,9 @@ from ..core.mode import get_default_mode, get_default_tau
 from ..functional import field_where
 from .helpers import ensure_field
 from .scattering import LinkField, scatter
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator
 
 
 class _LambdaModule(nn.Module):

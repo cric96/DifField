@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import warnings
-from collections.abc import Iterable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
 
 from ..constants import CONDITION_THRESHOLD
 from .alignment import SEP, path_has_label, resolve_label
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 
 class StateManager:

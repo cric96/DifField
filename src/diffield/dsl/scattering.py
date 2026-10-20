@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
 
 from ..core import RoundContext, current_context
 from .helpers import edge_sources_targets, ensure_field
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class LinkField:

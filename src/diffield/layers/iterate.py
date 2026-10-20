@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import inspect
-from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from torch import Tensor, nn
 
 from ..core import RoundContext, resolve_context
 from .common import register_callable
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class IterateLayer(nn.Module):

@@ -188,7 +188,7 @@ class DeviceContext:
         manager = self.state
         return {
             key: manager.get_state(name=key)[0].detach().clone()
-            for key in manager.keys()
+            for key in manager.keys()  # noqa: SIM118 - a state manager, not a dict
         }
 
     def reset(self) -> None:

@@ -23,10 +23,13 @@ from __future__ import annotations
 
 import functools
 import warnings
-from collections.abc import Callable, Generator, Iterable
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 from .stack import context_stack
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator, Iterable
 
 SEP = "/"
 

@@ -72,7 +72,7 @@ def unpack_cast_state(
     payload_flat = packed[:, 1:]
     if not payload_shape:
         return distance, payload_flat[:, 0]
-    return distance, payload_flat.reshape((packed.shape[0],) + payload_shape)
+    return distance, payload_flat.reshape((packed.shape[0], *payload_shape))
 
 
 def validate_cast_mode(mode: str) -> None:

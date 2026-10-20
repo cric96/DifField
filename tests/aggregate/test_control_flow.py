@@ -63,7 +63,7 @@ class TestBranch:
                     lambda: gather_max(scatter(x)),
                     branch_name="inner",
                 ),
-                lambda: field.zeros(),
+                field.zeros,
                 branch_name="outer",
             )
 

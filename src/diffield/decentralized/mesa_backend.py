@@ -21,14 +21,17 @@ Two activation regimes:
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from typing import TYPE_CHECKING
 
 import mesa
 import torch
 from mesa.space import NetworkGrid
 from torch import Tensor
 
-from .runtime import DeviceRuntime
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from .runtime import DeviceRuntime
 
 SYNC = "sync"
 ASYNC = "async"

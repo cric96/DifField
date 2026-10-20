@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
-from torch import Tensor
+from typing import TYPE_CHECKING
 
 from .primitives import field, gather
-from .scattering import LinkField
+
+if TYPE_CHECKING:
+    from torch import Tensor
+
+    from .scattering import LinkField
 
 __all__ = [
     "gather_avg",

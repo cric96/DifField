@@ -97,7 +97,7 @@ def plot_channel_evolution(
         "Channel",
     ]
     num_steps = len(snapshot_steps)
-    fig, axes = plt.subplots(
+    _fig, axes = plt.subplots(
         len(field_keys), num_steps,
         figsize=(3.2 * num_steps, 3.1 * len(field_keys)),
     )
@@ -141,7 +141,7 @@ def plot_channel_final_fields(
         "Broadcast (dist S->D)",
         "Channel",
     ]
-    fig, axes = plt.subplots(2, 3, figsize=(16, 10))
+    _fig, axes = plt.subplots(2, 3, figsize=(16, 10))
     axes_flat = axes.flatten()
     for idx, (field_key, field_label) in enumerate(zip(field_keys, field_labels, strict=False)):
         ax = axes_flat[idx]

@@ -29,10 +29,7 @@ def in_edges_of(
     positions = positions[order]
 
     neighbor_ids = edge_index[0, positions].tolist()
-    if edge_weight is None:
-        ranges = [1.0] * len(neighbor_ids)
-    else:
-        ranges = edge_weight[positions].tolist()
+    ranges = [1.0] * len(neighbor_ids) if edge_weight is None else edge_weight[positions].tolist()
     return neighbor_ids, ranges
 
 

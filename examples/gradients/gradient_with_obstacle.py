@@ -206,7 +206,7 @@ def plot_evolution(
     snapshot_steps = sorted(records.keys())
     field_key = "dist"
 
-    fig, axes = plt.subplots(1, len(snapshot_steps), figsize=(3.5 * len(snapshot_steps), 3.5))
+    _fig, axes = plt.subplots(1, len(snapshot_steps), figsize=(3.5 * len(snapshot_steps), 3.5))
     if len(snapshot_steps) == 1:
         axes = [axes]
 

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 import torch
@@ -20,6 +19,8 @@ from ..dsl.helpers import edge_sources_targets
 from ..functional import scatter_aggr
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ..dsl.scattering import LinkField
 
 

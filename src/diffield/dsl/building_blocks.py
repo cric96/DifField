@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import math
 import operator
-from collections.abc import Callable
-from typing import NamedTuple
+from typing import TYPE_CHECKING, NamedTuple
 
 import torch
 from torch import Tensor
@@ -38,6 +37,9 @@ from .helpers import (
 )
 from .primitives import field, gather, iterate, mid, mux, nbr
 from .scattering import LinkField, link_cat, link_map, membership, scatter, scatter_range
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 @aggregate
@@ -274,7 +276,7 @@ def collect_cast(
         payload = (
             payload_flat[:, 0]
             if not payload_shape
-            else payload_flat.reshape((messages.shape[0],) + payload_shape)
+            else payload_flat.reshape((messages.shape[0], *payload_shape))
         )
         if effective_mode == "hard":
             keep = gate >= CONDITION_THRESHOLD

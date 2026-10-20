@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -13,6 +13,9 @@ from ..pyg_backend import (
     maybe_make_data,
 )
 from ..utils import make_grid_graph
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 
 def _resolve_static_edge_weight(

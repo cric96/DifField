@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 import torch
 from torch import Tensor
 
 from diffield import AggregateContext, branch, iterate
-from diffield.dsl import DeviceContext
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Sequence
+
+    from diffield.dsl import DeviceContext
 
 ABS_TOL = 1e-6
 

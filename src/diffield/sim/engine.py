@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 import torch
 
 from ..core import AggregateContext
 from ..pyg_backend import maybe_make_data
 from .events import EventSchedule, SimulationRuntime
-from .recording import SnapshotRecorder
+
+if TYPE_CHECKING:
+    from .recording import SnapshotRecorder
 
 ProgramStep = Callable[[SimulationRuntime], torch.Tensor]
 

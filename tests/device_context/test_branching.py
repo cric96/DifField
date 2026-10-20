@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import torch
+from typing import TYPE_CHECKING
 
 from diffield import branch, gather_max, gather_sum, iterate, scatter
 from diffield.dsl import DeviceContext
@@ -20,6 +20,9 @@ from .support import (
     iterated,
     run_branched_iterate,
 )
+
+if TYPE_CHECKING:
+    import torch
 
 
 class TestDeviceContextBranching:
