@@ -6,10 +6,6 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "torch-geometric>=2.6",
-    "numpy>=1.24",
-    "matplotlib>=3.7",
-    "optuna>=3.6",
-    "scikit-learn>=1.8.0",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +28,8 @@ cuda = [
 ]
 
 [tool.uv]
+# `uv sync` installs the experiments' dependencies too; `--no-group examples` leaves them out.
+default-groups = ["dev", "examples"]
 conflicts = [
     [
         { extra = "cpu" },
@@ -72,6 +70,13 @@ markers = [
 ]
 
 [dependency-groups]
+# The experiments in examples/, which are not part of the package.
+examples = [
+    "numpy>=1.24",
+    "matplotlib>=3.7",
+    "optuna>=3.6",
+    "scikit-learn>=1.8.0",
+]
 dev = [
     "pytest>=9.0.2",
     "hypothesis>=6.100.0",

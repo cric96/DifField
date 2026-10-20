@@ -635,10 +635,6 @@ name = "diffield"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "matplotlib" },
-    { name = "numpy" },
-    { name = "optuna" },
-    { name = "scikit-learn" },
     { name = "torch-geometric" },
 ]
 
@@ -675,15 +671,17 @@ dev = [
     { name = "pytest" },
     { name = "ruff" },
 ]
+examples = [
+    { name = "matplotlib" },
+    { name = "numpy" },
+    { name = "optuna" },
+    { name = "scikit-learn" },
+]
 
 [package.metadata]
 requires-dist = [
-    { name = "matplotlib", specifier = ">=3.7" },
     { name = "mesa", marker = "extra == 'decentralized'", specifier = ">=3.5" },
     { name = "networkx", marker = "extra == 'decentralized'", specifier = ">=3" },
-    { name = "numpy", specifier = ">=1.24" },
-    { name = "optuna", specifier = ">=3.6" },
-    { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "torch", marker = "(sys_platform == 'linux' and extra == 'cuda') or (sys_platform == 'win32' and extra == 'cuda')", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cu126", conflict = { package = "diffield", extra = "cuda" } },
     { name = "torch", marker = "sys_platform != 'linux' and sys_platform != 'win32' and extra == 'cuda'", specifier = ">=2.0" },
     { name = "torch", marker = "extra == 'cpu'", specifier = ">=2.0", index = "https://download.pytorch.org/whl/cpu", conflict = { package = "diffield", extra = "cpu" } },
@@ -705,6 +703,12 @@ dev = [
     { name = "pyright", specifier = ">=1.1.390" },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "ruff", specifier = ">=0.9.0" },
+]
+examples = [
+    { name = "matplotlib", specifier = ">=3.7" },
+    { name = "numpy", specifier = ">=1.24" },
+    { name = "optuna", specifier = ">=3.6" },
+    { name = "scikit-learn", specifier = ">=1.8.0" },
 ]
 
 [[package]]
