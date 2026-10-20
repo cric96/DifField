@@ -25,7 +25,7 @@ uv run pytest tests                     # the library tests, as in CI
 uv run pytest tests/aggregate/test_election.py::test_name   # a single test
 uv run pytest examples                  # the tests of the experiments
 uv run ruff check .                     # lint and style, line length 100
-uv run pyright                          # types
+uv run pyright                          # types, of src/ and tests/
 uvx pre-commit install                  # run all of the above before each commit
 ```
 

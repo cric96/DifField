@@ -5,25 +5,45 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
-  ci:
+  library:
+    runs-on: ubuntu-latest
+    env:
+      UV_NO_SYNC: "1"  # uv run would install the default groups back
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      # Without the experiments' dependencies: the library must not need them.
+      - name: Install the library
+        run: uv sync --extra cpu --extra decentralized --no-group examples
+
+      - name: Lint with ruff
+        run: uv run ruff check .
+
+      - name: Check types with pyright
+        run: uv run pyright
+
+      - name: Test the library
+        run: uv run pytest tests
+
+  examples:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
+          enable-cache: true
 
-      - uses: astral-sh/setup-uv@v5
+      - name: Install the library and the experiments
+        run: uv sync --extra cpu --extra decentralized --extra vmas
 
-      - run: uv sync --extra cpu --extra vmas --extra decentralized
-
-      - run: uv run pytest
-
-      # Lint and type checks are configured (see [tool.ruff] / [tool.pyright] in
-      # pyproject.toml) but not yet gating: the tree currently has ~163 ruff and
-      # ~66 pyright findings, almost all pre-existing style debt in src/diffield.
-      # Re-enable these two steps once that cleanup pass lands.
-      # - run: uv run ruff check .
-      # - run: uv run pyright
+      - name: Test the experiments
+        run: uv run pytest examples

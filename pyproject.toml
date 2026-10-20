@@ -123,6 +123,9 @@ ignore = [
 "scripts/**" = ["E402", "PLC0415", "PLR0912", "PLR0915", "S603", "S607"]
 
 [tool.pyright]
+# The library and its tests; the experiments are research code on their way to a repository
+# of their own, and only ruff checks them here.
+include = ["src", "tests", "conftest.py"]
 typeCheckingMode = "standard"
 pythonVersion = "3.12"
 venvPath = "."
