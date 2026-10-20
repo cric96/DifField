@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor
@@ -11,6 +12,9 @@ from ..pyg_backend import maybe_make_data
 from .alignment import AlignedDict, Aligner, path_has_label
 from .state import StateManager
 
+if TYPE_CHECKING:
+    from ..dsl.scattering import LinkField
+
 
 class RoundContext:
     """Holds the graph topology and per-round execution state."""
@@ -18,17 +22,20 @@ class RoundContext:
     edge_index: Tensor
     edge_weight: Tensor
     message_weight: Tensor | None
+    membership: LinkField | None
     num_nodes: int
+    node_ids: Tensor
     data: object
     round_num: int
     state: StateManager
-    exports: dict[str, Tensor]
-    _neighbor_message_overrides: dict[str, Tensor]
+    align: Aligner
+    exports: AlignedDict
+    _neighbor_message_overrides: AlignedDict
 
     def __init__(
         self, edge_index: Tensor, num_nodes: int, edge_weight: Tensor | None = None
     ) -> None:
-        self.edge_index = edge_index # shape [2, num_edges]
+        self.edge_index = edge_index  # shape [2, num_edges]
         self.edge_weight = (
             edge_weight
             if edge_weight is not None
@@ -37,7 +44,7 @@ class RoundContext:
                 device=edge_index.device,
             )
         )
-        self.message_weight: Tensor | None = None
+        self.message_weight = None
         # Soft region membership set by ``aligned_on``; read only by additive blocks.
         self.membership = None
         self.num_nodes = num_nodes
@@ -50,8 +57,8 @@ class RoundContext:
         self.round_num = 0
         self.state = StateManager(num_nodes, device=edge_index.device)
         self.align = Aligner()
-        self.exports: AlignedDict = AlignedDict()
-        self._neighbor_message_overrides: AlignedDict = AlignedDict()
+        self.exports = AlignedDict()
+        self._neighbor_message_overrides = AlignedDict()
 
     @contextmanager
     def round(self):

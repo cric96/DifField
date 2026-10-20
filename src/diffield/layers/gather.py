@@ -28,13 +28,13 @@ class _PyGMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper with built-in and custom aggregation paths."""
 
     def __init__(self, owner: GatherLayer) -> None:
-        use_builtin = (
-            isinstance(owner.aggr, str)
-            and owner.mode == "hard"
-            and owner.aggr in {"sum", "mean"}
-        )
+        aggr = owner.aggr
+        builtin = aggr if isinstance(aggr, str) and owner.mode == "hard" else None
+        if builtin not in {"sum", "mean"}:
+            builtin = None
+        use_builtin = builtin is not None
         super().__init__(
-            aggr=owner.aggr if use_builtin else None,
+            aggr=builtin,
             flow="source_to_target",
             node_dim=0,
         )

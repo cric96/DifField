@@ -17,7 +17,7 @@ from .helpers import ensure_field
 from .scattering import LinkField, scatter
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Generator
+    from collections.abc import Callable, Generator, Iterable
 
 
 class _LambdaModule(nn.Module):
@@ -135,7 +135,7 @@ def aligned_on(
     ctx = current_context()
     key = ensure_field(key, ctx).detach().float()
     soft = weight is not None and (mode or get_default_mode()) == "soft"
-    own = ensure_field(weight, ctx) if soft else torch.ones_like(key)
+    own = ensure_field(weight, ctx) if soft and weight is not None else torch.ones_like(key)
     with ctx.align.scope("aligned_on", name) as slot:
         published = ctx.state.get_or_init(key.new_full((ctx.num_nodes, 2), float("nan")), name=slot)
         ctx.state.update(torch.stack((key, own), -1), name=slot)
@@ -244,10 +244,13 @@ class field:  # noqa: N801 - a namespace, read as field.of(...) in programs
     def inf() -> Tensor:
         return const(float("inf"))
 
-    # TODO add description here
-
     @staticmethod
-    def with_overrides(field: Tensor, overrides: tuple[int, float]) -> Tensor:
+    def with_overrides(field: Tensor, overrides: Iterable[tuple[int, float]]) -> Tensor:
+        """Set ``field[node] = value`` for each ``(node, value)`` pair, in place.
+
+        Returns:
+            The same tensor, for use in expressions.
+        """
         for node_id, value in overrides:
             field[node_id] = value
         return field

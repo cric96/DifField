@@ -22,7 +22,7 @@ def _resolve_static_edge_weight(
     edge_weight: torch.Tensor | float | None,
     *,
     num_edges: int,
-    device: torch.device,
+    device: torch.device | str,
 ) -> torch.Tensor:
     if edge_weight is None:
         return torch.ones(num_edges, device=device, dtype=torch.float32)
@@ -42,7 +42,7 @@ def _resolve_static_edge_weight(
 def _resolve_scalar_metric(
     value: torch.Tensor | float,
     *,
-    device: torch.device,
+    device: torch.device | str,
     dtype: torch.dtype,
     name: str,
 ) -> torch.Tensor:

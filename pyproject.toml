@@ -129,6 +129,11 @@ venvPath = "."
 venv = ".venv"
 reportPrivateImportUsage = false
 reportPossiblyUnboundVariable = "warning"
+# A test that reads a missing state fails on the None it gets back, which is the point.
+executionEnvironments = [
+    { root = "tests", extraPaths = ["."], reportOptionalMemberAccess = false, reportOptionalSubscript = false },
+    { root = "." },
+]
 
 [build-system]
 requires = ["hatchling"]

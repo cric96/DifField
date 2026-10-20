@@ -11,7 +11,7 @@ from torch import Tensor
 from diffield.dsl import branch, iterate
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
 
     from diffield import AggregateContext
     from diffield.dsl import DeviceContext
@@ -69,7 +69,7 @@ def maybe_exports(
 
 
 def maybe_export_map(
-    values_by_name: dict[str, Sequence[float] | Tensor] | None,
+    values_by_name: Mapping[str, Sequence[float] | Tensor] | None,
 ) -> dict[str, list[float]] | None:
     if values_by_name is None:
         return None
@@ -92,8 +92,8 @@ def run_round(
     device: DeviceContext,
     program: Callable[[], Any],
     *,
-    neighbor_exports: dict[str, Sequence[float] | Tensor] | None = None,
-    neighbor_messages: dict[str, Sequence[float] | Tensor] | None = None,
+    neighbor_exports: Mapping[str, Sequence[float] | Tensor] | None = None,
+    neighbor_messages: Mapping[str, Sequence[float] | Tensor] | None = None,
     neighbor_ranges: float | Sequence[float] | Tensor | None = None,
 ) -> Any:
     with device.round(

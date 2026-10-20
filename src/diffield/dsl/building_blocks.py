@@ -474,8 +474,8 @@ def converge_cast(
     potential = require_scalar_field(potential, name="potential")
     packed = isinstance(local, (tuple, list))
     if packed:
-        local = [v if isinstance(v, Tensor) else torch.full_like(potential, v) for v in local]
-        values = torch.stack([ensure_field(v) for v in local], -1)
+        parts = [v if isinstance(v, Tensor) else torch.full_like(potential, v) for v in local]
+        values = torch.stack([ensure_field(v) for v in parts], -1)
     else:
         values = ensure_field(local)
     null_field = broadcast_like(torch.as_tensor(null), values)

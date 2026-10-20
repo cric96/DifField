@@ -247,6 +247,7 @@ class TestCollectCast:
         output[0].backward()
 
         assert_finite_gradients([local])
+        assert local.grad is not None
         assert torch.allclose(local.grad, torch.ones(line_ctx.num_nodes))
 
     def test_soft_backpropagates_through_potential(self, line_ctx):

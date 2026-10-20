@@ -81,8 +81,8 @@ class LinkField:
 
             # Fill the grid
             for i in range(edge_index.shape[1]):
-                src = edge_index[0, i].item()
-                tgt = edge_index[1, i].item()
+                src = int(edge_index[0, i].item())
+                tgt = int(edge_index[1, i].item())
 
                 if src < disp_nodes and tgt < disp_nodes:
                     v = val[i]

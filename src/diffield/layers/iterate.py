@@ -18,13 +18,16 @@ class IterateLayer(nn.Module):
     r"""Temporal recurrence: ``s_i^(t) = update_fn(s_i^(t-1), x_i, ctx)``.
 
     ``name`` is an optional alignment label; identity otherwise comes from the
-    occurrence's position in the evaluation tree.
+    occurrence's position in the evaluation tree. ``update_fn`` takes the state,
+    then optionally the input and the context.
     """
+
+    update_fn: Callable[..., Tensor]
 
     def __init__(
         self,
         init_value: Tensor,
-        update_fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | nn.Module,
+        update_fn: Callable[..., Tensor] | nn.Module,
         *,
         name: str | None = None,
     ) -> None:
@@ -34,11 +37,7 @@ class IterateLayer(nn.Module):
         register_callable(self, "update_fn", update_fn, "_update_fn")
 
         try:
-            target = (
-                self.update_fn.forward
-                if isinstance(self.update_fn, nn.Module)
-                else self.update_fn
-            )
+            target = update_fn.forward if isinstance(update_fn, nn.Module) else update_fn
             signature = inspect.signature(target)
             self._num_positional_params = len(
                 [

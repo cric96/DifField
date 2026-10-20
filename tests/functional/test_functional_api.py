@@ -209,6 +209,8 @@ class TestMaskEdges:
         )
 
         assert torch.equal(ei_out, torch.tensor([[0, 1], [1, 0]], dtype=torch.long))
+        assert ew_out is not None
+        assert mw_out is not None
         assert torch.allclose(ew_out, torch.tensor([1.0, 1.0]))
         assert torch.allclose(mw_out, torch.tensor([10.0, 11.0]))
 

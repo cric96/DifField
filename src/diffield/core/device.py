@@ -14,7 +14,13 @@ from .execution import AggregateContext
 from .state import StateManager
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
+
     from .context import RoundContext
+
+# What a device hears for one state slot, in neighbour order; None marks a
+# neighbour that has not spoken yet.
+type NeighborValues = Sequence[float | Tensor | None] | Tensor
 
 
 class _MessageStateManager(StateManager):
@@ -22,7 +28,7 @@ class _MessageStateManager(StateManager):
 
     def __init__(self, num_nodes: int):
         super().__init__(num_nodes)
-        self.neighbor_exports = {}
+        self.neighbor_exports: Mapping[str, NeighborValues] = {}
 
     def get_or_init(self, init_val: Tensor, *, name: str) -> Tensor:
         own_state = super().get_or_init(init_val, name=name)
@@ -59,7 +65,7 @@ class DeviceContext:
         num_neighbors: int,
         *,
         self_loop: bool = False,
-        neighbor_ranges: float | list[float] | Tensor = 1.0,
+        neighbor_ranges: float | Sequence[float] | Tensor = 1.0,
         device_id: int | None = None,
         neighbor_ids: list[int] | Tensor | None = None,
         message_driven: bool = False,
@@ -107,7 +113,7 @@ class DeviceContext:
         self._agg_ctx._ctx.node_ids = ids
 
     def _neighbor_range_tensor(
-        self, neighbor_ranges: float | list[float] | Tensor
+        self, neighbor_ranges: float | Sequence[float] | Tensor
     ) -> Tensor:
         if self._num_neighbors == 0:
             return torch.zeros((0,), dtype=torch.float32)
@@ -128,7 +134,7 @@ class DeviceContext:
         return ranges
 
     def _build_edge_weight(
-        self, neighbor_ranges: float | list[float] | Tensor
+        self, neighbor_ranges: float | Sequence[float] | Tensor
     ) -> Tensor:
         neighbor_tensor = self._neighbor_range_tensor(neighbor_ranges)
         if self._self_loop:
@@ -187,11 +193,7 @@ class DeviceContext:
         Feed the collected bundles of a device's neighbours back as
         ``neighbor_exports`` on the next round.
         """
-        manager = self.state
-        return {
-            key: manager.get_state(name=key)[0].detach().clone()
-            for key in manager.keys()  # noqa: SIM118 - a state manager, not a dict
-        }
+        return {key: state[0].detach() for key, state in self.state.snapshot().items()}
 
     def reset(self) -> None:
         self._agg_ctx.reset()
@@ -203,7 +205,7 @@ class DeviceContext:
     def _inject_neighbor_exports(
         self,
         ctx: RoundContext,
-        neighbor_exports: dict[str, list[float] | Tensor],
+        neighbor_exports: Mapping[str, NeighborValues],
     ) -> None:
         for name, values in neighbor_exports.items():
             for key in ctx.state.resolve_all(name):
@@ -218,7 +220,7 @@ class DeviceContext:
     def _inject_neighbor_messages(
         self,
         ctx: RoundContext,
-        neighbor_messages: dict[str, list[float] | Tensor],
+        neighbor_messages: Mapping[str, NeighborValues],
     ) -> None:
         num_nodes = self._num_neighbors + 1
         for tag, values in neighbor_messages.items():
@@ -232,9 +234,9 @@ class DeviceContext:
     @contextmanager
     def round(
         self,
-        neighbor_exports: dict[str, list[float] | Tensor] | None = None,
-        neighbor_messages: dict[str, list[float] | Tensor] | None = None,
-        neighbor_ranges: float | list[float] | Tensor | None = None,
+        neighbor_exports: Mapping[str, NeighborValues] | None = None,
+        neighbor_messages: Mapping[str, NeighborValues] | None = None,
+        neighbor_ranges: float | Sequence[float] | Tensor | None = None,
     ):
         """Execute one local round."""
         with self._agg_ctx.round() as ctx:
