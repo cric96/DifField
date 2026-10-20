@@ -229,8 +229,9 @@ A device's outbound message is its `iterate` state table keyed by **alignment pa
 its neighbours' sensor readings travel with it — `branch` keeps a link only when both of
 its endpoints are in the partition, so a device cannot mask its own in-edges without them.
 
-`mode="sync"` (default) puts a barrier between rounds, which is Gauss–Jacobi and therefore
-reproduces the batched run node for node. `mode="async"` drops the barrier: devices are
+`mode="sync"` (default) puts a barrier between rounds. For programs satisfying the
+causality conditions below it reproduces the batched run node for node.
+`mode="async"` drops the barrier: devices are
 shuffled, publish as they go, and may skip rounds with probability `1 - activation_prob`.
 
 ### Running the comparison
@@ -306,8 +307,38 @@ which is why both executions do it identically.
 
 **Limits.** Reproducible only for programs whose every `gather` scatters a sensor, a
 constant, or a previous-round `iterate` state — the condition documented on `DeviceContext`.
-It holds for `gradient`, `gradient_cast`, `broadcast` and `collect_cast`, hence for the
-channel. `branch` conditions must likewise be sensors or previous-round state.
+It holds for `gradient`, `gradient_cast`, `broadcast` and the channel, subject to
+causal initializers and locally computable payload transformations. `branch`
+conditions must likewise be sensors or previous-round state. The legacy default
+`collect_cast` reconstructs parent choices globally and is **not** equivalent on
+independent devices. Use `collect_cast(..., mode="hard", causal=True)` on symmetric
+networks: each device publishes its potential, stable-ID parent choice and payload;
+receivers accept previously published nominations. Initialization assumes no remote
+contributions, adding potential/parent publication latency before collection.
+`causal=True, mode="soft"` is explicitly unsupported. A changing tree can temporarily
+omit or duplicate contributions; conservation is checked after convergence.
+
+## SEAMS Space-Fluid evaluation
+
+[`examples/seams/`](examples/seams/README.md) learns positive link metrics offline
+for Space-Fluid coordination regions. It compares fixed, searched, parametric and
+neural costs with central K-means on moving spatial phenomena, held-out shapes,
+faults and network-size transfer. Frozen programs execute both in batched form and
+through actual `DeviceRuntime` messages. Boids remains an independent experiment.
+
+```bash
+uv run python -m examples.seams space-fluid --profile smoke --stage all \
+    --out generated/seams/space-fluid-smoke
+uv run python -m examples.seams space-fluid --profile paper-cpu --stage all \
+    --out generated/seams/space-fluid-paper-cpu
+uv run python -m examples.seams boids --profile paper-cpu \
+    --out generated/seams/boids-paper-cpu
+```
+
+The suite README documents the algorithm, biased straight-through gradient,
+complete protocol and scientific limits. Runs include resumable checkpoints,
+provenance, raw results, figures and animations. Incomplete work stays explicit;
+a smoke run does not establish a scientific advantage.
 
 ---
 
