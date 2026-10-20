@@ -13,9 +13,12 @@ from pathlib import Path
 
 import numpy as np
 import torch
+from matplotlib.colors import to_rgba
 from matplotlib.patches import Rectangle
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import adjusted_rand_score
+
+from diffield import AggregateContext
 
 from ..shared.plotting.common import LineCollection, plt
 from ..shared.plotting.moving import _get_identity_colors
@@ -33,12 +36,14 @@ from ..shared.plotting.style import (
     apply_paper_style,
 )
 from .artifacts import PROJECT, json_write, read_json
-from .boids_dynamics import FIXED, TEACHER
+from .boids_devices import initial_states, teacher_program
+from .boids_dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
 from .boids_learning import combine, free_rollout, make_model, objective, transitions
 from .channel_adaptation import run_seed
+from .metrics import interval
 from .randomness import seed_for
 from .space_fluid import clusters
-from .space_fluid.execution import central, decentralized
+from .space_fluid.execution import central
 from .space_fluid.metrics import recovery
 from .space_fluid.program import ELECTED, make_program
 from .space_fluid.training import load_program
@@ -73,6 +78,7 @@ def style():
             "font.size": FONT,
             "axes.labelsize": FONT,
             "axes.titlesize": FONT,
+            "axes.titleweight": "normal",
             "xtick.labelsize": FONT - 0.5,
             "ytick.labelsize": FONT - 0.5,
             "legend.fontsize": FONT,
@@ -110,20 +116,26 @@ def events(ax, marks, top=1.02):
                 color=MUTED, va="bottom", ha="left")  # fmt: skip
 
 
+def panel(letter, text=""):
+    """Panel label: the letter in italics, then plain text."""
+    return rf"$\mathit{{({letter})}}$ {text}".rstrip()
+
+
 def tag(ax, label):
-    ax.text(-0.02, 1.0, f"({label})", transform=ax.transAxes, fontsize=FONT + 0.5,
-            fontweight="semibold", ha="right", va="bottom", color=INK)  # fmt: skip
+    """Panel letter above the left end of the axes, clear of the y-axis labels."""
+    ax.set_title(panel(label), loc="left", fontsize=FONT, pad=2)
 
 
-def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROLE)):
-    """ARI per round of the asynchronous Space-Fluid clustering runs (runs x rounds).
+def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROLE),
+               executor="async-0.5"):
+    """ARI per round of the Space-Fluid clustering runs (runs x rounds).
 
     Full-batch training makes the parametric seeds identical, so duplicate runs
     are dropped: a band over copies would look narrower than the evidence.
     """
     result = {}
     for method in methods:
-        name = f"distributed-async-0.5-{condition}-*.json"
+        name = f"distributed-{executor}-{condition}-*.json"
         pattern = f"{root}/{scenario}/episodes/{method}/seed*/{name}"
         rows = [read_json(Path(p))["curves"]["ari"] for p in sorted(glob.glob(pattern))]
         if not rows:
@@ -132,25 +144,106 @@ def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROL
     return result
 
 
-def scr_numbers(scr, fault=32, tolerance=0.05, consecutive=5):
+@torch.no_grad()
+def boids_sync_async_rmse(boids):
+    """Per-round position RMSE vs the teacher on the 20 test episodes (all 5 seeds, no faults)."""
+    source = read_json(boids / "manifest.json")["config"]
+    states = initial_states(boids, source, source["nodes"], source["test_episodes"])
+    rounds = source["rounds"]
+    teacher = teacher_program()
+
+    def rollout(model, pos, vel, activation, seed):
+        p, v = pos.clone(), vel.clone()
+        command = torch.zeros_like(p)
+        gen = torch.Generator().manual_seed(seed)
+        ps = []
+        is_dsl = isinstance(model, Boids)
+        for t in range(rounds):
+            edges = radius_edges(p)
+            draws = torch.rand(len(p), generator=gen)
+            active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
+            if is_dsl:
+                with AggregateContext(edges, len(p)).round():
+                    acc = model.acceleration(p, v)
+            else:
+                acc = model.net(p, v, edges)
+            command[active] = acc[active]
+            step = integrate(p, v, command)
+            p, v = step.positions, step.velocities
+            ps.append(p.clone())
+        return torch.stack(ps)
+
+    references = {}
+    for key, pos, vel in states:
+        aseed = seed_for(source["data_seed"], "boids-devices", key)
+        references[key] = (
+            rollout(teacher, pos, vel, 1.0, aseed),
+            rollout(teacher, pos, vel, 0.5, aseed),
+            aseed,
+        )
+
+    curves = {
+        "diffield_sync": [],
+        "diffield_async": [],
+        "diffield_async_vs_sync_teacher": [],
+        "gnn64_sync": [],
+        "gnn64_async": [],
+        "gnn32_sync": [],
+        "gnn32_async": [],
+        "teacher_async": [
+            (t_async - t_sync).square().mean((-2, -1)).sqrt().numpy()
+            for t_sync, t_async, _ in references.values()
+        ],
+    }
+    for variant, prefix in (("parametric", "diffield"), ("gnn64", "gnn64"), ("gnn32", "gnn32")):
+        for seed in source["seeds"]:
+            model = make_model(variant, seed)
+            ckpt = boids / "jobs/observed" / variant / f"seed{seed}" / "best.pt"
+            model.load_state_dict(torch.load(ckpt, weights_only=True)["model"])
+            model.eval()
+            for key, pos, vel in states:
+                t_sync, t_async, aseed = references[key]
+                p_sync = rollout(model, pos, vel, 1.0, aseed)
+                p_async = rollout(model, pos, vel, 0.5, aseed)
+                curves[f"{prefix}_sync"].append(
+                    (p_sync - t_sync).square().mean((-2, -1)).sqrt().numpy()
+                )
+                curves[f"{prefix}_async"].append(
+                    (p_async - t_async).square().mean((-2, -1)).sqrt().numpy()
+                )
+                if prefix == "diffield":
+                    curves["diffield_async_vs_sync_teacher"].append(
+                        (p_async - t_sync).square().mean((-2, -1)).sqrt().numpy()
+                    )
+    return {k: np.asarray(v, dtype=float) for k, v in curves.items()}
+
+
+def scr_numbers(scr, fault=32, restore=64, tolerance=0.05, consecutive=5):
     """ARI before the fault, at its trough and at the end; recovery measured after the trough."""
     numbers = {}
     for method, ari in scr.items():
-        rounds = []
+        rounds, after_restore = [], []
         for curve in ari:
             pre = float(curve[fault - 5 : fault].mean())
-            trough = fault + int(curve[fault:].argmin())
+            trough = fault + int(curve[fault:restore].argmin())
             result = recovery([1 - a for a in curve], trough, 1 - (pre - tolerance), consecutive)
             if result["rounds"] is not None:
                 rounds.append(trough - fault + result["rounds"])
+            rest = recovery([1 - a for a in curve], restore, 1 - (pre - tolerance), consecutive)
+            if rest["rounds"] is not None:
+                after_restore.append(rest["rounds"])
         numbers[method] = {
             "runs": len(ari),
             "ari_before": float(ari[:, fault - 5 : fault].mean()),
-            "ari_trough": float(ari[:, fault:].min(1).mean()),
+            "ari_trough": float(ari[:, fault:restore].min(1).mean()),
+            "ari_during": float(ari[:, fault:restore].mean()),
             "ari_final": float(ari[:, -10:].mean()),
             "recovered": len(rounds),
             "median_rounds": float(np.median(rounds)) if rounds else None,
             "max_rounds": max(rounds) if rounds else None,
+            "rounds": rounds,
+            "after_restore_rounds": after_restore,
+            "after_restore_median": float(np.median(after_restore)) if after_restore else None,
         }
     return numbers
 
@@ -174,59 +267,197 @@ def boids_device_curves(run, size, executor="async", key="spread"):
     return curves
 
 
-def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", condition="crash"):
+def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", condition="crash"):  # noqa: PLR0915
     channel_runs = [read_json(p) for p in sorted((channel / "runs").glob("seed*.json"))]
     channel_config = read_json(channel / "summary.json")["config"]
-    boids_config = read_json(boids / "adaptation/summary.json")["config"]
-    swarm = boids_adaptation_curves(boids, size)
-    devices = boids_device_curves(boids, size)
-    scr = scr_curves(scr_root, scenario, condition)
-    clean = scr_curves(scr_root, scenario, "clean")
+    scr_async = scr_curves(scr_root, scenario, condition, executor="async-0.5")
+    scr_sync = scr_curves(scr_root, scenario, condition, executor="sync")
+    clean = scr_curves(scr_root, scenario, "clean", executor="async-0.5")
+    transient = {
+        c: scr_curves(scr_root, scenario, c, executor="async-0.5")
+        for c in ("node_stop", "partition", "link_loss")
+    }
+    boids_rmse = boids_sync_async_rmse(boids)
 
-    fig, axes = plt.subplots(1, 3, figsize=(7.16, 2.1), constrained_layout=True)
+    fig, axes = plt.subplots(1, 4, figsize=(7.16, 1.28), constrained_layout=True,
+                             gridspec_kw={"width_ratios": (1.02, 1, 1, 1)})  # fmt: skip
+
+    # (a) Channel: runtime faults (obstacle, clear, relocate)
     ax = axes[0]
     x, start = np.arange(channel_config["rounds"]), channel_config["events"]["obstacle"]
     frozen = [r["curves"]["frozen_quality"][start:] for r in channel_runs]
     draw(ax, x[start:], frozen, "frozen")
     draw(ax, x, [r["curves"]["quality"] for r in channel_runs], "diffield")
-    events(ax, channel_config["events"])
-    ax.set(xlabel="round", ylabel="channel quality", ylim=(-0.03, 1.03), xlim=(0, x[-1]))
-    tag(ax, "a")
+    events(ax, channel_config["events"], top=0.98)
+    ax.set(ylabel="channel F1", ylim=(-0.03, 1.03), xlim=(0, x[-1]))
+    ax.set_xlabel("round", labelpad=1.0)
+    ax.set_yticks([0, 0.5, 1], ["0", "0.5", "1"])
+    ax.set_title(panel("a", "channel: faults"), loc="left", pad=11)
+    ax.legend(
+        handles=[
+            plt.Line2D([], [], color=BLUE, linestyle="-", label="DifField"),
+            plt.Line2D([], [], color=ORANGE, linestyle="--", label="frozen plan"),
+        ],
+        loc="upper center", bbox_to_anchor=(0.5, -0.46), ncol=2, fontsize=FONT - 1.5,
+        handlelength=1.2, handletextpad=0.35, columnspacing=0.8, frameon=False,
+    )
 
+    # (b) Regions: permanent leader crash (sync vs async)
     ax = axes[1]
-    x = np.arange(1, boids_config["rounds"] + 1)
-    for method in ("gnn32", "gnn64", "parametric", "oracle"):
-        draw(ax, x, swarm[method], BOIDS_ROLE[method], fill=method in ("parametric", "gnn64"))
-    for method, role in (("oracle", "teacher_async"), ("parametric", "diffield_async")):
-        draw(ax, x, devices[method], role, fill=False, linewidth=0.9)
-    events(ax, boids_config["events"])
-    ax.set(xlabel="round", ylabel=f"swarm spread ($N={size}$)", xlim=(0, x[-1]))
-    tag(ax, "b")
-
-    ax = axes[2]
-    x = np.arange(scr["parametric"].shape[1])
-    for method in ("fixed-combined", "parametric"):
-        colour, _, _ = STYLE[SCR_ROLE[method]]
-        mean, _, _ = band(clean[method])
-        ax.plot(x, mean, color=colour, linestyle=(0, (1, 1.5)), linewidth=0.8, alpha=0.8)
-        draw(ax, x, scr[method], SCR_ROLE[method])
+    x = np.arange(scr_async["parametric"].shape[1])
+    for method, colour, prefix in (("parametric", BLUE, "DifField"),
+                                   ("fixed-combined", MUTED, "initial")):
+        mean_s, low_s, high_s = band(scr_sync[method])
+        ax.plot(x, mean_s, color=colour, linestyle="-", linewidth=1.0, label=f"{prefix}, sync")
+        ax.fill_between(x, low_s, high_s, color=colour, alpha=0.12, linewidth=0)
+        mean_a, low_a, high_a = band(scr_async[method])
+        ax.plot(x, mean_a, color=colour, linestyle=(0, (3, 1.2)), linewidth=1.0,
+                label=f"{prefix}, async")
+        ax.fill_between(x, low_a, high_a, color=colour, alpha=0.12, linewidth=0)
     fault = 32
-    ax.axvspan(fault, x[-1], color=MUTED, alpha=0.08, linewidth=0)
-    events(ax, {condition: fault})
-    ax.set(xlabel="round", ylabel="clustering ARI", ylim=(0, 1.02), xlim=(0, x[-1]))
-    tag(ax, "c")
+    ax.axvspan(fault, x[-1], color=MUTED, alpha=0.07, linewidth=0)
+    events(ax, {"leader crash": fault}, top=0.98)
+    ax.text(95, 0.05, "recovered: 10/10\n(initial: 6/10)", fontsize=FONT - 2.0, color=INK,
+            ha="right", va="bottom", linespacing=1.05)
+    ax.set(ylabel="clustering ARI", ylim=(0, 1.03), xlim=(0, x[-1]))
+    ax.set_xlabel("round", labelpad=1.0)
+    ax.set_yticks([0, 0.5, 1], ["0", "0.5", "1"])
+    ax.set_title(panel("b", "regions: leader crash"), loc="left", pad=11)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.46), ncol=2, fontsize=FONT - 1.5,
+              handlelength=1.2, handletextpad=0.35, columnspacing=0.6, labelspacing=0.2,
+              frameon=False)
 
-    handles = [
-        plt.Line2D([], [], color=c, linestyle=ls, label=lbl)
-        for c, ls, lbl in (STYLE[role] for role in LEGEND)
-    ]
-    handles.append(plt.Line2D([], [], color=MUTED, linestyle=(0, (1, 1.5)), label="no fault"))
-    fig.legend(handles=handles, loc="outside lower center", ncol=5, frameon=False,
-               handlelength=2.2, columnspacing=1.6, labelspacing=0.25)  # fmt: skip
+    # (c) Regions: transient network and device faults (async)
+    ax = axes[2]
+    fault, restore = 32, 64
+    ax.axvspan(fault, restore, color=MUTED, alpha=0.11, linewidth=0)
+    events(ax, {"fault": fault, "restored": restore}, top=0.98)
+    fault_styles = (
+        ("node_stop", "paused devices", GREEN),
+        ("partition", "partition", VIOLET),
+        ("link_loss", "link loss", BLUE),
+    )
+    for key, label, colour in fault_styles:
+        mean, low, high = band(transient[key]["parametric"])
+        ax.plot(x, mean, color=colour, linestyle="-", linewidth=1.0, label=label)
+        ax.fill_between(x, low, high, color=colour, alpha=0.14, linewidth=0)
+    init_all = np.concatenate([transient[k]["fixed-combined"] for k, _, _ in fault_styles], axis=0)
+    mean_init, _, _ = band(init_all)
+    ax.plot(x, mean_init, color=MUTED, linestyle="--", linewidth=0.9, label="initial (mean)")
+    ax.set(ylabel="clustering ARI", ylim=(0, 1.03), xlim=(0, x[-1]))
+    ax.set_xlabel("round", labelpad=1.0)
+    ax.set_yticks([0, 0.5, 1], ["0", "0.5", "1"])
+    ax.set_title(panel("c", "regions: transient faults"), loc="left", pad=11)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.46), ncol=2, fontsize=FONT - 1.5,
+              handlelength=1.2, handletextpad=0.35, columnspacing=0.6, labelspacing=0.2,
+              frameon=False)
+
+    # (d) Boids: synchronous vs asynchronous devices (no faults)
+    ax = axes[3]
+    xb = np.arange(1, boids_rmse["diffield_sync"].shape[1] + 1)
+    boids_series = (
+        ("diffield_sync", "DifField, sync", BLUE, "-"),
+        ("diffield_async", "DifField, async", BLUE, (0, (3, 1.2))),
+        ("gnn64_sync", "GNN64, sync", DARK_RED, "-"),
+        ("gnn64_async", "GNN64, async", DARK_RED, (0, (3, 1.2))),
+    )
+    for key, label, colour, ls in boids_series:
+        mean, low, high = band(boids_rmse[key])
+        ax.plot(xb, mean, color=colour, linestyle=ls, linewidth=1.0, label=label)
+        if key.startswith("gnn64"):
+            ax.fill_between(xb, low, high, color=colour, alpha=0.14, linewidth=0)
+    ax.text(23.5, 0.006, r"DifField: $<10^{-3}$", fontsize=FONT - 1.5, color=BLUE,
+            ha="right", va="bottom")
+    ax.set(ylabel="position RMSE", xlim=(1, xb[-1]), ylim=(-0.003, 0.095))
+    ax.set_xlabel("round", labelpad=1.0)
+    ax.set_xticks([1, 8, 16, 24])
+    ax.set_yticks([0, 0.04, 0.08], ["0", "0.04", "0.08"])
+    ax.set_title(panel("d", "Boids: sync vs async"), loc="left", pad=11)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.46), ncol=2, fontsize=FONT - 1.5,
+              handlelength=1.2, handletextpad=0.35, columnspacing=0.6, labelspacing=0.2,
+              frameon=False)
+
     for suffix in ("pdf", "png"):
         fig.savefig(out / f"rq2-adaptation.{suffix}")
     plt.close(fig)
-    return {"scr": scr_numbers(scr), "scr_clean": scr_numbers(clean)}
+    deviations = sync_deviations(boids, scr_root, size, scenario)
+    return {
+        "scr": scr_numbers(scr_async, restore=scr_async["parametric"].shape[1]),
+        "scr_sync": scr_numbers(scr_sync, restore=scr_sync["parametric"].shape[1]),
+        "scr_clean": scr_numbers(clean),
+        "scr_transient": {k: scr_numbers(v) for k, v in transient.items()},
+        "boids_sync_async_rmse": {
+            k: {"mean": float(v.mean()), "final": float(v[:, -1].mean())}
+            for k, v in boids_rmse.items()
+        },
+        "sync_deviation": {k: {"mean": float(v.mean()), "episodes": len(v)}
+                           for k, v in deviations.items()},
+    }
+
+
+def relative_deviation(curve, reference):
+    """Mean |curve - reference| over the rounds, relative to the mean of the reference."""
+    curve, reference = np.asarray(curve, dtype=float), np.asarray(reference, dtype=float)
+    return float(np.mean(np.abs(curve - reference)) / np.mean(reference))
+
+
+def sync_deviations(boids, scr_root, size=64, scenario="static"):
+    """Per episode, how far asynchronous execution drifts from synchronous execution of the
+    same program: Boids spread (teacher and learned program) and regions ARI (all conditions)."""
+
+    def spread(pattern):
+        rows = (read_json(Path(p)) for p in sorted(glob.glob(str(pattern))))
+        return {r["episode"]: r["curves"]["spread"] for r in rows if r["status"] == "complete"}
+
+    devices = boids / "devices/episodes"
+    pairs = {
+        "teacher": (spread(devices / f"oracle-async/N{size}-*.json"),
+                    spread(boids / f"adaptation/episodes/oracle/deterministic/N{size}-*.json")),
+        "diffield": (spread(devices / f"parametric-async/N{size}-*.json"),
+                     spread(devices / f"parametric-sync/N{size}-*.json")),
+    }  # fmt: skip
+    result = {}
+    for name, (asynchronous, synchronous) in pairs.items():
+        shared = sorted(set(asynchronous) & set(synchronous))
+        result[f"Boids, {name}"] = np.array(
+            [relative_deviation(asynchronous[k], synchronous[k]) for k in shared]
+        )
+    for method in ("fixed-combined", "parametric"):
+        errors = []
+        for path in sorted(glob.glob(
+            f"{scr_root}/{scenario}/episodes/{method}/seed0/distributed-async-0.5-*.json"
+        )):  # fmt: skip
+            reference = Path(path.replace("distributed-async-0.5-", "distributed-sync-"))
+            errors.append(relative_deviation(read_json(Path(path))["curves"]["ari"],
+                                             read_json(reference)["curves"]["ari"]))  # fmt: skip
+        result[f"regions, {SCR_ROLE[method]}"] = np.array(errors)
+    return result
+
+
+DEVIATION_ROWS = (  # key, label, colour
+    ("Boids, teacher", "teacher", INK),
+    ("Boids, diffield", "DifField", BLUE),
+    ("regions, initial", "initial", MUTED),
+    ("regions, diffield", "DifField", BLUE),
+)
+
+
+def deviation_panel(ax, deviations):
+    """Mean deviation from synchronous execution, with 95% bootstrap intervals over episodes."""
+    for y, (key, label, colour) in enumerate(DEVIATION_ROWS):
+        values = 100 * deviations[key]
+        mean, low, high = band(values[:, None])
+        ax.plot([low[0], high[0]], [y, y], color=colour, linewidth=2.2, alpha=0.35,
+                solid_capstyle="butt")  # fmt: skip
+        ax.plot(mean, y, "o", color=colour, markersize=3.5)
+        ax.text(1.02, y, label, transform=ax.get_yaxis_transform(), fontsize=FONT - 1,
+                color=colour, va="center", ha="left")  # fmt: skip
+    ax.axhline(1.5, color=MUTED, linewidth=0.5, linestyle=":")
+    ax.set_yticks([0.5, 2.5], ["Boids\nspread", "regions\nARI"], fontsize=FONT - 1)
+    ax.tick_params(axis="y", length=0)
+    ax.set(xlabel="async vs sync (%)", ylim=(3.6, -0.6))
+    ax.set_xlim(left=0)
+    ax.grid(axis="y", visible=False)
 
 
 def boids_validation(boids, variant, validation):
@@ -286,7 +517,7 @@ def rq1_boids_figure(boids, out, *, zoom=200):
     ax.set(xlabel="update", ylabel="validation loss", yscale="log")
     ax.set(xlim=(0, x[-1]), ylim=(1e-13, 30))
     ax.set_yticks([1e0, 1e-4, 1e-8, 1e-12])
-    ax.set_title("(a) one-step loss", fontweight="normal", loc="left")
+    ax.set_title(panel("a", "one-step loss"), loc="left")
 
     colour = STYLE["diffield"][0]
     for j, (ax, name, label) in enumerate(
@@ -299,7 +530,7 @@ def rq1_boids_figure(boids, out, *, zoom=200):
         ax.text(zoom, TEACHER[j], f"teacher {TEACHER[j]:g} ", fontsize=FONT - 1, color=INK,
                 ha="right", va="top")  # fmt: skip
         ax.set(xlabel="update", xlim=(0, zoom))
-        ax.set_title(f"({label}) {name}", fontweight="normal", loc="left")
+        ax.set_title(panel(label, name), loc="left")
         if j == 0:
             ax.set_ylabel("weight")
 
@@ -332,7 +563,7 @@ def trajectories_panel(ax, traj, colours, title, *, background="white"):
     ax.scatter(traj[0, :, 0], traj[0, :, 1], c=colours, s=3, alpha=0.35, linewidths=0)
     ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c=colours, marker="x", s=9, linewidths=0.8)
     ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[], aspect="equal", facecolor=background)
-    ax.set_title(title, fontweight="normal")
+    ax.set_title(title, loc="left", pad=2)
 
 
 def rq1_boids_trajectories(boids, out, *, episode=0, seed=0, early=10, gnn="gnn64"):
@@ -374,11 +605,104 @@ def rq1_boids_trajectories(boids, out, *, episode=0, seed=0, early=10, gnn="gnn6
             "position_rmse": errors}  # fmt: skip
 
 
+def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):  # noqa: PLR0915
+    """Validation loss (a), learned weights relative to the teacher's (b), and free-running
+    trajectories of the untrained and trained program, a GNN, and the teacher (c-f)."""
+    data = torch.load(boids / "data/traces.pt", weights_only=True)
+    validation = combine([transitions(e) for e in data["validation"]])
+    ax, losses = axes[0], {}
+    for variant in ("gnn32", "gnn64", "parametric"):
+        runs = boids_validation(boids, variant, validation)
+        x = np.array([u for u, _ in runs[0]["points"]])
+        curves = np.array([[v for _, v in run["points"]] for run in runs])
+        picks = [(run["selected"], dict(run["points"])[run["selected"]]) for run in runs]
+        colour, linestyle, _ = STYLE[BOIDS_ROLE[variant]]
+        ax.fill_between(x, curves.min(0), curves.max(0), color=colour, alpha=0.18, linewidth=0)
+        ax.plot(x, np.median(curves, 0), color=colour, linestyle=linestyle)
+        ax.scatter(*zip(*picks, strict=True), s=7, color=colour, edgecolors="white",
+                   linewidths=0.4, zorder=3)  # fmt: skip
+        losses[variant] = float(np.median(curves[:, -1]))
+        if variant == "parametric":
+            initial, weight_runs = float(curves[0, 0]), runs
+    colour, linestyle, _ = STYLE["initial"]
+    ax.axhline(initial, color=colour, linestyle=linestyle, linewidth=0.9, zorder=1)
+    plateau = np.median([losses["gnn32"], losses["gnn64"]])
+    ax.text(x[-1] - 8, 0.16, f"GNNs: {plateau:.2f}", fontsize=FONT - 1.5, color=DARK_RED,
+            ha="right", va="top")  # fmt: skip
+    loss_handles = [
+        plt.Line2D([], [], color=STYLE[r][0], linestyle=STYLE[r][1], label=STYLE[r][2])
+        for r in ("diffield", "gnn64", "gnn32")
+    ] + [plt.Line2D([], [], color=MUTED, linestyle="--", label="untrained")]
+    ax.legend(handles=loss_handles, loc="center right", bbox_to_anchor=(1.0, 0.44),
+              fontsize=FONT - 1.5, handlelength=1.35, handletextpad=0.35,
+              labelspacing=0.18, frameon=False, borderaxespad=0.2)
+    ax.set(ylabel="one-step MSE loss", yscale="log", xlim=(0, x[-1]), ylim=(1e-13, 30))
+    ax.set_xlabel("update", labelpad=1.0)
+    ax.set_yticks([1e0, 1e-6, 1e-12])
+    ax.set_xticks([0, 250, 500])
+    ax.set_title(panel("a", "one-step loss"), loc="left", pad=2)
+
+    ax = axes[1]
+    for j, colour in enumerate((AQUA, VIOLET, YELLOW)):
+        for run in weight_runs:
+            ax.plot(range(len(run["weights"])), [w[j] / TEACHER[j] for w in run["weights"]],
+                    color=colour, linewidth=0.8, alpha=0.7)  # fmt: skip
+    ax.axhline(1, color=INK, linestyle="--", linewidth=0.8)
+    ax.set(yscale="log", xlim=(0, zoom))
+    ax.set_xlabel("update", labelpad=1.0)
+    ax.set_ylabel("weight / teacher", labelpad=1.5)
+    ax.set_xticks([0, 100, 200])
+    ax.set_yticks([0.1, 0.3, 1, 3], ["0.1", "0.3", "1", "3"])
+    weight_handles = [
+        plt.Line2D([], [], color=c, label=n)
+        for n, c in (("separation", AQUA), ("alignment", VIOLET), ("cohesion", YELLOW))
+    ] + [plt.Line2D([], [], color=INK, linestyle="--", label="teacher")]
+    ax.legend(handles=weight_handles, loc="lower right", fontsize=FONT - 1.5, handlelength=1.1,
+              handletextpad=0.35, borderaxespad=0.2, labelspacing=0.18, frameon=False)
+    ax.set_title(panel("b", "weights"), loc="left", pad=2)
+
+    test = data["test"][episode]
+    training = read_json(boids / f"jobs/observed/parametric/seed{seed}/training.json")
+    history = {h["update"]: h["weights"] for h in training["history"]}
+    rounds, colours = len(test["target_pos"]), _get_identity_colors(len(test["positions"]))
+    errors = {}
+    stages = (("untrained", FIXED), ("DifField", history[training["selected_update"]]))
+    for k, (label, weights) in enumerate(stages):
+        model = make_model("parametric", seed)
+        with torch.no_grad():
+            model.log_weights.copy_(torch.tensor(weights).log())
+            positions, _ = free_rollout(model, test["positions"], test["velocities"], rounds)
+        traj = torch.cat((test["positions"][None], positions)).numpy()
+        trajectories_panel(axes[2 + k], traj, colours, panel("cd"[k], label))
+        err = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
+        errors[label] = err
+        badge = f"RMSE {err:.2f}" if err >= 1e-3 else r"RMSE $<10^{-4}$"
+        box_style = {"facecolor": "white", "alpha": 0.78, "edgecolor": "none", "pad": 0.8}
+        axes[2 + k].text(0.96, 0.04, badge, transform=axes[2 + k].transAxes,
+                         fontsize=FONT - 1.5, color=INK, ha="right", va="bottom", bbox=box_style)
+    model = make_model(gnn, seed)
+    checkpoint = boids / "jobs/observed" / gnn / f"seed{seed}" / "best.pt"
+    model.load_state_dict(torch.load(checkpoint, weights_only=True)["model"])
+    with torch.no_grad():
+        positions, _ = free_rollout(model.eval(), test["positions"], test["velocities"], rounds)
+    traj = torch.cat((test["positions"][None], positions)).numpy()
+    trajectories_panel(axes[4], traj, colours, panel("e", STYLE[gnn][2]))
+    err_gnn = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
+    axes[4].text(0.96, 0.04, f"RMSE {err_gnn:.2f}", transform=axes[4].transAxes,
+                 fontsize=FONT - 1.5, color=INK, ha="right", va="bottom", bbox=box_style)
+    if len(axes) > 5:
+        teacher = torch.cat((test["positions"][None], test["target_pos"])).numpy()
+        trajectories_panel(axes[5], teacher, colours, panel("f", "teacher"), background="#f4f8ff")
+
+    numbers = {"validation_loss": losses, "initial_weights_loss": initial, "position_rmse": errors}
+    return numbers, []
+
+
 def snapshot_axes(ax, title, box=(0.0, 1.0, 0.0, 1.0), margin=0.03):
     x0, x1, y0, y1 = box
     ax.set(xticks=[], yticks=[], aspect="equal", xlim=(x0 - margin, x1 + margin),
            ylim=(y0 - margin, y1 + margin))  # fmt: skip
-    ax.set_title(title, fontsize=7, fontweight="normal", pad=2, linespacing=1.1)
+    ax.set_title(title, fontsize=7, pad=2, linespacing=1.1)
     ax.grid(False)
     for spine in ax.spines.values():
         spine.set(visible=True, linewidth=0.5, color=MUTED)
@@ -417,19 +741,24 @@ def scr_program(root, scenario, method):
 
 
 @torch.no_grad()
-def rq1_scr_snapshot(root, out, *, scenario="static", index=0):
+def scr_snapshot_panels(
+    axes, root, scenario="static", index=0, letters="abcd", *, zones=True, one_line=False
+):
     """Field, true zones and final regions of the initial and learned programs (batched, hard)."""
     config = clusters.settings(read_json(root / "manifest.json")["profile"])
     episode = clusters.cluster_episode(config, "test", index, moving=scenario == "moving")
     positions, truth = episode.positions.numpy(), clusters.truth_labels(episode)[-1]
-    fig, axes = plt.subplots(1, 4, figsize=(3.5, 1.15))
     axes[0].scatter(*positions.T, c=episode.observations[-1].numpy(), cmap="viridis", s=9,
                     linewidths=0)  # fmt: skip
-    snapshot_axes(axes[0], "(a) sensed field")
-    axes[1].scatter(*positions.T, c=np.array(ZONES)[truth], s=9, linewidths=0)
-    snapshot_axes(axes[1], "(b) true zones")
+    snapshot_axes(axes[0], panel(letters[0], "sensed field"))
+    if zones:
+        axes[1].scatter(*positions.T, c=np.array(ZONES)[truth], s=9, linewidths=0)
+        snapshot_axes(axes[1], panel(letters[1], "true zones"))
+    else:
+        axes, letters = [axes[0], None, *axes[1:]], f"{letters[0]} {letters[1:]}"
     shown = {"episode": episode.key, "round": episode.rounds - 1}
-    panels = (("fixed-combined", "(c) initial"), ("parametric", "(d) learned"))
+    panels = (("fixed-combined", panel(letters[2], "initial")),
+              ("parametric", panel(letters[3], "learned")))  # fmt: skip
     for ax, (method, name) in zip(axes[2:], panels, strict=True):
         trace = central(episode, scr_program(root, scenario, method))
         labels = trace.leaders[-1].numpy()
@@ -439,15 +768,108 @@ def rq1_scr_snapshot(root, out, *, scenario="static", index=0):
             raise AssertionError(f"{method}: snapshot differs from the evaluated episode")
         ari, regions = float(adjusted_rand_score(truth, labels)), len(np.unique(labels))
         elected = trace.fields[-1, :, ELECTED].numpy() > 0.5
+        title = (
+            f"{name} ($K={regions}$)"
+            if one_line
+            else f"{name}\nARI {ari:.2f}, $K={regions}$"
+        )
         regions_panel(ax, positions, labels, truth=truth, elected=elected,
                       active=np.ones(episode.nodes, dtype=bool),
-                      title=f"{name}\nARI {ari:.2f}, $K={regions}$")  # fmt: skip
+                      title=title)  # fmt: skip
         shown[method] = {"ari": ari, "regions": regions, "leaders": int(elected.sum())}
+    return shown
+
+
+def rq1_scr_snapshot(root, out, *, scenario="static", index=0):
+    fig, axes = plt.subplots(1, 4, figsize=(3.5, 1.15))
+    shown = scr_snapshot_panels(axes, root, scenario, index)
     fig.subplots_adjust(left=0.005, right=0.995, bottom=0.01, top=0.74, wspace=0.07)
     for suffix in ("pdf", "png"):
         fig.savefig(out / f"rq1-scr-snapshot.{suffix}", dpi=300)
     plt.close(fig)
     return shown
+
+
+SCR_METHODS = (  # method, label, colour, given K
+    ("fixed-combined", "initial program", MUTED, False),
+    ("parametric", "DifField, learned", BLUE, False),
+    ("gnn-central", "central GNN", DARK_RED, False),
+    ("kmeans", "K-means", "#5d5b56", True),
+    ("ward", "Ward", "#5d5b56", True),
+)
+
+
+def scr_panel_rows(root, method, panel, trained="static"):
+    pattern = f"{root}/{trained}/episodes/{method}/seed*/{panel}-batched-clean-*.json"
+    return [read_json(Path(p)) for p in sorted(glob.glob(pattern))]
+
+
+def regions_panel_ari(ax, root, *, scenario="static", letter="f"):
+    """Final ARI of every method on static and drifting zones, with the number of regions K."""
+    numbers, height = {}, 0.34
+    for y, (method, _, colour, given) in enumerate(SCR_METHODS):
+        numbers[method] = {}
+        for zone, offset, hatch in (("static", -height / 2, None), ("moving", height / 2, "///")):
+            stats = interval(scr_panel_rows(root, method, zone, scenario), "ari_final")
+            mean = stats["finite_mean"]
+            face = to_rgba(colour, 0.8) if hatch is None else "white"
+            ax.barh(y + offset, mean, height, color=face, edgecolor=colour, hatch=hatch,
+                    linewidth=0.6)  # fmt: skip
+            if stats["ci95"]:
+                low, high = stats["ci95"]
+                ax.errorbar(mean, y + offset, xerr=[[mean - low], [high - mean]], color=INK,
+                            linewidth=0.6, capsize=1.2)  # fmt: skip
+            numbers[method][zone] = {"ari": mean, "ci95": stats["ci95"]}
+        regions = np.mean([r["metrics"]["clusters_final"]
+                           for r in scr_panel_rows(root, method, "static", scenario)])  # fmt: skip
+        numbers[method]["regions"] = float(regions)
+        ax.text(1.03, y, "$4^*$" if given else f"{regions:.1f}", transform=ax.get_yaxis_transform(),
+                fontsize=FONT - 1, color=colour, va="center", ha="left")  # fmt: skip
+    ax.text(1.03, -0.75, "$K$", transform=ax.get_yaxis_transform(), fontsize=FONT - 1,
+            color=MUTED, va="center", ha="left")  # fmt: skip
+    short = {"fixed-combined": "initial", "parametric": "DifField", "gnn-central": "central GNN"}
+    ax.set_yticks(range(len(SCR_METHODS)), [short.get(m[0], m[1]) for m in SCR_METHODS],
+                  fontsize=FONT - 1)  # fmt: skip
+    ax.set(xlim=(0, 1), ylim=(len(SCR_METHODS) - 0.5, -0.5))
+    ax.set_xlabel("clustering ARI", labelpad=1.5)
+    ax.set_xticks([0, 0.5, 1])
+    ax.tick_params(axis="y", length=0)
+    ax.grid(axis="y", visible=False)
+    ax.set_title(panel(letter, "regions"), loc="left", pad=2)
+    zone_handles = [
+        Rectangle((0, 0), 1, 1, facecolor=MUTED, edgecolor=MUTED, label="static"),
+        Rectangle((0, 0), 1, 1, facecolor="white", edgecolor=MUTED, hatch="///",
+                  label="drifting"),
+    ]
+    ax.legend(handles=zone_handles, loc="lower right", bbox_to_anchor=(1.0, 1.02), ncol=2,
+              frameon=False, handlelength=0.95, handleheight=0.58, columnspacing=0.65,
+              handletextpad=0.3, fontsize=FONT - 1.5, borderaxespad=0.0)
+    return numbers
+
+
+def rq1_figure(boids, root, out):
+    """RQ1 in two rows: Boids (a-f, including teacher) and coordination regions (g-k)."""
+    fig = plt.figure(figsize=(7.16, 2.28))
+    top_widths = (1.12, 0.48, 1.0, 0.12, 0.9, 0.05, 0.9, 0.05, 0.9, 0.05, 0.9)
+    top_grid = fig.add_gridspec(
+        1, len(top_widths), width_ratios=top_widths, wspace=0,
+        left=0.058, right=0.995, bottom=0.57, top=0.94,
+    )
+    top_axes = [fig.add_subplot(top_grid[0, k]) for k in (0, 2, 4, 6, 8, 10)]
+    boids_numbers, _ = boids_row(top_axes, boids)
+
+    bot_widths = (0.95, 0.06, 0.95, 0.06, 0.95, 0.06, 0.95, 0.52, 2.05)
+    bot_grid = fig.add_gridspec(
+        1, len(bot_widths), width_ratios=bot_widths, wspace=0,
+        left=0.058, right=0.962, bottom=0.04, top=0.33,
+    )
+    bot_axes = [fig.add_subplot(bot_grid[0, k]) for k in (0, 2, 4, 6, 8)]
+    scr_snapshot_panels(bot_axes[:4], root, letters="ghij", one_line=True)
+    regions = regions_panel_ari(bot_axes[4], root, letter="k")
+    for suffix in ("pdf", "png"):
+        fig.savefig(out / f"rq1.{suffix}", dpi=300)
+    plt.close(fig)
+    return {"boids": boids_numbers, "regions": regions}
 
 
 def channel_snapshots(axes, channel):
@@ -478,22 +900,28 @@ def channel_snapshots(axes, channel):
 
 
 def regions_snapshots(axes, root, scenario, index):
-    """Asynchronous crash run of the learned program: at the trough and once recovered."""
+    """Asynchronous crash run of the learned program: before the crash, just after it, and once
+    its regions have re-elected their leaders."""
     config = clusters.settings(read_json(root / "manifest.json")["profile"])
-    episode = clusters.cluster_episode(config, "test", index, condition="crash",
-                                       moving=scenario == "moving")  # fmt: skip
-    trace = decentralized(
-        episode, scr_program(root, scenario, "parametric"), activation_probability=0.5,
-        seed=seed_for(config.data_seed, episode.key, "schedule"),
-    )  # fmt: skip
+    model = scr_program(root, scenario, "parametric")
+    episode = clusters.leader_crash(config, index, model, 0.5, moving=scenario == "moving")
+    trace = clusters.run(episode, model, 0.5, config)
     name = f"distributed-async-0.5-crash-4-0.3-{index}.json"
     ari = read_json(root / scenario / "episodes/parametric/seed0" / name)["curves"]["ari"]
     truth, fault = clusters.truth_labels(episode), episode.fault_at
-    trough = fault + int(np.argmin(ari[fault:]))
-    pre = float(np.mean(ari[fault - 5 : fault]))  # recovered: within 0.05 ARI, as in the table
-    rounds = (trough, trough + recovery([1 - a for a in ari], trough, 1 - (pre - 0.05))["rounds"])
+    elected = trace.fields[..., ELECTED].numpy() > 0.5
+    labels_t = trace.leaders.numpy()
+
+    def settled(t):  # every region led by a live leader, and the zones recovered
+        alive = episode.active[t].numpy()
+        heads = set(np.flatnonzero(elected[t] & alive).tolist())
+        return ari[t] >= 0.95 and set(labels_t[t][alive].tolist()) == heads
+
+    back = next(t for t in range(fault + 1, episode.rounds - 3)
+                if all(settled(u) for u in range(t, t + 3)))  # fmt: skip
+    rounds = (fault - 1, fault + 2, back)
     positions = episode.positions.numpy()
-    for ax, t, label in zip(axes, rounds, ("crash", "recovered"), strict=True):
+    for ax, t, label in zip(axes, rounds, ("before", "crash", "re-elected"), strict=True):
         labels, active = trace.leaders[t].numpy(), episode.active[t].numpy()
         if not np.isclose(adjusted_rand_score(truth[t][active], labels[active]), ari[t]):
             raise AssertionError("Regions snapshot run differs from the stored episode")
@@ -507,30 +935,25 @@ def regions_snapshots(axes, root, scenario, index):
 @torch.no_grad()
 def rq2_snapshots(channel, root, out, *, scenario="static", index=0):
     """Before/after views of the channel and the regions, each checked against its stored run."""
-    fig = plt.figure(figsize=(7.16, 1.5))
-    grid = fig.add_gridspec(1, 6, width_ratios=(1, 1, 1, 0.14, 1, 1), wspace=0.06)
-    axes = [fig.add_subplot(grid[0, k]) for k in (0, 1, 2, 4, 5)]
+    fig = plt.figure(figsize=(7.16, 1.0))
+    grid = fig.add_gridspec(1, 7, width_ratios=(1, 1, 1, 0.16, 1, 1, 1), wspace=0.06)
+    axes = [fig.add_subplot(grid[0, k]) for k in (0, 1, 2, 4, 5, 6)]
     shown = {
         "channel": channel_snapshots(axes[:3], channel),
         "regions": regions_snapshots(axes[3:], root, scenario, index),
     }
-    fig.subplots_adjust(left=0.003, right=0.997, bottom=0.01, top=0.82)
-    cases = ("channel: a large obstacle appears", "coordination regions: devices crash")
-    for group, label in zip((axes[:3], axes[3:]), cases, strict=True):
-        left, right = group[0].get_position(), group[-1].get_position()
-        fig.text((left.x0 + right.x1) / 2, left.y1 + 0.1, label, ha="center", va="bottom",
-                 fontsize=FONT, fontweight="semibold", color=INK)  # fmt: skip
+    fig.subplots_adjust(left=0.02, right=0.997, bottom=0.01, top=0.9)
+    for ax, label in ((axes[0], "channel"), (axes[3], "regions")):
+        ax.set_ylabel(label, fontsize=FONT, color=INK, labelpad=2)
     for suffix in ("pdf", "png"):
         fig.savefig(out / f"rq2-snapshots.{suffix}", dpi=300)
     plt.close(fig)
     return shown
 
 
-def recovery_table(channel, boids, scr, out, size=64):
+def recovery_table(channel, numbers, out):
     """A compact LaTeX tabular with the recovery rounds behind the RQ2 figure."""
     events = read_json(channel / "summary.json")["events"]
-    swarm = read_json(boids / "adaptation/summary.json")["summary"]
-    devices = read_json(boids / "devices/summary.json")["summary"]
 
     def rounds(entry):
         if entry["median_rounds"] is None:
@@ -547,30 +970,97 @@ def recovery_table(channel, boids, scr, out, size=64):
         e = events[name]
         total = e["recovered"] + e["censored"]
         lines.append(f"Channel & {label} & {rounds(e)} & {e['recovered']}/{total} \\\\")
-    for method in ("oracle", "parametric", "gnn32", "gnn64"):
-        e = swarm[f"N{size}/{method}"]
-        runs = e["runs"] - e["diverged"]
-        lines.append(
-            f"Boids, {STYLE[BOIDS_ROLE[method]][2]} & split, join & "
-            f"{rounds(e['split'])}, {rounds(e['join'])} & "
-            f"{e['split']['recovered']}/{runs}, {e['join']['recovered']}/{runs} \\\\"
-        )
-    for method in ("parametric", "oracle"):
-        e = devices[f"{method}/async"]
-        runs = e["runs"] - e["diverged"]
-        lines.append(
-            f"Boids, {STYLE[BOIDS_ROLE[method]][2]}, async devices & split, join & "
-            f"{rounds(e['split'])}, {rounds(e['join'])} & "
-            f"{e['split']['recovered']}/{runs}, {e['join']['recovered']}/{runs} \\\\"
-        )
-    for method in ("parametric", "fixed-combined"):
-        e = scr[method]
-        lines.append(
-            f"SCR, {STYLE[SCR_ROLE[method]][2]} & crash & {rounds(e)} & "
-            f"{e['recovered']}/{e['runs']} \\\\"
-        )
+    for sched, key in (("sync", "scr_sync"), ("async", "scr")):
+        for method in ("parametric", "fixed-combined"):
+            e = numbers[key][method]
+            lines.append(
+                f"SCR ({sched}), {STYLE[SCR_ROLE[method]][2]} & leader crash & {rounds(e)} & "
+                f"{e['recovered']}/{e['runs']} \\\\"
+            )
+    for fault, label in (("node_stop", "paused devices"), ("partition", "partition"),
+                         ("link_loss", "link loss")):
+        for method in ("parametric", "fixed-combined"):
+            e = numbers["scr_transient"][fault][method]
+            lines.append(
+                f"SCR (async), {STYLE[SCR_ROLE[method]][2]} & {label} & {rounds(e)} & "
+                f"{e['recovered']}/{e['runs']} \\\\"
+            )
     lines += [r"\bottomrule", r"\end{tabular}", ""]
     (out / "rq2-recovery.tex").write_text("\n".join(lines))
+
+
+def recovery_rows(channel, numbers):
+    """Per-run recovery rounds of every runtime fault on Channel and Coordination Regions."""
+    runs = [read_json(p) for p in sorted((channel / "runs").glob("seed*.json"))]
+    groups = {"channel": [], "crash": [], "transient": []}
+    for event, label in (("obstacle", "obstacle"), ("clear", "obstacle removed"),
+                         ("relocate", "destination moved")):  # fmt: skip
+        values = [r["events"][event]["recovery"]["rounds"] for r in runs]
+        recovered = [v for v in values if v is not None]
+        groups["channel"].append((label, BLUE, [(recovered, len(values), "o")]))
+    for sched, key in (("sync", "scr_sync"), ("async", "scr")):
+        for method, name in (("parametric", "DifField"), ("fixed-combined", "initial")):
+            entry = numbers[key][method]
+            colour = STYLE[SCR_ROLE[method]][0]
+            groups["crash"].append((f"{name}, {sched}", colour,
+                                    [(entry["rounds"], entry["runs"], "o")]))  # fmt: skip
+    for fault, title in (("node_stop", "paused"), ("partition", "partition"),
+                         ("link_loss", "link loss")):
+        for method, name in (("parametric", "DifField"), ("fixed-combined", "initial")):
+            entry = numbers["scr_transient"][fault][method]
+            colour = STYLE[SCR_ROLE[method]][0]
+            groups["transient"].append((f"{title}, {name}", colour,
+                                        [(entry["rounds"], entry["runs"], "o")]))  # fmt: skip
+    return groups
+
+
+def rq2_recovery_figure(channel, numbers_rq2, out):
+    """Rounds to recover after each event (log scale): one dot per recovered run, a bar at the
+    median, and the recovered runs out of all runs on the right."""
+    groups = recovery_rows(channel, numbers_rq2)
+    blocks = {
+        panel("a", "channel"): [(label, colour, series[0])
+                                for label, colour, series in groups["channel"]],
+        panel("b", "regions: leader crash"): [(label, colour, series[0])
+                                              for label, colour, series in groups["crash"]],
+        panel("c", "regions: transient faults (async)"): [
+            (label, colour, series[0]) for label, colour, series in groups["transient"]
+        ],
+    }  # fmt: skip
+    heights = [len(rows) + 0.35 for rows in blocks.values()]
+    fig, axes = plt.subplots(len(blocks), 1, figsize=(3.5, 2.38), sharex=True,
+                             gridspec_kw={"height_ratios": heights, "hspace": 0.48})  # fmt: skip
+    generator = np.random.default_rng(0)
+    numbers = {}
+    for ax, (title, rows) in zip(axes, blocks.items(), strict=True):
+        for y, (label, colour, (values, total, _)) in enumerate(rows):
+            numbers[f"{title}/{label}"] = {
+                "recovered": len(values), "runs": total,
+                "median": float(np.median(values)) if values else None}  # fmt: skip
+            if values:
+                v = np.maximum(np.asarray(values, dtype=float), 1.0)
+                jitter = generator.uniform(-0.26, 0.26, len(v))
+                ax.scatter(v, y + jitter, s=4, color=colour, alpha=0.45, linewidths=0, zorder=2)
+                ax.plot([np.median(v)] * 2, [y - 0.36, y + 0.36], color=colour, linewidth=1.8,
+                        solid_capstyle="butt", zorder=3)  # fmt: skip
+            ax.text(1.02, y, f"{len(values)}/{total}", transform=ax.get_yaxis_transform(),
+                    fontsize=FONT - 1, color=colour, va="center", ha="left")  # fmt: skip
+        ax.set_yticks(range(len(rows)), [r[0] for r in rows], fontsize=FONT - 1)
+        ax.tick_params(axis="y", length=0)
+        ax.set_ylim(len(rows) - 0.5, -0.5)
+        ax.grid(axis="y", visible=False)
+        ax.set_title(title, fontsize=FONT - 0.5, loc="left", pad=2)
+    axes[0].text(1.02, 1.04, "recovered", transform=axes[0].transAxes, fontsize=FONT - 1.5,
+                 color=MUTED, va="bottom", ha="left")  # fmt: skip
+    axes[-1].set_xscale("log")
+    axes[-1].set_xticks([1, 3, 10, 30, 100, 300], ["≤1", "3", "10", "30", "100", "300"])
+    axes[-1].set_xlim(0.8, 400)
+    axes[-1].set_xlabel("rounds to recover")
+    fig.subplots_adjust(left=0.31, right=0.83, top=0.94, bottom=0.11)
+    for suffix in ("pdf", "png"):
+        fig.savefig(out / f"rq2-recovery.{suffix}", dpi=300)
+    plt.close(fig)
+    return numbers
 
 
 def scaling_times(path):
@@ -597,7 +1087,7 @@ def rq3_figure(root, out, *, degree=32):
                 linestyle=linestyle, markersize=2.8, label=label)  # fmt: skip
     ax.set(yscale="log", ylabel="seconds per rollout")
     ax.set_yticks([0.2, 0.5, 1, 2], ["0.2", "0.5", "1", "2"])
-    ax.set_title(f"(a) time, $k={degree}$", fontweight="normal", loc="left")
+    ax.set_title(panel("a", f"time, $k={degree}$"), loc="left")
     ax.legend(frameon=False, loc="upper left", handlelength=2.0)
     ax = axes[1]
     shades = plt.get_cmap("viridis")(np.linspace(0.05, 0.85, len(degrees)))
@@ -606,7 +1096,7 @@ def rq3_figure(root, out, *, degree=32):
                 markersize=2.2, label=f"$k={k}$")  # fmt: skip
     ax.axhline(1, color=MUTED, linewidth=0.6, linestyle=":")
     ax.set(ylabel="GPU speedup", ylim=(0, None))
-    ax.set_title("(b) GPU speedup", fontweight="normal", loc="left")
+    ax.set_title(panel("b", "GPU speedup"), loc="left")
     ax.legend(frameon=False, loc="upper left", fontsize=FONT - 1.5, handlelength=1.2,
               labelspacing=0.15)  # fmt: skip
     for ax in axes:
@@ -628,7 +1118,7 @@ def paper_figures(profile="paper-cpu", figures=None):
     generated = PROJECT / "generated/seams"
     channel = generated / f"channel-adaptation-{profile}"
     boids = generated / f"boids-{profile}"
-    scr_root = generated / "comparison/clusters"
+    scr_root = generated / "comparison/clusters-sharp"
     out = figures or (
         PROJECT / "paper-2026-seams-diffield/figures"
         if profile == "paper-cpu"
@@ -638,9 +1128,11 @@ def paper_figures(profile="paper-cpu", figures=None):
     numbers = rq2_figure(channel, boids, scr_root, out)
     numbers["boids_rq1"] = rq1_boids_figure(boids, out)
     numbers["boids_trajectories"] = rq1_boids_trajectories(boids, out)
+    numbers["rq1"] = rq1_figure(boids, scr_root, out)
     numbers["scr_snapshot"] = rq1_scr_snapshot(scr_root, out)
     numbers["rq2_snapshots"] = rq2_snapshots(channel, scr_root, out)
-    recovery_table(channel, boids, numbers["scr"], out)
+    recovery_table(channel, numbers, out)
+    numbers["recovery"] = rq2_recovery_figure(channel, numbers, out)
     numbers["channel"] = read_json(channel / "summary.json")["events"]
     numbers["boids_adaptation"] = read_json(boids / "adaptation/summary.json")["summary"]
     numbers["boids_devices"] = read_json(boids / "devices/summary.json")["summary"]

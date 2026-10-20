@@ -1,7 +1,7 @@
 """Space-Fluid as distributed spatial clustering of static zones.
 
 Each cluster is the zone dominated by one Gaussian and carries its own level;
-boundaries are blurred by a soft dominance and levels are close but distinct.
+zones are disjoint, with sharp boundaries, and levels are close but distinct.
 The program should form one region per zone: regions that grow too much merge
 zones, regions that grow too little split them. Training is the reconstruction
 objective of the main study (regional estimate error + lambda * leaders), with no
@@ -12,7 +12,10 @@ sets, so the objective's optimum and the best clustering disagree.)
 
 import itertools
 import math
+import os
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import replace
+from multiprocessing import get_context
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -37,17 +40,24 @@ from .report import export, method_color
 from .training import load_program, train_job
 
 FIXED = ("combined",)  # the initial configuration of the learned program
-LEARNERS = ("parametric", "hybrid")
+# The hybrid (GNN link metric) is not reported in the paper, and its training fails on sharp zones.
+LEARNERS = ("parametric",)
 CENTRAL = ("gnn-central", "kmeans", "ward")  # global view of every round
 SCENARIOS = ("static", "moving")  # zones fixed, or drifting during the episode
 CONDITIONS = ("clean", "link_loss", "node_stop", "partition", "crash")
 DRIFT = 0.08  # radius of each zone centre's circular drift in the moving scenario
 # Full-batch rate of the main study (0.1 diverges at high lambda there).
 RATE = 0.03
-SOFTNESS = 0.3  # boundary blur (dominance softmax temperature), chosen on validation
+# Zones are disjoint: every device senses the level of its own zone, with no blur at the
+# boundaries (a blurred boundary forms an intermediate band that the program reads as a zone).
 GAP = 0.12  # minimum difference between zone levels
+# Election candidacies expire after this many hops, so the regions of crashed leaders
+# re-elect within a bounded number of rounds whatever the learned link cost.
+HOPS = 12
 # (train, validation, test per cell, decentralized per cell) episodes.
-SIZES = {"compact-cpu": (64, 16, 8, 4), "smoke": (4, 2, 1, 1)}
+SIZES = {"compact-cpu": (64, 16, 10, 10), "smoke": (4, 2, 1, 1)}
+# Evaluation episodes are independent and seeded, so they run in parallel CPU processes.
+WORKERS = int(os.environ.get("SEAMS_EVAL_WORKERS", min(16, os.cpu_count() or 1)))
 
 
 def gaussians(seed, count, separation):
@@ -78,10 +88,22 @@ def zone_levels(seed, count):
 
 
 def cluster_episode(
-    config, split, index, count=4, separation=0.3, *, condition="clean", nodes=None, moving=False
+    config,
+    split,
+    index,
+    count=4,
+    separation=0.3,
+    *,
+    condition="clean",
+    nodes=None,
+    moving=False,
+    crashed=None,
 ):
     """Zones of ``count`` Gaussians; with ``moving`` each centre drifts on a circle of
-    radius DRIFT starting from its place (0.5-1 turns per episode, own phase)."""
+    radius DRIFT starting from its place (0.5-1 turns per episode, own phase).
+
+    ``crashed`` overrides the devices that crash (by default, those nearest the zone centres);
+    :func:`leader_crash` sets them to the leaders that a program elects before the fault."""
     nodes = config.nodes if nodes is None else nodes
     rounds = config.eval_rounds if split == "test" else config.train_rounds
     seed = seed_for(config.data_seed, "clusters", split, count, separation, index)
@@ -98,9 +120,9 @@ def cluster_episode(
     dominance = amplitudes.log() - distance / (2 * widths.square())
     labels = dominance.argmax(-1).expand(rounds, -1)
     levels = zone_levels(seed, count)
-    field = ((dominance / SOFTNESS).softmax(-1) @ levels).expand(rounds, -1)
-    # Peak devices crash: the likeliest leaders, the hardest case for self-healing.
-    crashed = distance[min(rounds // 3, len(distance) - 1)].argmin(0)
+    field = levels[labels]
+    if crashed is None:  # devices nearest the zone centres
+        crashed = distance[min(rounds // 3, len(distance) - 1)].argmin(0)
     active, edges, fault, restore = faults(seed, points, base, rounds, condition, crashed)
     return RegionEpisode(
         f"clusters-{split}-{index}-k{count}-s{separation:g}-{condition}"
@@ -123,6 +145,28 @@ def cluster_episode(
             "labels": labels.tolist() if moving else labels[0].tolist(),
             "centres": centres.tolist(),
         },
+    )
+
+
+@torch.no_grad()
+def leader_crash(config, index, model, probability, *, moving=False):
+    """The crash episode in which the leaders elected just before the fault crash for good.
+
+    Rounds before the fault do not depend on which devices crash, so a first run of the
+    same episode and schedule tells the leaders, and the episode is rebuilt around them.
+    """
+    episode = cluster_episode(config, "test", index, condition="crash", moving=moving)
+    trace = run(episode, model, probability, config)
+    leaders = (trace.fields[episode.fault_at - 1, :, ELECTED] > 0.5).nonzero().flatten()
+    return cluster_episode(config, "test", index, condition="crash", moving=moving, crashed=leaders)
+
+
+def run(episode, model, probability, config):
+    return decentralized(
+        episode,
+        model,
+        activation_probability=probability,
+        seed=seed_for(config.data_seed, episode.key, "schedule"),
     )
 
 
@@ -262,11 +306,14 @@ def train(out, config, sizes, norm, budget, *, scenario):
         directory = out / "checkpoints" / "gnn-central" / f"seed{seed}"
         if not (directory / "best.pt").exists():
             print(f"train gnn-central seed={seed}", flush=True)
-            cluster_gnn.train(directory, config, bank_, norm, seed=seed, penalty=config.main_lambda)
+            scale = {k: norm[k] for k in ("mean", "scale")}
+            cluster_gnn.train(
+                directory, config, bank_, scale, seed=seed, penalty=config.main_lambda
+            )
 
 
-def evaluate(out, config, sizes, norm, budget, *, scenario):  # noqa: PLR0912 -- one branch per executor
-    models = {}
+def evaluate(out, config, sizes, norm, budget, *, scenario):
+    jobs = []
     for spec, method, seed in itertools.product(specs(sizes, scenario), methods(), config.seeds):
         central_method = method in CENTRAL
         if spec["panel"] == "distributed" and central_method:
@@ -278,66 +325,83 @@ def evaluate(out, config, sizes, norm, budget, *, scenario):  # noqa: PLR0912 --
             str(spec[k]) for k in ("panel", "executor", "condition", "count", "separation", "index")
         )
         path = out / "episodes" / method / f"seed{seed}" / f"{name}.json"
-        if path.exists():
-            continue
+        if not path.exists():
+            jobs.append((out, config, norm, spec, method, seed, name, path))
+    if WORKERS <= 1:
+        for job in jobs:
+            budget.check()
+            evaluate_one(job)
+        return
+    with ProcessPoolExecutor(WORKERS, mp_context=get_context("spawn")) as pool:
+        futures = [pool.submit(evaluate_one, job) for job in jobs]
+        for future in futures:
+            future.result()
         budget.check()
-        episode = cluster_episode(
-            config,
-            "test",
-            spec["index"],
-            spec["count"],
-            spec["separation"],
-            condition=spec["condition"],
-            moving=spec["moving"],
-        )
-        print(f"evaluate {out.name} {name} {method} seed={seed}", flush=True)
-        check, elected = None, None
-        if method == "gnn-central":
-            if (method, seed) not in models:
-                models[method, seed] = cluster_gnn.load(
-                    out / "checkpoints" / method / f"seed{seed}" / "best.pt"
-                )
-            labels = cluster_gnn.labels(models[method, seed], episode)
-        elif central_method:
-            labels = central_baseline(episode, method, norm, seed_for(config.data_seed, method))
-        else:
-            if (method, seed) not in models:
-                models[method, seed] = (
-                    load_program(out / "checkpoints" / method / f"seed{seed}" / "best.pt")
-                    if method in LEARNERS
-                    else make_program(method.removeprefix("fixed-"), **norm).requires_grad_(False)
-                )
-            model = models[method, seed]
-            with torch.no_grad():
-                if spec["executor"] == "batched":
-                    trace = central(episode, model)
-                else:
-                    probability = 1.0 if spec["executor"] == "sync" else 0.5
-                    trace = decentralized(
-                        episode,
-                        model,
-                        activation_probability=probability,
-                        seed=seed_for(config.data_seed, episode.key, "schedule"),
-                    )
-                    if probability == 1.0:
-                        check = equivalence(central(episode, model), trace)
-                        if not (check["identifiers_equal"] and check["values_close"]):
-                            raise AssertionError(f"Synchronous mismatch: {check}")
-            labels, elected = trace.leaders, trace.fields[..., ELECTED]
-        metrics, curves = cluster_metrics(episode, labels, elected)
-        json_write(
-            path,
-            {
-                **spec,
-                "method": method,
-                "seed": seed,
-                "episode": name,
-                "metrics": metrics,
-                "curves": curves,
-                "equivalence": check,
-                "final_labels": labels[-1].tolist(),
-            },
-        )
+
+
+_MODELS = {}  # per process: loaded programs and GNNs
+
+
+def evaluate_one(job):
+    out, config, norm, spec, method, seed, name, path = job
+    torch.set_num_threads(1)
+    torch.use_deterministic_algorithms(True)
+    central_method = method in CENTRAL
+    episode = cluster_episode(
+        config,
+        "test",
+        spec["index"],
+        spec["count"],
+        spec["separation"],
+        condition=spec["condition"],
+        moving=spec["moving"],
+    )
+    print(f"evaluate {out.name} {name} {method} seed={seed}", flush=True)
+    check, elected = None, None
+    key = (str(out), method, seed)
+    if method == "gnn-central":
+        if key not in _MODELS:
+            checkpoint = out / "checkpoints" / method / f"seed{seed}" / "best.pt"
+            _MODELS[key] = cluster_gnn.load(checkpoint)
+        labels = cluster_gnn.labels(_MODELS[key], episode)
+    elif central_method:
+        labels = central_baseline(episode, method, norm, seed_for(config.data_seed, method))
+    else:
+        if key not in _MODELS:
+            _MODELS[key] = (
+                load_program(out / "checkpoints" / method / f"seed{seed}" / "best.pt")
+                if method in LEARNERS
+                else make_program(method.removeprefix("fixed-"), **norm).requires_grad_(False)
+            )
+        model = _MODELS[key]
+        with torch.no_grad():
+            if spec["executor"] == "batched":
+                trace = central(episode, model)
+            else:
+                probability = 1.0 if spec["executor"] == "sync" else 0.5
+                if spec["condition"] == "crash":
+                    episode = leader_crash(config, spec["index"], model, probability,
+                                           moving=spec["moving"])  # fmt: skip
+                trace = run(episode, model, probability, config)
+                if probability == 1.0:
+                    check = equivalence(central(episode, model), trace)
+                    if not (check["identifiers_equal"] and check["values_close"]):
+                        raise AssertionError(f"Synchronous mismatch: {check}")
+        labels, elected = trace.leaders, trace.fields[..., ELECTED]
+    metrics, curves = cluster_metrics(episode, labels, elected)
+    json_write(
+        path,
+        {
+            **spec,
+            "method": method,
+            "seed": seed,
+            "episode": name,
+            "metrics": metrics,
+            "curves": curves,
+            "equivalence": check,
+            "final_labels": labels[-1].tolist(),
+        },
+    )
 
 
 PANELS = (("static", "batched"), ("moving", "batched"), ("distributed", "async-0.5"))
@@ -350,7 +414,7 @@ def report(out, config, scenario):
         "",
         f"Profile **{config.profile}**; {len(rows)} completed evaluations. Each cluster is the "
         "zone dominated by one Gaussian, with its own level (levels >= "
-        f"{GAP:g} apart, boundaries blurred with softness {SOFTNESS:g}); moving zones drift on "
+        f"{GAP:g} apart, disjoint zones with sharp boundaries); moving zones drift on "
         f"circles of radius {DRIFT:g}. The learned program starts from fixed-combined (its "
         "initial configuration). SCR methods do not know the number of clusters; K-means and "
         "Ward receive the true K. Training: reconstruction + "
@@ -564,7 +628,7 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
 
 def normalization(config, sizes, scenario):
     values = torch.cat([e.observations.flatten() for e in bank(config, sizes, scenario)["train"]])
-    return {"mean": float(values.mean()), "scale": max(float(values.std()), 1e-6)}
+    return {"mean": float(values.mean()), "scale": max(float(values.std()), 1e-6), "max_hops": HOPS}
 
 
 @torch.no_grad()

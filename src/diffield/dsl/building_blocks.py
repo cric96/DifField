@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import operator
 from collections.abc import Callable
 from typing import NamedTuple
@@ -437,6 +438,9 @@ distance_to = gradient
 """``distance_to(source, metric)``: alias of :func:`gradient` (ScaFi ``G``,
 Collektive ``distanceTo``)."""
 
+distance = gradient
+"""``distance(source, metric)``: alias of :func:`gradient`."""
+
 
 @aggregate
 def converge_cast(
@@ -563,6 +567,7 @@ def bounded_election(
     radius: float = 1.0,
     metric: LinkField | None = None,
     *,
+    max_hops: int | None = None,
     name: str | None = None,
     mode: str | None = None,
     tau: float | None = None,
@@ -578,6 +583,11 @@ def bounded_election(
     connected.  In soft mode the candidacy is chosen by the relaxed "first
     admissible in order" probabilities (:func:`surrogate_probabilities`):
     numeric outputs become expectations while the leader id stays hard.
+
+    With *max_hops*, candidacies relayed more than *max_hops* times are dropped
+    too, so the candidacy of a crashed leader disappears within *max_hops* rounds
+    whatever the metric (a nearly zero metric otherwise lets it linger, since its
+    distance grows by almost nothing at each hop).
     """
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else get_default_tau(DEFAULT_TAU_SOFT_AGGR)
@@ -587,24 +597,28 @@ def bounded_election(
     step = scatter_range() if metric is None else metric
     zero = torch.zeros_like(strength)
     own = torch.stack((-strength, zero, ids, ids), -1)  # key, distance, leader, sender
-    # key, distance, leader (-1: not published), elected, confidence
-    initial = torch.stack((zero, zero, zero - 1, zero, zero + 1), -1)
+    # key, distance, leader (-1: not published), elected, confidence, hops
+    initial = torch.stack((zero, zero, zero - 1, zero, zero + 1, zero), -1)
+    hop_limit = math.inf if max_hops is None else float(max_hops)
 
     def choose(messages: Tensor, index: Tensor, num_nodes: int) -> Tensor:
         offers = torch.cat((messages[:, :4], own))
         target = torch.cat((index, torch.arange(num_nodes, device=index.device)))
         is_own = torch.arange(len(offers), device=index.device) >= len(messages)
         receiver = torch.cat((messages[:, 4], ids))
+        hops = torch.cat((messages[:, 5], zero))
         key, distance, leader, sender = offers.unbind(-1)
-        eligible = is_own | ((leader >= 0) & (leader != receiver))
+        eligible = is_own | ((leader >= 0) & (leader != receiver) & (hops <= hop_limit))
         admissible = eligible & ((distance.detach() < radius) | is_own)
         rows = lexicographic_select(
             (key, quantize(distance), leader, sender), admissible, target, num_nodes
         )
         if effective_mode == "hard":
             return torch.stack(
-                (key[rows], distance[rows], leader[rows], is_own[rows].to(key), zero + 1), -1
-            )
+                (key[rows], distance[rows], leader[rows], is_own[rows].to(key), zero + 1,
+                 hops[rows]),
+                -1,
+            )  # fmt: skip
         chance = surrogate_probabilities(
             key, distance, eligible, is_own, target, num_nodes, effective_tau, radius
         )
@@ -617,14 +631,15 @@ def bounded_election(
         relayed["support"] = (chance * (1 - same_leader))[: len(messages)]
         return torch.stack(
             (expected(key), expected(distance), winner, expected(is_own.to(key)),
-             expected(same_leader)),
+             expected(same_leader), hops[rows].detach()),
             -1,
         )  # fmt: skip
 
     def compete(old: Tensor) -> Tensor:
         offers = link_cat(
-            [scatter(old[:, 0]), scatter(old[:, 1]) + step, scatter(old[:, 2]), scatter(ids), ids]
-        )
+            [scatter(old[:, 0]), scatter(old[:, 1]) + step, scatter(old[:, 2]), scatter(ids), ids,
+             scatter(old[:, 5]) + 1]
+        )  # fmt: skip
         return gather(offers, aggr=choose, mode="hard")
 
     def support(_ctx: RoundContext, edge_index: Tensor, _weight: Tensor | None) -> Tensor:

@@ -35,8 +35,8 @@ from diffield import (
 (STRENGTH, DISTANCE, LEADER, SAMPLE, TIMESTAMP, ELECTED, OBSERVATION, TOTAL, COUNT) = range(9)
 OUTPUT_DIM = 9
 # Floats the SCR program publishes per device and round:
-# nbr 1, election 5, region 2, distance 1, converge-cast 5, broadcast 3.
-WIRE_FLOATS = 17
+# nbr 1, election 6, region 2, distance 1, converge-cast 5, broadcast 3.
+WIRE_FLOATS = 18
 # (metric weights, strength weights over normalized value, neighbourhood mean, variance).
 FIXED = {
     "spatial": ((4.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
@@ -113,10 +113,11 @@ class LeaderStrength(nn.Module):
 
 
 class RegionProgram(nn.Module):
-    def __init__(self, metric: EdgeMetric, strength: LeaderStrength):
+    def __init__(self, metric: EdgeMetric, strength: LeaderStrength, max_hops=None):
         super().__init__()
         self.metric = metric
         self.strength = strength
+        self.max_hops = max_hops  # candidacies expire after this many hops (None: radius only)
         self.probe = None  # A list collects block outputs for the gradient analysis.
 
     def link_metric(self, neighbours, obs, mean, variance):
@@ -130,7 +131,8 @@ class RegionProgram(nn.Module):
         metric = self.link_metric(neighbours, obs, mean, variance)
         strength = self.strength(obs, mean, variance, runtime.signals["priority"])
 
-        election = bounded_election(strength, radius=1.0, metric=metric)  # S
+        election = bounded_election(strength, radius=1.0, metric=metric,
+                                    max_hops=self.max_hops)  # S  # fmt: skip
         with aligned_on(election.leader, weight=election.confidence):  # one region per leader
             source = election.leader == mid()
             potential = distance_to(source, metric)  # G
@@ -234,15 +236,20 @@ class GraphProgram(nn.Module):
         )
 
 
-def make_program(method, seed=0, *, mean=0.0, scale=1.0, weights=(2.0, 1.0, 1.0)):
+def make_program(method, seed=0, *, mean=0.0, scale=1.0, weights=(2.0, 1.0, 1.0), max_hops=None):
     with torch.random.fork_rng():
         torch.manual_seed(seed)
         if method == "gnn":
             return GraphProgram(mean, scale)
         metric_weights, strength_weights = FIXED.get(method, (weights, (0.0, 0.0, 0.0)))
         kind = "fixed" if method in FIXED else method
-        program = HybridProgram if method == "hybrid" else RegionProgram
-        return program(
+        if method == "hybrid":
+            return HybridProgram(
+                EdgeMetric(kind, metric_weights, mean, scale),
+                LeaderStrength(kind, strength_weights, mean, scale),
+            )
+        return RegionProgram(
             EdgeMetric(kind, metric_weights, mean, scale),
             LeaderStrength(kind, strength_weights, mean, scale),
+            max_hops,
         )

@@ -284,7 +284,7 @@ def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
 
 
 def load_program(path):
-    checkpoint = torch.load(path, weights_only=True)
+    checkpoint = torch.load(path, weights_only=True, map_location="cpu")
     model = make_program(checkpoint["method"], checkpoint["seed"], **checkpoint["normalization"])
     model.load_state_dict(checkpoint["model"])
     model.eval()

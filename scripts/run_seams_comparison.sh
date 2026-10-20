@@ -24,6 +24,6 @@ run() {
 mkdir -p "$OUT/logs"
 run space-fluid --stage all --out "$OUT/main" >> "$OUT/logs/main.log" 2>&1 &&
   run space-fluid-scenarios --out "$OUT/scenarios" >> "$OUT/logs/scenarios.log" 2>&1 &&
-  run space-fluid-clusters --out "$OUT/clusters" >> "$OUT/logs/clusters.log" 2>&1 ||
+  run space-fluid-clusters --out "$OUT/clusters-sharp" >> "$OUT/logs/clusters.log" 2>&1 ||
   { echo "a campaign failed, see $OUT/logs" >&2; exit 1; }
 uv run --no-sync python -m examples.seams space-fluid-summary --out "$OUT"

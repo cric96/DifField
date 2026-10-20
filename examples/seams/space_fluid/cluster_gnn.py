@@ -205,7 +205,7 @@ def row(scores):
 
 
 def load(path):
-    checkpoint = torch.load(path, weights_only=True)
+    checkpoint = torch.load(path, weights_only=True, map_location="cpu")
     model = GraphClusterer(**checkpoint["normalization"])
     model.load_state_dict(checkpoint["model"])
     return model.eval().requires_grad_(False)

@@ -30,6 +30,7 @@ from examples.seams.space_fluid.program import (
     COUNT,
     DISTANCE,
     ELECTED,
+    HYBRID_WIRE_FLOATS,
     LEADER,
     SAMPLE,
     TIMESTAMP,
@@ -37,10 +38,12 @@ from examples.seams.space_fluid.program import (
     WIRE_FLOATS,
     EdgeMetric,
     LeaderStrength,
+    RegionProgram,
     make_program,
 )
 from examples.seams.space_fluid.training import (
     load_program,
+    scheduled_rate,
     sensitivity,
     surrogate_objective,
     train_job,
@@ -91,14 +94,14 @@ def test_compact_protocol_has_full_prespecified_inventory():
     assert (c.seeds, c.updates, c.batch_size, c.nodes, c.train_rounds) == (
         (0, 1, 2),
         400,
-        4,
+        64,
         64,
         48,
     )
     assert (c.train_episodes, c.validation_episodes, c.test_episodes) == (16, 4, 4)
     assert c.main_lambda in c.lambdas
     jobs = list(evaluation_jobs(c))
-    assert len(jobs) == 5264
+    assert len(jobs) == 4672
     for spec, method, seed in jobs:
         if method["lambda"] not in (None, c.main_lambda):
             assert spec["panel"] == "main" and spec["condition"] == "clean"
@@ -111,16 +114,15 @@ def test_compact_protocol_has_full_prespecified_inventory():
         "combined",
         "value",
         "variance",
-        "search",
         "parametric",
-        "neural",
+        "hybrid",
         "gnn",
         "kmeans",
     }
     assert [m["lambda"] for m in methods(c) if m["method"] == "gnn"] == [c.main_lambda]
 
 
-@pytest.mark.parametrize("method", ["fixed", "search", "parametric", "neural"])
+@pytest.mark.parametrize("method", ["fixed", "parametric", "hybrid"])
 def test_metric_is_positive_symmetric_and_finite(method):
     metric = EdgeMetric(method).double()
     a = torch.tensor([0.0, 2.0, -1.0], dtype=torch.double)
@@ -130,35 +132,40 @@ def test_metric_is_positive_symmetric_and_finite(method):
     torch.testing.assert_close(metric(d, a, b), metric(d, b, a), atol=0, rtol=0)
 
 
-def test_metric_knots_are_a_piecewise_linear_curve_of_the_level():
+def test_metric_is_the_weighted_range_difference_and_product():
     a, b, d = torch.randn(3, 10)
     d, delta = d.abs(), (a - b).abs()
-    one = EdgeMetric(weights=(1.5, 0.7, 0.2))  # one knot: the main-study metric
+    metric = EdgeMetric(weights=(1.5, 0.7, 0.2))
     expected = torch.stack((d, delta, d * delta), -1) @ torch.tensor((1.5, 0.7, 0.2)) + 1e-4
-    torch.testing.assert_close(one(d, a, b), expected)
-    metric = EdgeMetric(knots=5)
+    torch.testing.assert_close(metric(d, a, b), expected)
+
+
+def test_hybrid_starts_as_parametric_and_matches_on_devices():
+    ep = make_episode(protocol("smoke"), family="gaussian")
+    model = make_program("hybrid")
     with torch.no_grad():
-        metric.log_weights.copy_(torch.randn(15))
-    for knot, level in enumerate(torch.linspace(-1, 3, 5)):  # knots in normalized units
-        value = level.expand(10)
-        weight = metric.weights.view(5, 3)[knot, 0]
-        torch.testing.assert_close(metric(d, value, value), d * weight + 1e-4)
-
-
-def test_neural_initialization_preserves_parametric_metric():
-    a, b, d = torch.randn(3, 10)
-    d = d.abs()
-    torch.testing.assert_close(EdgeMetric("neural")(d, a, b), EdgeMetric()(d, a, b), atol=0, rtol=0)
-    priority = torch.rand(10)
-    torch.testing.assert_close(
-        LeaderStrength("neural")(a, b, d, priority), priority, atol=0, rtol=0
+        torch.testing.assert_close(
+            central(ep, model).fields,
+            central(ep, make_program("parametric")).fields,
+            atol=0,
+            rtol=0,
+        )
+        for parameter in model.edge[-1].parameters():
+            parameter.normal_(0, 0.5)
+        check = equivalence(central(ep, model), decentralized(ep, model))
+    assert all(
+        check[k] for k in ("identifiers_equal", "values_close", "elections_equal", "traffic_equal")
     )
-    network = EdgeMetric("neural").network
-    assert [
-        (layer.in_features, layer.out_features)
-        for layer in network
-        if isinstance(layer, torch.nn.Linear)
-    ] == [(3, 16), (16, 16), (16, 1)]
+
+
+def test_full_batch_updates_follow_a_cosine_rate(tmp_path):
+    c = replace(tiny(), batch_size=64, updates=4)
+    bank = training_bank(c)
+    train_job(tmp_path, c, bank, normalization(bank["train"]), "parametric", 0, 0.1, Budget(60))
+    history = read_json(tmp_path / "training.json")["history"][1:]
+    assert all("batch_indices" not in row or row["batch_indices"] is None for row in history)
+    assert scheduled_rate(1.0, c, 1, 4) == 1.0
+    assert scheduled_rate(1.0, c, 4, 4) == pytest.approx(c.final_rate_fraction)
 
 
 def test_hard_scr_election_collect_and_broadcast_regional_mean():
@@ -184,7 +191,7 @@ def test_collect_conserves_devices_once_regions_settle():
 def test_radius_boundary_is_excluded_and_self_candidacy_is_unconditional():
     ep = line()
     # cost = 1 exactly for the first link (including the positive floor).
-    model = make_program("search", weights=((1 - 1e-4) / 0.1, 0, 0))
+    model = RegionProgram(EdgeMetric("fixed", ((1 - 1e-4) / 0.1, 0, 0)), LeaderStrength("fixed"))
     trace = central(ep, model)
     assert trace.leaders[-1, 1].item() == 1
     ep.edges = [torch.empty(2, 0, dtype=torch.long)] * ep.rounds
@@ -223,7 +230,7 @@ def test_partition_rejoin_and_removed_leader_heal_without_reset():
 
 
 @pytest.mark.parametrize("condition", CONDITIONS)
-@pytest.mark.parametrize("method", ["combined", "value", "parametric", "neural", "gnn"])
+@pytest.mark.parametrize("method", ["combined", "value", "parametric", "hybrid", "gnn"])
 def test_synchronous_identifiers_values_and_actual_message_bytes(condition, method):
     ep = make_episode(protocol("smoke"), condition=condition)
     model = make_program(method)
@@ -233,7 +240,8 @@ def test_synchronous_identifiers_values_and_actual_message_bytes(condition, meth
         check[key]
         for key in ("identifiers_equal", "elections_equal", "values_close", "traffic_equal")
     )
-    assert a.traffic == [edges.shape[1] * WIRE_FLOATS * 4 for edges in ep.edges]
+    floats = HYBRID_WIRE_FLOATS if method == "hybrid" else WIRE_FLOATS
+    assert a.traffic == [edges.shape[1] * floats * 4 for edges in ep.edges]
 
 
 def test_remote_observations_are_delayed_and_oracle_is_not_visible():
@@ -274,7 +282,7 @@ def test_async_is_reproducible_with_stale_samples_and_fewer_transmissions(probab
 
 def test_soft_training_gradient_reaches_every_scr_block_but_not_ids():
     ep = make_episode(protocol("smoke"), "train")  # several admissible parents per device
-    model = make_program("neural")
+    model = make_program("hybrid")
     hard = central(ep, model)
     with with_mode("soft", tau=1e-6):  # a cold relaxation reproduces the hard program
         cold = central(ep, model)
@@ -301,7 +309,7 @@ def test_soft_training_gradient_reaches_every_scr_block_but_not_ids():
 
 def test_batch_matches_independent_episodes_including_discrete_ids():
     episodes = [make_episode(tiny(), "train", index=i) for i in range(2)]
-    model = make_program("neural")
+    model = make_program("hybrid")
     batched = central(combine(episodes), model).fields
     for i, ep in enumerate(episodes):
         single = central(ep, model).fields.clone()
@@ -339,9 +347,9 @@ def test_condition_streams_share_truth_priorities_and_keep_edges_symmetric():
             assert values == {(b, a) for a, b in values}
 
 
-@pytest.mark.parametrize("method", ["parametric", "neural", "search", "cem", "gnn"])
+@pytest.mark.parametrize("method", ["parametric", "hybrid", "gnn"])
 def test_resume_matches_uninterrupted_optimizer_batches_and_hard_selection(tmp_path, method):
-    c = replace(tiny(), search_candidates=30)  # CEM refits after 24
+    c = tiny()
     bank = training_bank(c)
     norm = normalization(bank["train"])
 
@@ -361,8 +369,6 @@ def test_resume_matches_uninterrupted_optimizer_batches_and_hard_selection(tmp_p
         torch.load(tmp_path / name / "last.pt", weights_only=True) for name in ("full", "resumed")
     ]
     assert a["history"] == b["history"] and a["selected_update"] == b["selected_update"]
-    if method == "cem":
-        assert a["cem"] == b["cem"] and a["cem"]["mean"] != [0.5] * 6  # refitted once
     assert a["best_score"] == min(
         row["validation_hard"] for row in a["history"] if "validation_hard" in row
     )
@@ -473,21 +479,6 @@ def test_zone_clusters_levels_ari_and_peak_crash():
     metrics, _ = cluster_metrics(ep, labels.expand(ep.rounds, -1))
     assert metrics["ari_final"] == 1 and metrics["count_error"] == 0
     assert int((~ep.active[-1]).sum()) == 3 and bool(ep.active[ep.fault_at - 1].all())
-
-
-def test_hotspot_campaign_scales_knots_and_keeps_equivalence(tmp_path):
-    from examples.seams.space_fluid.hotspot import STUDIES, campaign  # noqa: PLC0415
-
-    assert campaign(tmp_path, "smoke", 600) == 0
-    (study,) = STUDIES["smoke"]
-    summary = read_json(tmp_path / study.name / "summary.json")
-    parameters = {name: row["parameters"] for name, row in summary["table"].items()}
-    assert [parameters[f"cem-k{k}"] for k in study.knots] == [3 * k + 3 for k in study.knots]
-    assert parameters["fixed-combined"] == 6 and 500 < parameters["neural"] < parameters["gnn"]
-    checks = summary["equivalence"]
-    assert [c["identifiers_equal"] and c["values_close"] for c in checks] == [True, True]
-    assert (tmp_path / "REPORT.md").exists()
-    assert (tmp_path / study.name / "figures/hotspot-curves.png").exists()
 
 
 def test_static_and_moving_scenarios_and_crash():
