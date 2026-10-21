@@ -33,7 +33,7 @@ from .plan import (
     result_path,
     save_replay,
 )
-from .program import make_program
+from .program import HYBRID_WIRE_FLOATS, WIRE_FLOATS, make_program
 from .report import report
 from .training import (
     checkpoint_directory,
@@ -76,12 +76,14 @@ def initialization(out, config):
             "training": "offline; hard validation selects; frozen deployment",
             "radius": 1.0,
             "gradient": (
-                "biased straight-through through election (S), cost (G), collect gate (C) "
-                "and broadcast; never an exact election derivative"
+                "soft-mode relaxation of election (S), cost (G), collection (C) and "
+                "broadcast at the calibrated temperatures; never an exact election "
+                "derivative; selection and results use the hard program"
             ),
             "messages": (
-                "ten float32 values per directed transmission for every program, including "
-                "the GNN; excludes alignment keys, headers, serialization and retries"
+                f"{WIRE_FLOATS} float32 values per directed transmission for every program, "
+                f"the GNN included ({HYBRID_WIRE_FLOATS} for the hybrid); excludes alignment "
+                "keys, headers, serialization and retries"
             ),
             "sync": "barrier exchange of published previous states over current links",
             "async": (
