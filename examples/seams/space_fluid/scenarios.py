@@ -26,9 +26,8 @@ from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIE
 from .data import make_episode, normalization, training_bank
 from .execution import central, decentralized, equivalence
 from .metrics import summarize
-from .program import make_program
 from .report import export, method_color
-from .training import load_program, objective, train_job
+from .training import checkpoint_directory, load_method, objective, train_job
 
 METHODS = ("fixed-combined", *LEARNERS)
 FAULT_FAMILIES = ("gaussian", "ring")  # one training family, one held out
@@ -52,7 +51,7 @@ def banks(config):
 
 def train(out, config, scenario, bank, norm, *, budget, methods=LEARNERS, seeds=None):
     for method, seed in itertools.product(methods, seeds or config.seeds):
-        directory = out / scenario / "checkpoints" / method / f"seed{seed}"
+        directory = checkpoint_directory(out / scenario, method, seed)
         if not (directory / "best.pt").exists():
             print(f"train {scenario} {method} seed={seed}", flush=True)
             train_job(
@@ -103,13 +102,7 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
         budget.check()
         print(f"evaluate {scenario} {spec_name(spec)} {method} seed={seed}", flush=True)
         if (method, seed) not in models:
-            models[method, seed] = (
-                make_program("combined", **norms[scenario])
-                if method == "fixed-combined"
-                else load_program(
-                    out / scenario / "checkpoints" / method / f"seed{seed}" / "best.pt"
-                )
-            )
+            models[method, seed] = load_method(out / scenario, method, seed, norms[scenario])
         model = models[method, seed]
         episode = make_episode(
             config, "test", spec["family"], spec["index"], condition=spec["condition"],
@@ -266,7 +259,7 @@ def figures(out, config):
     fig, axes = plt.subplots(2, 3, figsize=(13, 6.5), layout="constrained", sharex=True)
     for row, scenario in zip(axes, SCENARIOS, strict=True):
         for method, seed in itertools.product(LEARNERS, config.seeds):
-            path = out / scenario / "checkpoints" / method / f"seed{seed}" / "training.json"
+            path = checkpoint_directory(out / scenario, method, seed) / "training.json"
             if not path.exists():
                 continue
             history = [h for h in read_json(path)["history"] if "validation_hard" in h]

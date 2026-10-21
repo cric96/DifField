@@ -49,8 +49,8 @@ from .channel_adaptation import run_seed
 from .space_fluid import clusters
 from .space_fluid.config import protocol
 from .space_fluid.execution import central
-from .space_fluid.program import ELECTED, make_program
-from .space_fluid.training import load_program
+from .space_fluid.program import ELECTED
+from .space_fluid.training import load_method
 
 DARK_RED = "#8f2f1d"
 STYLE = {  # role: (colour, linestyle, label)
@@ -493,9 +493,7 @@ def regions_panel(ax, positions, labels, *, truth, elected, active, title):
 
 def scr_program(root, scenario, method):
     norm = read_json(root / scenario / "manifest.json")["normalization"]
-    if method in clusters.LEARNERS:
-        return load_program(root / scenario / "checkpoints" / method / "seed0" / "best.pt")
-    return make_program(method.removeprefix("fixed-"), **norm).requires_grad_(False)
+    return load_method(root / scenario, method, 0, norm)
 
 
 @torch.no_grad()

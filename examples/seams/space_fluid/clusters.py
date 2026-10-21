@@ -36,9 +36,9 @@ from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .data import RegionEpisode, faults, topology
 from .execution import central, decentralized, equivalence
 from .metrics import fragmentation
-from .program import ELECTED, LEADER, make_program
+from .program import ELECTED, LEADER
 from .report import export, method_color
-from .training import load_program, train_job
+from .training import checkpoint_directory, load_method, train_job
 
 # The hybrid (GNN link metric) is not reported in the paper, and its training fails on sharp zones.
 LEARNERS = ("parametric",)
@@ -293,13 +293,13 @@ def bank(config, sizes, scenario):
 def train(out, config, sizes, norm, budget, *, scenario):
     bank_ = bank(config, sizes, scenario)
     for method, seed in itertools.product(LEARNERS, config.seeds):
-        directory = out / "checkpoints" / method / f"seed{seed}"
+        directory = checkpoint_directory(out, method, seed)
         if not (directory / "best.pt").exists():
             print(f"train {method} seed={seed}", flush=True)
             train_job(directory, config, bank_, norm, method, seed, config.main_lambda, budget)
     for seed in config.seeds:
         budget.check()
-        directory = out / "checkpoints" / "gnn-central" / f"seed{seed}"
+        directory = checkpoint_directory(out, "gnn-central", seed)
         if not (directory / "best.pt").exists():
             print(f"train gnn-central seed={seed}", flush=True)
             scale = {k: norm[k] for k in ("mean", "scale")}
@@ -357,18 +357,14 @@ def evaluate_one(job):
     key = (str(out), method, seed)
     if method == "gnn-central":
         if key not in _MODELS:
-            checkpoint = out / "checkpoints" / method / f"seed{seed}" / "best.pt"
+            checkpoint = checkpoint_directory(out, method, seed) / "best.pt"
             _MODELS[key] = cluster_gnn.load(checkpoint)
         labels = cluster_gnn.labels(_MODELS[key], episode)
     elif central_method:
         labels = central_baseline(episode, method, norm, seed_for(config.data_seed, method))
     else:
         if key not in _MODELS:
-            _MODELS[key] = (
-                load_program(out / "checkpoints" / method / f"seed{seed}" / "best.pt")
-                if method in LEARNERS
-                else make_program(method.removeprefix("fixed-"), **norm).requires_grad_(False)
-            )
+            _MODELS[key] = load_method(out, method, seed, norm)
         model = _MODELS[key]
         with torch.no_grad():
             if spec["executor"] == "batched":
@@ -631,11 +627,7 @@ def animate(out, config, condition, scenario, index=0):
     names = ["fixed-combined", *LEARNERS]
     traces = {}
     for name in names:
-        model = (
-            load_program(out / "checkpoints" / name / "seed0" / "best.pt")
-            if name in LEARNERS
-            else make_program(name.removeprefix("fixed-"), **norm).requires_grad_(False)
-        )
+        model = load_method(out, name, 0, norm)
         traces[name] = decentralized(
             episode,
             model,

@@ -7,6 +7,7 @@ import torch
 from ...shared.artifacts import json_write, read_json
 from .config import CONDITIONS, FIXED, LEARNERS, TEST_FAMILIES
 from .data import make_episode
+from .training import checkpoint_directory
 
 
 def methods(config):
@@ -27,10 +28,6 @@ def methods(config):
 
 # The GNN has no discrete election whose surrogate could be biased.
 UNDIAGNOSED = ("gnn",)
-
-
-def checkpoint_directory(out, method, seed):
-    return out / "checkpoints" / method["id"] / f"seed{seed}"
 
 
 def episode_specs(config):
@@ -128,7 +125,7 @@ def progress(out, config):
         if method["method"] not in LEARNERS:
             continue
         for seed in config.seeds:
-            directory = checkpoint_directory(out, method, seed)
+            directory = checkpoint_directory(out, method["id"], seed)
             path = directory / "training.json"
             done = (
                 path.exists()

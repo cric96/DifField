@@ -20,7 +20,7 @@ from .data import make_episode
 from .execution import central
 from .program import ELECTED, LEADER, SAMPLE, make_program
 from .report import export, method_color
-from .training import load_program, objective, surrogate_objective
+from .training import checkpoint_directory, load_program, objective, surrogate_objective
 
 METHODS = ("parametric", "hybrid", "gnn")
 FAMILIES = ("gaussian", "ring")
@@ -136,7 +136,7 @@ def learned_components(models, norm):
 
 
 def checkpoint(out, config, method, seed):
-    return out / "checkpoints" / f"{method}-l{config.main_lambda:g}" / f"seed{seed}" / "best.pt"
+    return checkpoint_directory(out, f"{method}-l{config.main_lambda:g}", seed) / "best.pt"
 
 
 def insights(out, config, norm, budget):
@@ -250,13 +250,8 @@ def figures(out, config):
             )
             left.scatter([i + 0.35 * offset] * len(values), values, s=8, color="black")
         for seed in config.seeds:
-            history = read_json(
-                out
-                / "checkpoints"
-                / f"{method}-l{config.main_lambda:g}"
-                / f"seed{seed}"
-                / "training.json"
-            )["history"][1:]
+            training = checkpoint(out, config, method, seed).with_name("training.json")
+            history = read_json(training)["history"][1:]
             for block, style in (("metric", "-"), ("strength", ":")):
                 right.plot(
                     [r[f"gradient_norm_{block}"] for r in history],

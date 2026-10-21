@@ -259,5 +259,19 @@ def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
     }
 
 
+def checkpoint_directory(root, method, seed):
+    """Where a run at ``root`` keeps the training job of a learned ``method`` and ``seed``."""
+    return root / "checkpoints" / method / f"seed{seed}"
+
+
 def load_program(path):
     return frozen(path, lambda c: make_program(c["method"], c["seed"], **c["normalization"]))
+
+
+def load_method(root, method, seed, norm):
+    """The frozen program of ``method`` in a run at ``root``: ``fixed-<kind>`` builds a fixed
+    program with ``norm``, any other method loads the checkpoint trained with ``seed``."""
+    if method.startswith("fixed-"):
+        model = make_program(method.removeprefix("fixed-"), seed, **norm)
+        return model.eval().requires_grad_(False)
+    return load_program(checkpoint_directory(root, method, seed) / "best.pt")

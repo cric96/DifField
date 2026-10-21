@@ -25,7 +25,6 @@ from .insights import insights
 from .metrics import summarize
 from .plan import (
     UNDIAGNOSED,
-    checkpoint_directory,
     episode_from_spec,
     episode_specs,
     evaluation_jobs,
@@ -36,7 +35,13 @@ from .plan import (
 )
 from .program import make_program
 from .report import report
-from .training import load_program, sensitivity, surrogate_objective, train_job
+from .training import (
+    checkpoint_directory,
+    load_method,
+    sensitivity,
+    surrogate_objective,
+    train_job,
+)
 
 STAGES = ("train", "insights", "evaluate", "report")
 
@@ -157,7 +162,7 @@ def train(out, config, bank, norm, budget):
         if method["method"] not in LEARNERS:
             continue
         for seed in config.seeds:
-            directory = checkpoint_directory(out, method, seed)
+            directory = checkpoint_directory(out, method["id"], seed)
             complete = directory / "training.json"
             diagnostic = directory / "sensitivity.json"
             if (
@@ -211,18 +216,16 @@ def evaluate(out, config, norm, budget):
                 json_write(path, {**first, "seed": seed})
                 continue
         if method["method"] in LEARNERS:
-            checkpoint = checkpoint_directory(out, method, seed) / "best.pt"
+            checkpoint = checkpoint_directory(out, method["id"], seed) / "best.pt"
             if not checkpoint.exists():
                 continue  # Accounted for explicitly by the complete plan and progress report.
             model_key = (method["id"], seed)
             if model_key not in cache:
-                cache[model_key] = load_program(checkpoint)
+                cache[model_key] = load_method(out, method["id"], seed, norm)
             model = cache[model_key]
             cp_hash = checksum(checkpoint)
         elif method["method"] != "kmeans":
-            model = make_program(method["method"], seed, **norm).eval()
-            model.requires_grad_(False)
-            cp_hash = None
+            model, cp_hash = load_method(out, method["id"], seed, norm), None
         else:
             model, cp_hash = None, None
         if current_spec != spec:
