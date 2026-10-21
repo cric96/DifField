@@ -60,6 +60,16 @@ def check_resume(saved, expected):
             raise ValueError(f"Resume mismatch: {key}; use a new output directory")
 
 
+def open_run(out, manifest):
+    """Start a run in ``out`` with this manifest, or resume the run there if nothing changed."""
+    path = out / "manifest.json"
+    if path.exists():
+        check_resume(read_json(path), manifest)
+    else:
+        require_new(out)
+        json_write(path, manifest)
+
+
 @contextmanager
 def status_file(path, **fields):
     """Mark a stage as running in ``path``, then as incomplete or failed if it stops early.

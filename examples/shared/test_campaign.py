@@ -6,6 +6,7 @@ from examples.shared.artifacts import json_write, read_json
 from examples.shared.campaign import (
     Budget,
     check_resume,
+    open_run,
     output_lock,
     require_new,
     resumable,
@@ -86,3 +87,13 @@ def test_require_new_refuses_a_directory_with_files_or_inside_another_run(tmp_pa
         require_new(tmp_path / "run")
     with pytest.raises(ValueError, match="nested"):
         require_new(tmp_path / "run/inner")
+
+
+def test_open_run_writes_a_new_manifest_and_resumes_only_an_unchanged_one(tmp_path):
+    open_run(tmp_path / "run", {"config": {"rounds": 3}})
+
+    open_run(tmp_path / "run", {"config": {"rounds": 3}})
+
+    assert read_json(tmp_path / "run/manifest.json") == {"config": {"rounds": 3}}
+    with pytest.raises(ValueError, match="Resume mismatch: config"):
+        open_run(tmp_path / "run", {"config": {"rounds": 4}})

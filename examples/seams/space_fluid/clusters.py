@@ -26,10 +26,11 @@ from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import adjusted_rand_score
 from threadpoolctl import threadpool_limits
 
-from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget, deterministic, output_lock, resumable
+from ...shared.artifacts import json_write, read_json, software
+from ...shared.campaign import Budget, deterministic, open_run, output_lock, resumable
 from ...shared.metrics import interval, interval_cell, recovery
 from ...shared.randomness import rng, seed_for
+from .. import SOURCES
 from . import cluster_gnn
 from .config import protocol
 from .data import RegionEpisode, faults, topology
@@ -595,15 +596,13 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
     with output_lock(out):
         deterministic(config.threads)
         budget = Budget(seconds)
-        json_write(
-            out / "manifest.json",
-            {
-                "profile": profile,
-                "sizes": sizes,
-                "scenarios": SCENARIOS,
-                "config": config.to_dict(),
-            },
-        )
+        manifest = {
+            "profile": profile,
+            "sizes": sizes,
+            "scenarios": SCENARIOS,
+            "config": config.to_dict(),
+        }
+        open_run(out, {**manifest, "software": software(SOURCES)})
 
         def run():
             for scenario in SCENARIOS:

@@ -17,10 +17,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
-from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget, deterministic, output_lock, resumable
+from ...shared.artifacts import json_write, read_json, software
+from ...shared.campaign import Budget, deterministic, open_run, output_lock, resumable
 from ...shared.metrics import interval, interval_cell
 from ...shared.randomness import seed_for
+from .. import SOURCES
 from .config import TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank
 from .execution import central, decentralized, equivalence
@@ -377,10 +378,8 @@ def campaign(out, profile, seconds, *, device="cpu"):
         budget = Budget(seconds)
         prepared = banks(config)
         norms = {s: norm for s, (_, norm) in prepared.items()}
-        json_write(
-            out / "manifest.json",
-            {"profile": profile, "normalization": norms, "config": config.to_dict()},
-        )
+        manifest = {"profile": profile, "normalization": norms, "config": config.to_dict()}
+        open_run(out, {**manifest, "software": software(SOURCES)})
 
         def run():
             for scenario, (bank, norm) in prepared.items():
