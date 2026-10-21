@@ -1,10 +1,12 @@
 """Invariants of the runtime-adaptation experiments behind RQ2."""
 
+import json
+
 import pytest
 import torch
 
+from examples.seams.boids.adaptation import EVENTS, events, perturbed_rollout
 from examples.seams.boids.adaptation import configuration as boids_configuration
-from examples.seams.boids.adaptation import events, perturbed_rollout
 from examples.seams.boids.devices import batched_rollout, device_rollout
 from examples.seams.boids.dynamics import Boids, swarm, teacher
 from examples.seams.boids.learning import GraphBoids
@@ -125,3 +127,26 @@ def test_batched_asynchronous_rollout_matches_the_one_on_devices():
     batched = batched_rollout(teacher(), p, v, 20, 0.5, seed=3)
 
     torch.testing.assert_close(batched[-1], p_devices)
+
+
+def test_device_summary_reports_panels_whose_runs_all_diverged(tmp_path):
+    from examples.seams.boids.devices import configuration, summarize, write_report
+
+    config = configuration("smoke")
+    events_ok = {name: {"recovery": {"rounds": 3}, "peak_change": 0.1} for name in EVENTS}
+    complete = {"status": "complete", "episode": "e0", "equal_to_batched": True,
+                "metrics": {**events_ok, "lcc_final": 1.0},
+                "curves": {"spread": [0.2, 0.3], "activated": [1.0, 1.0]}}  # fmt: skip
+    diverged = {"status": "diverged", "episode": "e0", "metrics": {}, "curves": {}}
+    rows = [
+        {**complete, "method": "parametric", "executor": "sync"},
+        {**diverged, "method": "parametric", "executor": "async"},
+        {**diverged, "method": "oracle", "executor": "async"},
+    ]
+
+    summary = summarize(rows, config)
+    write_report(tmp_path, config, summary)
+
+    json.dumps(summary, allow_nan=False)
+    assert summary["parametric/async"]["lcc_final"] is None
+    assert summary["parametric/sync"]["deviation_from_teacher_async"] is None

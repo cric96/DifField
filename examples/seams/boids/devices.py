@@ -174,11 +174,20 @@ def episode(task):
     return rows
 
 
+def mean(values):
+    """The mean of ``values``, or ``None`` when there is none: every run diverged."""
+    values = list(values)
+    return float(np.mean(values)) if values else None
+
+
 def deviation(rows, reference):
-    """The mean over episodes of the spread's relative deviation from the reference's."""
-    spread = {episode: row["curves"]["spread"] for episode, row in reference.items()}
-    ratios = [relative_deviation(r["curves"]["spread"], spread[r["episode"]]) for r in rows]
-    return float(np.mean(ratios))
+    """The mean over episodes of the spread's relative deviation from the reference's, over the
+    episodes whose reference run completed."""
+    return mean(
+        relative_deviation(r["curves"]["spread"], reference[r["episode"]]["curves"]["spread"])
+        for r in rows
+        if r["episode"] in reference
+    )
 
 
 def summarize(rows, config):
@@ -196,12 +205,10 @@ def summarize(rows, config):
             rounds = [r["metrics"][name]["recovery"]["rounds"] for r in complete]
             entry[name] = {
                 **recovery_summary(rounds),
-                "peak_change": float(
-                    np.mean([r["metrics"][name]["peak_change"] for r in complete])
-                ),
+                "peak_change": mean(r["metrics"][name]["peak_change"] for r in complete),
             }
-        entry["lcc_final"] = float(np.mean([r["metrics"]["lcc_final"] for r in complete]))
-        entry["activated"] = float(np.mean([np.mean(r["curves"]["activated"]) for r in complete]))
+        entry["lcc_final"] = mean(r["metrics"]["lcc_final"] for r in complete)
+        entry["activated"] = mean(np.mean(r["curves"]["activated"]) for r in complete)
         entry["deviation_from_teacher_async"] = deviation(complete, teacher)
         entry["deviation_from_synchronous"] = deviation(complete, synchronous)
         summary[f"{method}/{executor}"] = entry
@@ -233,12 +240,15 @@ def write_report(out, config, summary):
     def recovered(e):
         return f"{e['recovered']}, {e['median_rounds']} ({e['max_rounds']})"
 
+    def fmt(value):
+        return "-" if value is None else f"{value:.3f}"
+
     for method, executor in RUNS:
         e = summary[f"{method}/{executor}"]
         lines.append(
             f"| {method} | {executor} | {e['runs']} | {e['diverged']} | {recovered(e['split'])} "
-            f"| {recovered(e['join'])} | {e['lcc_final']:.3f} | {e['activated']:.3f} "
-            f"| {e['deviation_from_teacher_async']:.3f} | {e['deviation_from_synchronous']:.3f} |"
+            f"| {recovered(e['join'])} | {fmt(e['lcc_final'])} | {fmt(e['activated'])} "
+            f"| {fmt(e['deviation_from_teacher_async'])} | {fmt(e['deviation_from_synchronous'])} |"
         )
     (out / "REPORT.md").write_text("\n".join(lines) + "\n")
 
