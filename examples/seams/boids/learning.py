@@ -9,6 +9,7 @@ from torch_geometric.nn import MessagePassing
 
 from ...shared.artifacts import json_write, read_json, tensor_write
 from ...shared.randomness import rng, seed_for
+from ...shared.training import frozen
 from .dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.
@@ -130,6 +131,17 @@ def free_rollout(model, positions, velocities, rounds):
 
 def weights(model):
     return model.log_weights.exp().detach().tolist() if isinstance(model, Boids) else None
+
+
+def job_path(out, variant, seed, rate=None):
+    if rate is not None:
+        return out / "tuning" / REGIME / variant / f"lr{rate}"
+    return out / "jobs" / REGIME / variant / f"seed{seed}"
+
+
+def load_model(run, variant, seed):
+    """The selected checkpoint of a trained variant in a Boids run, frozen."""
+    return frozen(job_path(run, variant, seed) / "best.pt", lambda _: make_model(variant, seed))
 
 
 def train_job(directory, config, train, validation, variant, seed, rate, budget):

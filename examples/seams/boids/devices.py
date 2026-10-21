@@ -24,7 +24,7 @@ from .. import SOURCES
 from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
 from .adaptation import configuration as adaptation_configuration
 from .dynamics import TEACHER, Boids, integrate, radius_edges
-from .learning import make_model
+from .learning import load_model
 
 RUNS = (("parametric", "sync"), ("parametric", "async"), ("oracle", "async"))
 
@@ -39,13 +39,6 @@ def teacher_program():
     model = Boids()
     with torch.no_grad():
         model.log_weights.copy_(torch.tensor(TEACHER).log())
-    return model.eval()
-
-
-def learned_program(run, seed):
-    model = make_model("parametric", seed)
-    checkpoint = run / "jobs/observed/parametric" / f"seed{seed}" / "best.pt"
-    model.load_state_dict(torch.load(checkpoint, weights_only=True)["model"])
     return model.eval()
 
 
@@ -96,7 +89,10 @@ def episode(task):
     key, positions, velocities = initial_states(run, source, config["size"], index + 1)[index]
     perturb = events(config, source, config["size"], index)
     schedule = {config["events"][name]: perturb[name] for name in EVENTS}
-    models = {"parametric": learned_program(run, config["seed"]), "oracle": teacher_program()}
+    models = {
+        "parametric": load_model(run, "parametric", config["seed"]),
+        "oracle": teacher_program(),
+    }
     seed = seed_for(source["data_seed"], "boids-devices", key)
     rows = []
     for method, executor in RUNS:

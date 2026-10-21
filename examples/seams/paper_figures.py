@@ -40,7 +40,14 @@ from ..shared.plotting.style import (
 from ..shared.randomness import seed_for
 from .boids.devices import initial_states, teacher_program
 from .boids.dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
-from .boids.learning import combine, free_rollout, make_model, objective, transitions
+from .boids.learning import (
+    combine,
+    free_rollout,
+    load_model,
+    make_model,
+    objective,
+    transitions,
+)
 from .channel_adaptation import run_seed
 from .space_fluid import clusters
 from .space_fluid.execution import central
@@ -180,10 +187,7 @@ def boids_sync_async_rmse(boids):
     }
     for variant, prefix in (("parametric", "diffield"), ("gnn64", "gnn64"), ("gnn32", "gnn32")):
         for seed in source["seeds"]:
-            model = make_model(variant, seed)
-            ckpt = boids / "jobs/observed" / variant / f"seed{seed}" / "best.pt"
-            model.load_state_dict(torch.load(ckpt, weights_only=True)["model"])
-            model.eval()
+            model = load_model(boids, variant, seed)
             for key, pos, vel in states:
                 t_sync, t_async, aseed = references[key]
                 p_sync = rollout(model, pos, vel, 1.0, aseed)
@@ -509,11 +513,9 @@ def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
         box_style = {"facecolor": "white", "alpha": 0.78, "edgecolor": "none", "pad": 0.8}
         axes[2 + k].text(0.96, 0.04, badge, transform=axes[2 + k].transAxes,
                          fontsize=FONT - 1.5, color=INK, ha="right", va="bottom", bbox=box_style)
-    model = make_model(gnn, seed)
-    checkpoint = boids / "jobs/observed" / gnn / f"seed{seed}" / "best.pt"
-    model.load_state_dict(torch.load(checkpoint, weights_only=True)["model"])
+    model = load_model(boids, gnn, seed)
     with torch.no_grad():
-        positions, _ = free_rollout(model.eval(), test["positions"], test["velocities"], rounds)
+        positions, _ = free_rollout(model, test["positions"], test["velocities"], rounds)
     traj = torch.cat((test["positions"][None], positions)).numpy()
     trajectories_panel(axes[4], traj, colours, panel("e", STYLE[gnn][2]))
     err_gnn = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())

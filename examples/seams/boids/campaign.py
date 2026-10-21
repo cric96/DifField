@@ -37,6 +37,7 @@ from .learning import (
     VARIANTS,
     combine,
     free_rollout,
+    job_path,
     objective,
     train_job,
     transitions,
@@ -164,12 +165,6 @@ def initialize(out, config):
     if not path.exists():
         json_write(path, manifest)
     return selected
-
-
-def job_path(out, variant, seed, rate=None):
-    if rate is not None:
-        return out / "tuning" / REGIME / variant / f"lr{rate}"
-    return out / "jobs" / REGIME / variant / f"seed{seed}"
 
 
 def diagnose(out, data, config, budget):

@@ -17,6 +17,7 @@ from diffield import with_mode
 
 from ...shared.artifacts import json_write, tensor_write
 from ...shared.randomness import rng
+from ...shared.training import frozen
 from .data import combine
 from .execution import central
 from .program import ELECTED, SAMPLE, HybridProgram, make_program
@@ -284,9 +285,4 @@ def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
 
 
 def load_program(path):
-    checkpoint = torch.load(path, weights_only=True, map_location="cpu")
-    model = make_program(checkpoint["method"], checkpoint["seed"], **checkpoint["normalization"])
-    model.load_state_dict(checkpoint["model"])
-    model.eval()
-    model.requires_grad_(False)
-    return model
+    return frozen(path, lambda c: make_program(c["method"], c["seed"], **c["normalization"]))

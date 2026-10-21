@@ -11,4 +11,3 @@ def parse_int_csv(seed_csv: str) -> list[int]:
         if not text
         else [int(item.strip()) for item in text.split(",") if item.strip()]
     )
-

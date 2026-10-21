@@ -20,7 +20,7 @@ from ...shared.metrics import recovery
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
-from .learning import VARIANTS, make_model
+from .learning import VARIANTS, load_model
 
 EVENTS = ("split", "crash", "join")
 METHODS = ("oracle", "fixed", *VARIANTS)
@@ -148,11 +148,7 @@ def models(run, campaign):
     yield "fixed", None, Boids()
     for variant in VARIANTS:
         for seed in campaign["seeds"]:
-            model = make_model(variant, seed)
-            checkpoint = run / "jobs/observed" / variant / f"seed{seed}" / "best.pt"
-            model.load_state_dict(torch.load(checkpoint, weights_only=True)["model"])
-            model.eval()
-            yield variant, seed, model
+            yield variant, seed, load_model(run, variant, seed)
 
 
 def summarize(rows, config):

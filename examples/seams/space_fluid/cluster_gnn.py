@@ -16,6 +16,7 @@ import torch
 from torch import nn
 
 from ...shared.artifacts import json_write, tensor_write
+from ...shared.training import frozen
 from .metrics import components
 from .program import mlp
 from .training import scheduled_rate
@@ -199,7 +200,4 @@ def row(scores):
 
 
 def load(path):
-    checkpoint = torch.load(path, weights_only=True, map_location="cpu")
-    model = GraphClusterer(**checkpoint["normalization"])
-    model.load_state_dict(checkpoint["model"])
-    return model.eval().requires_grad_(False)
+    return frozen(path, lambda checkpoint: GraphClusterer(**checkpoint["normalization"]))
