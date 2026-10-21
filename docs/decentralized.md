@@ -122,9 +122,10 @@ It holds for `gradient`, `gradient_cast`, `broadcast` and the channel, subject t
 causal initializers and locally computable payload transformations. `branch`
 conditions must likewise be sensors or previous-round state. The legacy default
 `collect_cast` reconstructs parent choices globally and is **not** equivalent on
-independent devices. Use `collect_cast(..., mode="hard", causal=True)` on symmetric
-networks: each device publishes its potential, stable-ID parent choice and payload;
-receivers accept previously published nominations. Initialization assumes no remote
-contributions, adding potential/parent publication latency before collection.
-`causal=True, mode="soft"` is explicitly unsupported. A changing tree can temporarily
+independent devices. Use `collect_cast(..., causal=True)` on symmetric networks: each
+device publishes its potential, stable-ID parent choice and payload; receivers accept
+previously published nominations. Initialization assumes no remote contributions, adding
+potential/parent publication latency before collection. In soft mode the tree stays the
+hard one, and each child sends its payload scaled by the probability of its chosen
+parent, so gradients reach the potential and the metric. A changing tree can temporarily
 omit or duplicate contributions; conservation is checked after convergence.

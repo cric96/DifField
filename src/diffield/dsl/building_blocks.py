@@ -211,7 +211,7 @@ def collect_cast(
     the edge metric, hard (a 0/1 indicator) or soft (a normalised weight).
 
     Set ``causal=True`` for execution by independent devices on a symmetric
-    network (currently only ``mode="hard"``). Each device publishes its
+    network; it delegates to :func:`converge_cast`, in either mode. Each device publishes its
     potential, chosen parent's stable ``mid()`` and collected payload. It
     selects its parent from previous messages, breaking equal path costs by
     the smallest ID, and accepts children that previously nominated it.
