@@ -26,7 +26,7 @@ from ..shared.metrics import (
     recovery_summary,
     relative_deviation,
 )
-from ..shared.plotting.common import LineCollection, plt
+from ..shared.plotting.common import LineCollection, plt, save_figure
 from ..shared.plotting.moving import _get_identity_colors
 from ..shared.plotting.style import (
     AQUA,
@@ -278,9 +278,7 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
               handlelength=1.2, handletextpad=0.35, columnspacing=0.6, labelspacing=0.2,
               frameon=False)
 
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq2-adaptation.{suffix}")
-    plt.close(fig)
+    save_figure(fig, out / "rq2-adaptation")
     deviations = sync_deviations(boids, scr_root, size, scenario)
     return {
         "scr": scr_numbers(scr_async, restore=scr_async["parametric"].shape[1]),
@@ -540,9 +538,7 @@ def rq1_scr_snapshot(root, out, *, scenario="static", index=0):
     fig, axes = plt.subplots(1, 4, figsize=(3.5, 1.15))
     shown = scr_snapshot_panels(axes, root, scenario, index)
     fig.subplots_adjust(left=0.005, right=0.995, bottom=0.01, top=0.74, wspace=0.07)
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq1-scr-snapshot.{suffix}", dpi=300)
-    plt.close(fig)
+    save_figure(fig, out / "rq1-scr-snapshot", dpi=300)
     return shown
 
 
@@ -622,9 +618,7 @@ def rq1_figure(boids, root, out):
     bot_axes = [fig.add_subplot(bot_grid[0, k]) for k in (0, 2, 4, 6, 8)]
     scr_snapshot_panels(bot_axes[:4], root, letters="ghij", one_line=True)
     regions = regions_panel_ari(bot_axes[4], root, letter="k")
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq1.{suffix}", dpi=300)
-    plt.close(fig)
+    save_figure(fig, out / "rq1", dpi=300)
     return {"boids": boids_numbers, "regions": regions}
 
 
@@ -701,9 +695,7 @@ def rq2_snapshots(channel, root, out, *, scenario="static", index=0):
     fig.subplots_adjust(left=0.02, right=0.997, bottom=0.01, top=0.9)
     for ax, label in ((axes[0], "channel"), (axes[3], "regions")):
         ax.set_ylabel(label, fontsize=FONT, color=INK, labelpad=2)
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq2-snapshots.{suffix}", dpi=300)
-    plt.close(fig)
+    save_figure(fig, out / "rq2-snapshots", dpi=300)
     return shown
 
 
@@ -813,9 +805,7 @@ def rq2_recovery_figure(channel, numbers_rq2, out):
     axes[-1].set_xlim(0.8, 400)
     axes[-1].set_xlabel("rounds to recover")
     fig.subplots_adjust(left=0.31, right=0.83, top=0.94, bottom=0.11)
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq2-recovery.{suffix}", dpi=300)
-    plt.close(fig)
+    save_figure(fig, out / "rq2-recovery", dpi=300)
     return numbers
 
 
@@ -860,9 +850,7 @@ def rq3_figure(root, out, *, degree=32):
         ax.set_xticks(nodes, [f"{n // 1000}k" for n in nodes])
         ax.minorticks_off()
         ax.set_xlabel("devices $N$")
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq3-scaling.{suffix}", dpi=300)
-    plt.close(fig)
+    save_figure(fig, out / "rq3-scaling", dpi=300)
     speedup = {f"N{n}-k{k}": cpu[n, k] / gpu[n, k] for n in nodes for k in degrees}
     return {"speedup": speedup, "max_speedup": max(speedup.values()),
             "cpu_seconds": {f"N{n}": cpu[n, degree] for n in nodes},

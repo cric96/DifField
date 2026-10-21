@@ -13,6 +13,7 @@ from matplotlib.colors import Normalize
 
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
+from ...shared.plotting.common import save_figure
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
 from .plan import evaluation_jobs, progress, result_path
 from .program import ELECTED, LEADER, SAMPLE
@@ -75,11 +76,7 @@ def method_color(method):
 
 
 def export(fig, out, name):
-    directory = out / "figures"
-    directory.mkdir(parents=True, exist_ok=True)
-    fig.savefig(directory / f"{name}.png", dpi=160, bbox_inches="tight")
-    fig.savefig(directory / f"{name}.pdf", bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, out / "figures" / name, dpi=160, bbox_inches="tight", formats=("png", "pdf"))
 
 
 def quality_figure(out, summaries):

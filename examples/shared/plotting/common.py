@@ -23,6 +23,20 @@ except ImportError:
     Axes = None
 
 
+def save_figure(
+    fig, stem: Path, *, dpi: float | None = None, bbox_inches=None, formats=("pdf", "png")
+) -> None:
+    """Save ``fig`` as ``stem.<format>`` for every format, in order, then close it.
+
+    ``None`` leaves ``dpi`` and ``bbox_inches`` to the ``savefig`` settings of matplotlib. The
+    first format lays out a constrained figure, so the order shows in the other files.
+    """
+    stem.parent.mkdir(parents=True, exist_ok=True)
+    for suffix in formats:
+        fig.savefig(stem.parent / f"{stem.name}.{suffix}", dpi=dpi, bbox_inches=bbox_inches)
+    plt.close(fig)
+
+
 def save_gif(
     render_frame_fn: Callable[[Axes, int], None],
     frames: Sequence[int],

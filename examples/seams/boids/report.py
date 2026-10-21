@@ -10,6 +10,7 @@ from matplotlib.animation import FFMpegWriter
 
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
+from ...shared.plotting.common import save_figure
 from .dynamics import TEACHER
 from .learning import REGIME, VARIANTS, job_path, replay_path
 
@@ -30,12 +31,8 @@ LABELS = {
 
 
 def export(fig, out, name):
-    directory = out / "figures"
-    directory.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    for suffix in ("png", "pdf"):
-        fig.savefig(directory / f"{name}.{suffix}", dpi=180, bbox_inches="tight")
-    plt.close(fig)
+    save_figure(fig, out / "figures" / name, dpi=180, bbox_inches="tight", formats=("png", "pdf"))
 
 
 def complete_panel(rows, config, data):
