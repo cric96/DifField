@@ -7,7 +7,6 @@ so every method meets the same perturbation. A non-finite rollout is recorded
 as diverged, never raised.
 """
 
-import csv
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +15,7 @@ from scipy.sparse.csgraph import connected_components
 
 from diffield.sim import normalize_vectors
 
-from ...shared.artifacts import json_write, read_json, software, tensor_write
+from ...shared.artifacts import csv_write, json_write, read_json, software, tensor_write
 from ...shared.randomness import rng
 from .. import SOURCES
 from ..space_fluid.metrics import recovery
@@ -273,17 +272,14 @@ def campaign(run: Path, profile="paper-cpu"):
                 rows.append(row)
     summary = summarize(rows, config)
     json_write(out / "summary.json", {"config": config, "summary": summary})
-    (out / "tables").mkdir(parents=True, exist_ok=True)
-    with (out / "tables/adaptation.csv").open("w", newline="") as stream:
-        writer = csv.writer(stream)
-        writer.writerow(["nodes", "method", "seed", "episode", "status", *(
-            f"{name}_{field}" for name in EVENTS for field in ("rounds", "peak"))])  # fmt: skip
-        for r in rows:
-            metrics = r["metrics"]
-            writer.writerow([r["nodes"], r["method"], r["seed"], r["episode"], r["status"], *(
-                value for name in EVENTS for value in (
-                    metrics[name]["recovery"]["rounds"] if metrics else None,
-                    metrics[name]["peak_change"] if metrics else None))])  # fmt: skip
+    table = []
+    for r in rows:
+        metrics = r["metrics"]
+        table.append({key: r[key] for key in ("nodes", "method", "seed", "episode", "status")})
+        for name in EVENTS:
+            table[-1][f"{name}_rounds"] = metrics[name]["recovery"]["rounds"] if metrics else None
+            table[-1][f"{name}_peak"] = metrics[name]["peak_change"] if metrics else None
+    csv_write(out / "tables/adaptation.csv", table)
     write_report(out, config, summary)
     print(f"Boids adaptation artifacts: {out}", flush=True)
     return summary

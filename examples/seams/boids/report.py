@@ -1,7 +1,5 @@
 """Reconstructible Boids tables, paired intervals, scientific figures and fixed replays."""
 
-import csv
-
 import matplotlib
 
 matplotlib.use("Agg")
@@ -10,7 +8,7 @@ import numpy as np
 import torch
 from matplotlib.animation import FFMpegWriter
 
-from ...shared.artifacts import checksum, json_write, read_json
+from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ..metrics import interval
 from .dynamics import TEACHER
 from .learning import REGIME, VARIANTS
@@ -30,15 +28,6 @@ LABELS = {
     "gnn32": "GNN32",
     "gnn64": "GNN64",
 }
-
-
-def csv_write(path, rows):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    columns = list(dict.fromkeys(k for row in rows for k in row))
-    with path.open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=columns)
-        writer.writeheader()
-        writer.writerows(rows)
 
 
 def export(fig, out, name):

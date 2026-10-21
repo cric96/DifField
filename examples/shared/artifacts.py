@@ -1,5 +1,6 @@
 """Atomic, resumable artifacts with configuration and software provenance."""
 
+import csv
 import hashlib
 import importlib.metadata
 import json
@@ -32,6 +33,18 @@ def tensor_write(path: Path, value) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     torch.save(value, temporary)
+    temporary.replace(path)
+
+
+def csv_write(path: Path, rows) -> None:
+    """Write dict rows as a CSV table, atomically; its columns are the keys in first-seen order."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    columns = list(dict.fromkeys(k for row in rows for k in row))
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    with temporary.open("w", newline="") as stream:
+        writer = csv.DictWriter(stream, fieldnames=columns)
+        writer.writeheader()
+        writer.writerows(rows)
     temporary.replace(path)
 
 
@@ -71,4 +84,3 @@ def software(directories):
             for name in ("torch", "torch-geometric", "numpy", "scikit-learn")
         },
     }
-

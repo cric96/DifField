@@ -1,6 +1,5 @@
 """Paired complete-panel inference, fixed visual episodes and honest partial reports."""
 
-import csv
 from collections import defaultdict
 
 import matplotlib
@@ -12,7 +11,7 @@ import torch
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.colors import Normalize
 
-from ...shared.artifacts import checksum, json_write, read_json
+from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ..metrics import interval
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
 from .program import ELECTED, LEADER, SAMPLE
@@ -351,32 +350,18 @@ def report(out, config, *, render=True, budget=None):
         ],
     )
     if rows:
-        with (out / "results.csv").open("w", newline="") as stream:
-            columns = [
-                *GROUP,
-                "method",
-                "seed",
-                "episode",
-                *METRICS,
-                "inference_seconds",
-                "restoration_status",
-                "restoration_rounds",
-            ]
-            writer = csv.DictWriter(stream, fieldnames=columns)
-            writer.writeheader()
-            for row in rows:
-                flat = {key: row[key] for key in (*GROUP, "method", "seed", "episode")}
-                flat.update(
-                    {key: row["metrics"].get(key) for key in (*METRICS, "inference_seconds")}
-                )
-                recovery = row["metrics"]["restoration_recovery"]
-                writer.writerow(
-                    {
-                        **flat,
-                        "restoration_status": recovery["status"],
-                        "restoration_rounds": recovery["rounds"],
-                    }
-                )
+        table = []
+        for row in rows:
+            recovery = row["metrics"]["restoration_recovery"]
+            table.append(
+                {
+                    **{key: row[key] for key in (*GROUP, "method", "seed", "episode")},
+                    **{key: row["metrics"].get(key) for key in (*METRICS, "inference_seconds")},
+                    "restoration_status": recovery["status"],
+                    "restoration_rounds": recovery["rounds"],
+                }
+            )
+        csv_write(out / "results.csv", table)
     training = sum(j["status"] == "complete" for j in state["training"])
     probabilities = "/".join(f"{p:g}" for p in config.activation_probabilities)
     evaluation = state["evaluation"]
