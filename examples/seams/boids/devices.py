@@ -15,10 +15,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from diffield.decentralized.runner import build_runtimes
-from diffield.decentralized.topology import all_in_edges
-
 from ...shared.artifacts import json_write, read_json, software
+from ...shared.devices import DeviceNetwork
 from ...shared.randomness import seed_for
 from .. import SOURCES
 from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
@@ -52,7 +50,7 @@ def device_rollout(model, positions, velocities, rounds, schedule, *, activation
     p, v = positions.clone(), velocities.clone()
     command = torch.zeros_like(p)
     generator = torch.Generator().manual_seed(seed)
-    devices, curves = {}, {k: [] for k in (*CURVES, "activated")}
+    network, curves = None, {k: [] for k in (*CURVES, "activated")}
     for t in range(rounds):
         if t in schedule:
             before = p
@@ -62,16 +60,14 @@ def device_rollout(model, positions, velocities, rounds, schedule, *, activation
             elif len(p) > len(before):  # newcomers have no command yet
                 command = torch.cat((command, command.new_zeros(len(p) - len(before), 2)))
         edges, signals = radius_edges(p), {"position": p, "velocity": v}
-        if len(devices) != len(p):  # identities change with the population: fresh runtimes
-            devices = build_runtimes(edge_index=edges, num_nodes=len(p), program=program,
-                                     signals=signals)  # fmt: skip
+        if network is None or len(network.devices) != len(p):
+            # Identities change with the population: fresh runtimes, holding the commands.
+            network = DeviceNetwork(program, edges, len(p), command, signals=signals)
         else:
-            for node, links in enumerate(all_in_edges(edges, len(p))):
-                devices[node].sync_topology(*links, signals=signals)
+            network.move(edges, signals=signals)
         draws = torch.rand(len(p), generator=generator)
         active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
-        for node in active.nonzero().flatten().tolist():
-            command[node], _ = devices[node].step({})
+        network.run(active.nonzero().flatten().tolist())
         step = integrate(p, v, command)
         p, v = step.positions, step.velocities
         if not (torch.isfinite(p).all() and torch.isfinite(v).all()):
