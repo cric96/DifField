@@ -7,7 +7,6 @@ import pytest
 import torch
 
 from examples.seams.boids.campaign import (
-    CampaignBudget,
     configuration,
     evaluate_job,
     initialize,
@@ -213,20 +212,13 @@ def test_minibatches_are_shared_across_variants(tmp_path):
     assert histories[0] == histories[1] == histories[2]
 
 
-def test_zero_update_is_selectable_and_budget_is_cumulative(tmp_path):
+def test_zero_update_is_selectable(tmp_path):
     config = {**configuration("smoke"), "updates": 0}
     batch = transitions(episode())
     _, result = train_job(
         tmp_path / "job", config, [batch], batch, "parametric", 0, 0.03, Budget(60)
     )
     assert result["selected_update"] == 0
-    budget = CampaignBudget(tmp_path, 1)
-    budget.used = 2
-    budget.save()
-    resumed = CampaignBudget(tmp_path, 14400)
-    with pytest.raises(TimeoutError):
-        resumed.check()
-    assert read_json(tmp_path / "budget.json")["limit_seconds"] == 1
 
 
 def test_missing_seed_cannot_yield_a_complete_confidence_interval():

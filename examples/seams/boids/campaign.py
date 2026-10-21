@@ -8,6 +8,7 @@ import torch
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
+from ...shared.campaign import Budget, deterministic
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import (
@@ -33,36 +34,6 @@ from .learning import (
     transitions,
     weights,
 )
-
-
-class CampaignBudget:
-    """Four-hour maximum accumulated across invocations, including artifact generation."""
-
-    def __init__(self, out, seconds):
-        if seconds <= 0:
-            raise ValueError("Budget must be positive")
-        self.path = out / "budget.json"
-        old = read_json(self.path) if self.path.exists() else {}
-        self.limit = min(14400, seconds, old.get("limit_seconds", seconds))
-        self.used = old.get("used_seconds", 0.0)
-        self.started = time.monotonic()
-        self.save()
-
-    def save(self):
-        used = self.used + time.monotonic() - self.started
-        json_write(
-            self.path,
-            {
-                "limit_seconds": self.limit,
-                "used_seconds": used,
-                "remaining_seconds": max(0, self.limit - used),
-            },
-        )
-        return used
-
-    def check(self):
-        if self.save() >= self.limit:
-            raise TimeoutError("Cumulative Boids budget exhausted; resume preserves pending jobs")
 
 
 def configuration(profile):
@@ -421,12 +392,12 @@ def evaluate_job(out, data, config, variant, seed, model, training, budget):
 
 def campaign(out: Path, profile="paper-cpu", seconds=14400):
     started = time.monotonic()
-    torch.set_num_threads(1)
-    torch.use_deterministic_algorithms(True)
+    deterministic()
     config = configuration(profile)
     data = initialize(out, config)
     config = read_json(out / "manifest.json")["config"]
-    budget = CampaignBudget(out, seconds)
+    # Four hours at most, accumulated across invocations, including artifact generation.
+    budget = Budget(min(seconds, 14400), record=out / "budget.json")
     budget.started = started
     stage = "diagnostics"
     progress = out / "progress.json"

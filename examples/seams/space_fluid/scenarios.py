@@ -18,10 +18,9 @@ import numpy as np
 import torch
 
 from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget
+from ...shared.campaign import Budget, deterministic, output_lock
 from ...shared.metrics import interval, interval_cell
 from ...shared.randomness import seed_for
-from .campaign import output_lock
 from .config import TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank
 from .execution import central, decentralized, equivalence
@@ -374,8 +373,7 @@ def per_round(row, key, nodes):
 def campaign(out, profile, seconds, *, device="cpu"):
     config = replace(protocol(profile), device=device)
     with output_lock(out):
-        torch.set_num_threads(config.threads)
-        torch.use_deterministic_algorithms(True)
+        deterministic(config.threads)
         budget = Budget(seconds)
         prepared = banks(config)
         norms = {s: norm for s, (_, norm) in prepared.items()}

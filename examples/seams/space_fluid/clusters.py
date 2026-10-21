@@ -27,11 +27,10 @@ from sklearn.metrics import adjusted_rand_score
 from threadpoolctl import threadpool_limits
 
 from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget
+from ...shared.campaign import Budget, deterministic, output_lock
 from ...shared.metrics import interval, interval_cell, recovery
 from ...shared.randomness import rng, seed_for
 from . import cluster_gnn
-from .campaign import output_lock
 from .config import protocol
 from .data import RegionEpisode, faults, topology
 from .execution import central, decentralized, equivalence
@@ -345,8 +344,7 @@ _MODELS = {}  # per process: loaded programs and GNNs
 
 def evaluate_one(job):
     out, config, norm, spec, method, seed, name, path = job
-    torch.set_num_threads(1)
-    torch.use_deterministic_algorithms(True)
+    deterministic()
     central_method = method in CENTRAL
     episode = cluster_episode(
         config,
@@ -595,8 +593,7 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
     config = settings(profile, device)
     sizes = SIZES[profile]
     with output_lock(out):
-        torch.set_num_threads(config.threads)
-        torch.use_deterministic_algorithms(True)
+        deterministic(config.threads)
         budget = Budget(seconds)
         json_write(
             out / "manifest.json",

@@ -6,7 +6,7 @@ import pytest
 import torch
 
 from diffield import with_mode
-from examples.seams.space_fluid.campaign import campaign, initialization, output_lock
+from examples.seams.space_fluid.campaign import campaign, initialization
 from examples.seams.space_fluid.config import CONDITIONS, protocol
 from examples.seams.space_fluid.data import (
     RegionEpisode,
@@ -433,17 +433,6 @@ def test_cli_has_space_fluid_and_rejects_retired_commands(monkeypatch, tmp_path)
     for command in ("prepare-intel", "learning-v2", "collection-controls"):
         with pytest.raises(SystemExit):
             main([command])
-
-
-def test_output_lock_excludes_concurrent_runs_and_releases_after_failure(tmp_path):
-    with output_lock(tmp_path):  # noqa: SIM117 -- the first invocation must retain its lock
-        with pytest.raises(RuntimeError, match="Another Space-Fluid process"):
-            with output_lock(tmp_path):
-                pytest.fail("Concurrent output access must not be admitted")
-    with pytest.raises(ValueError, match="simulated"), output_lock(tmp_path):
-        raise ValueError("simulated failure")
-    with output_lock(tmp_path):
-        assert (tmp_path / ".run.lock").exists()
 
 
 def test_zone_clusters_levels_ari_and_peak_crash():

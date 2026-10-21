@@ -1,15 +1,13 @@
 """Resumable protocol of the main study: initialization, training, evaluation, report."""
 
-import fcntl
 import json
 import time
-from contextlib import contextmanager
 from pathlib import Path
 
 import torch
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget
+from ...shared.campaign import Budget, deterministic, output_lock
 from ...shared.randomness import seed_for
 from .. import SOURCES
 from .config import LEARNERS, TEST_FAMILIES, TRAIN_FAMILIES
@@ -33,27 +31,6 @@ from .report import report
 from .training import load_program, sensitivity, surrogate_objective, train_job
 
 STAGES = ("train", "insights", "evaluate", "report")
-
-
-@contextmanager
-def output_lock(out):
-    """Kernel-owned lock survives daemon restarts and releases on process exit.
-
-    A PID file cannot distinguish processes in separate sandbox namespaces.
-    flock also prevents report/checkpoint temporary files from racing.
-    """
-    out.mkdir(parents=True, exist_ok=True)
-    with (out / ".run.lock").open("a") as handle:
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            raise RuntimeError(
-                "Another Space-Fluid process is using this output directory"
-            ) from error
-        try:
-            yield
-        finally:
-            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def initialization(out, config):
@@ -332,12 +309,9 @@ def campaign(out: Path, config, stage="all", seconds=14400):
 
 
 def _campaign(out, config, stage, seconds):
-    if seconds <= 0:
-        raise ValueError("Budget must be positive")
     if stage not in ("all", *STAGES):
         raise ValueError(stage)
-    torch.set_num_threads(config.threads)
-    torch.use_deterministic_algorithms(True)
+    deterministic(config.threads)
     budget = Budget(seconds)
     bank, norm = initialization(out, config)
     stages = STAGES if stage == "all" else (stage,)
