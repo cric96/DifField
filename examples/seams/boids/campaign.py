@@ -8,7 +8,7 @@ import torch
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget, deterministic
+from ...shared.campaign import Budget, deterministic, resumable, status_file
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import (
@@ -34,6 +34,7 @@ from .learning import (
     transitions,
     weights,
 )
+from .report import report
 
 
 def configuration(profile):
@@ -390,6 +391,34 @@ def evaluate_job(out, data, config, variant, seed, model, training, budget):
         json_write(path, row)
 
 
+def tune(out, config, train, validation, budget):
+    """Learning rate of each variant, frozen on the tuning seed before any evaluation."""
+    path = out / "tuning-frozen.json"
+    if not path.exists():
+        frozen = {}
+        for variant in VARIANTS:
+            scores = []
+            for rate in config["rates"]["parametric" if variant == "parametric" else "gnn"]:
+                print(f"Boids tuning {REGIME} {variant} lr={rate}", flush=True)
+                _, result = train_job(
+                    job_path(out, variant, TUNING_SEED, rate),
+                    config,
+                    train,
+                    validation,
+                    variant,
+                    TUNING_SEED,
+                    rate,
+                    budget,
+                )
+                scores.append({"rate": rate, "validation_loss": result["best_validation"]})
+            frozen[variant] = {
+                "rate": min(scores, key=lambda r: (r["validation_loss"], r["rate"]))["rate"],
+                "candidates": scores,
+            }
+        json_write(path, {REGIME: frozen})
+    return read_json(path)[REGIME]
+
+
 def campaign(out: Path, profile="paper-cpu", seconds=14400):
     started = time.monotonic()
     deterministic()
@@ -399,7 +428,6 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
     # Four hours at most, accumulated across invocations, including artifact generation.
     budget = Budget(min(seconds, 14400), record=out / "budget.json")
     budget.started = started
-    stage = "diagnostics"
     progress = out / "progress.json"
     expected = [
         str(job_path(out, variant, seed).relative_to(out))
@@ -416,87 +444,44 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
             "config": config,
         },
     )
-    try:
-        json_write(progress, {"status": "running", "stage": stage})
-        diagnose(out, data, config, budget)
-        train = [transitions(e) for e in data["train"]]
-        validation = combine([transitions(e) for e in data["validation"]])
-        stage = "tuning"
-        json_write(progress, {"status": "running", "stage": stage})
-        frozen_path = out / "tuning-frozen.json"
-        if not frozen_path.exists():
-            frozen = {}
-            for variant in VARIANTS:
-                scores = []
-                for rate in config["rates"]["parametric" if variant == "parametric" else "gnn"]:
-                    print(f"Boids tuning {REGIME} {variant} lr={rate}", flush=True)
-                    _, result = train_job(
-                        job_path(out, variant, TUNING_SEED, rate),
+
+    def run():
+        with status_file(progress, stage="diagnostics"):
+            diagnose(out, data, config, budget)
+            train = [transitions(e) for e in data["train"]]
+            validation = combine([transitions(e) for e in data["validation"]])
+        with status_file(progress, stage="tuning"):
+            frozen = tune(out, config, train, validation, budget)
+        stage = "training_and_evaluation"
+        with status_file(progress, stage=stage):
+            for seed in config["seeds"]:
+                for variant in VARIANTS:
+                    job = {"stage": stage, "regime": REGIME, "seed": seed, "variant": variant}
+                    json_write(progress, {"status": "running", **job})
+                    print(f"Boids {REGIME} {variant} seed={seed}", flush=True)
+                    model, result = train_job(
+                        job_path(out, variant, seed),
                         config,
                         train,
                         validation,
                         variant,
-                        TUNING_SEED,
-                        rate,
+                        seed,
+                        frozen[variant]["rate"],
                         budget,
                     )
-                    scores.append({"rate": rate, "validation_loss": result["best_validation"]})
-                frozen[variant] = {
-                    "rate": min(scores, key=lambda r: (r["validation_loss"], r["rate"]))["rate"],
-                    "candidates": scores,
-                }
-            json_write(frozen_path, {REGIME: frozen})
-        frozen = read_json(frozen_path)[REGIME]
-        stage = "training_and_evaluation"
-        for seed in config["seeds"]:
-            for variant in VARIANTS:
-                json_write(
-                    progress,
-                    {
-                        "status": "running",
-                        "stage": stage,
-                        "regime": REGIME,
-                        "seed": seed,
-                        "variant": variant,
-                    },
-                )
-                print(f"Boids {REGIME} {variant} seed={seed}", flush=True)
-                model, result = train_job(
-                    job_path(out, variant, seed),
-                    config,
-                    train,
-                    validation,
-                    variant,
-                    seed,
-                    frozen[variant]["rate"],
-                    budget,
-                )
-                evaluate_job(out, data, config, variant, seed, model, result, budget)
-            for variant, model in (("fixed", Boids()), ("oracle", None)):
-                evaluate_job(out, data, config, variant, seed, model, {}, budget)
-        stage = "report"
-        json_write(progress, {"status": "running", "stage": stage})
-        from .report import report
-
-        if not report(out, data, config, budget):
-            raise RuntimeError("Boids evaluation panel is incomplete")  # noqa: TRY301
+                    evaluate_job(out, data, config, variant, seed, model, result, budget)
+                for variant, model in (("fixed", Boids()), ("oracle", None)):
+                    evaluate_job(out, data, config, variant, seed, model, {}, budget)
+        with status_file(progress, stage="report"):
+            if not report(out, data, config, budget):
+                raise RuntimeError("Boids evaluation panel is incomplete")
         json_write(
             progress, {"status": "complete", "stage": "complete", "training_jobs": len(expected)}
         )
-    except (TimeoutError, KeyboardInterrupt) as error:
-        json_write(progress, {"status": "incomplete", "stage": stage, "reason": str(error)})
-        from .report import report
+        print(f"Boids artifacts: {out}", flush=True)
+        return 0
 
-        report(out, data, config, None, render=False)
-        print(f"Boids incomplete: {error}", flush=True)
-        return 2
-    except Exception as error:
-        json_write(
-            progress,
-            {"status": "failed", "stage": stage, "reason": f"{type(error).__name__}: {error}"},
-        )
-        raise
+    try:
+        return resumable(out, run, partial=lambda: report(out, data, config, None, render=False))
     finally:
         budget.save()
-    print(f"Boids artifacts: {out}", flush=True)
-    return 0

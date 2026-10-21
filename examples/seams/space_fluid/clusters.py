@@ -27,7 +27,7 @@ from sklearn.metrics import adjusted_rand_score
 from threadpoolctl import threadpool_limits
 
 from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget, deterministic, output_lock
+from ...shared.campaign import Budget, deterministic, output_lock, resumable
 from ...shared.metrics import interval, interval_cell, recovery
 from ...shared.randomness import rng, seed_for
 from . import cluster_gnn
@@ -604,20 +604,20 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
                 "config": config.to_dict(),
             },
         )
-        try:
+
+        def run():
             for scenario in SCENARIOS:
                 norm = normalization(config, sizes, scenario)
                 json_write(out / scenario / "manifest.json", {"normalization": norm})
                 train(out / scenario, config, sizes, norm, budget, scenario=scenario)
                 evaluate(out / scenario, config, sizes, norm, budget, scenario=scenario)
-        except (TimeoutError, KeyboardInterrupt):
-            print(f"Incomplete, resumable: {out}", flush=True)
-            return 2
-        for scenario in SCENARIOS:
-            report(out / scenario, config, scenario)
-        overview(out)
-    print(f"Artifacts: {out}", flush=True)
-    return 0
+            for scenario in SCENARIOS:
+                report(out / scenario, config, scenario)
+            overview(out)
+            print(f"Artifacts: {out}", flush=True)
+            return 0
+
+        return resumable(out, run)
 
 
 def normalization(config, sizes, scenario):

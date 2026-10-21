@@ -18,7 +18,7 @@ import numpy as np
 import torch
 
 from ...shared.artifacts import json_write, read_json
-from ...shared.campaign import Budget, deterministic, output_lock
+from ...shared.campaign import Budget, deterministic, output_lock, resumable
 from ...shared.metrics import interval, interval_cell
 from ...shared.randomness import seed_for
 from .config import TEST_FAMILIES, protocol
@@ -381,14 +381,14 @@ def campaign(out, profile, seconds, *, device="cpu"):
             out / "manifest.json",
             {"profile": profile, "normalization": norms, "config": config.to_dict()},
         )
-        try:
+
+        def run():
             for scenario, (bank, norm) in prepared.items():
                 train(out, config, scenario, bank, norm, budget=budget)
             for scenario in SCENARIOS:
                 evaluate(out, config, scenario, norms, budget)
-        except (TimeoutError, KeyboardInterrupt):
-            print(f"Incomplete, resumable: {out}", flush=True)
-            return 2
-        report(out, config)
-    print(f"Artifacts: {out}", flush=True)
-    return 0
+            report(out, config)
+            print(f"Artifacts: {out}", flush=True)
+            return 0
+
+        return resumable(out, run)

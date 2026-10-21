@@ -1,4 +1,4 @@
-"""Long, resumable experiment campaigns: their output lock, torch setup and time budget."""
+"""Long, resumable experiment campaigns: lock, torch setup, time budget and stop handling."""
 
 import fcntl
 import time
@@ -26,6 +26,40 @@ def output_lock(out):
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+@contextmanager
+def status_file(path, **fields):
+    """Mark a stage as running in ``path``, then as incomplete or failed if it stops early.
+
+    An exhausted budget or an interrupt leaves the stage ``incomplete``, any other error
+    ``failed``; both record the reason next to ``fields`` and propagate.
+    """
+    json_write(path, {"status": "running", **fields})
+    try:
+        yield
+    except (TimeoutError, KeyboardInterrupt) as error:
+        json_write(path, {"status": "incomplete", **fields, "reason": str(error)})
+        raise
+    except Exception as error:
+        reason = f"{type(error).__name__}: {error}"
+        json_write(path, {"status": "failed", **fields, "reason": reason})
+        raise
+
+
+def resumable(out, run, *, partial=None):
+    """The exit code of ``run()``, or 2 when it stops early, after a ``partial()`` report.
+
+    Only an exhausted budget or an interrupt stops a run early: the same command resumes it
+    from the artifacts it left in ``out``.
+    """
+    try:
+        return run()
+    except (TimeoutError, KeyboardInterrupt):
+        if partial is not None:
+            partial()
+        print(f"Incomplete, resumable: {out}", flush=True)
+        return 2
 
 
 def deterministic(threads=1):

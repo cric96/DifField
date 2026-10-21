@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget, deterministic, output_lock
+from ...shared.campaign import Budget, deterministic, output_lock, resumable, status_file
 from ...shared.randomness import seed_for
 from .. import SOURCES
 from .config import LEARNERS, TEST_FAMILIES, TRAIN_FAMILIES
@@ -315,19 +315,21 @@ def _campaign(out, config, stage, seconds):
     budget = Budget(seconds)
     bank, norm = initialization(out, config)
     stages = STAGES if stage == "all" else (stage,)
-    try:
+
+    def run():
         for current in stages:
-            json_write(out / "stages" / f"{current}.json", {"status": "running"})
-            if current == "train":
-                timing(out, config, bank, norm, budget)
-                train(out, config, bank, norm, budget)
-            elif current == "insights":
-                insights(out, config, norm, budget)
-            elif current == "evaluate":
-                evaluate(out, config, norm, budget)
-            elif current == "report":
-                report(out, config, budget=budget)
-            state = progress(out, config)
+            path = out / "stages" / f"{current}.json"
+            with status_file(path):
+                if current == "train":
+                    timing(out, config, bank, norm, budget)
+                    train(out, config, bank, norm, budget)
+                elif current == "insights":
+                    insights(out, config, norm, budget)
+                elif current == "evaluate":
+                    evaluate(out, config, norm, budget)
+                elif current == "report":
+                    report(out, config, budget=budget)
+                state = progress(out, config)
             complete = (
                 all(j["status"] == "complete" for j in state["training"])
                 if current == "train"
@@ -337,23 +339,9 @@ def _campaign(out, config, stage, seconds):
                 if current == "insights"
                 else True
             )
-            json_write(
-                out / "stages" / f"{current}.json",
-                {"status": "complete" if complete else "incomplete"},
-            )
-    except (TimeoutError, KeyboardInterrupt) as error:
-        json_write(
-            out / "stages" / f"{current}.json", {"status": "incomplete", "reason": str(error)}
-        )
-        report(out, config, render=False)
-        print(f"Incomplete, resumable campaign: {out}", flush=True)
-        return 2
-    except Exception as error:
-        json_write(
-            out / "stages" / f"{current}.json",
-            {"status": "failed", "reason": f"{type(error).__name__}: {error}"},
-        )
-        progress(out, config)
-        raise
-    print(f"Artifacts: {out}", flush=True)
-    return 0 if progress(out, config)["status"] == "complete" or stage in ("train", "report") else 2
+            json_write(path, {"status": "complete" if complete else "incomplete"})
+        print(f"Artifacts: {out}", flush=True)
+        done = progress(out, config)["status"] == "complete"
+        return 0 if done or stage in ("train", "report") else 2
+
+    return resumable(out, run, partial=lambda: report(out, config, render=False))
