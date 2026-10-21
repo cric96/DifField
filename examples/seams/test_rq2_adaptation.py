@@ -9,7 +9,8 @@ from examples.seams.boids.adaptation import events, perturbed_rollout
 from examples.seams.boids.devices import device_rollout, teacher_program
 from examples.seams.boids.dynamics import SPEED, Boids
 from examples.seams.boids.learning import GraphBoids
-from examples.seams.channel_adaptation import configuration, run_seed
+from examples.seams.channel_adaptation import campaign, configuration, run_seed
+from examples.shared.artifacts import read_json
 
 
 @pytest.fixture(autouse=True)
@@ -18,6 +19,22 @@ def single_thread():
     torch.set_num_threads(1)
     yield
     torch.set_num_threads(old)
+
+
+def test_channel_adaptation_records_the_sources_of_the_channel_program(tmp_path, monkeypatch):
+    class StopError(Exception):
+        pass
+
+    def stop(*args, **kwargs):
+        raise StopError
+
+    monkeypatch.setattr("examples.seams.channel_adaptation.run_seed", stop)
+
+    with pytest.raises(StopError):
+        campaign(tmp_path, "smoke")
+
+    sources = read_json(tmp_path / "manifest.json")["software"]["source_sha256"]
+    assert "examples/channel/core.py" in sources
 
 
 def test_channel_converges_to_the_shortest_path_oracle_before_any_event():

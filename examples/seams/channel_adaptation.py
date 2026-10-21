@@ -295,7 +295,8 @@ def campaign(out: Path, profile="paper-cpu"):
     torch.set_num_threads(1)
     config = configuration(profile)
     out.mkdir(parents=True, exist_ok=True)
-    json_write(out / "manifest.json", {"config": config, "software": software(SOURCES)})
+    provenance = software((*SOURCES, "examples/channel"))  # the channel program lives there
+    json_write(out / "manifest.json", {"config": config, "software": provenance})
     runs = []
     for seed in config["seeds"]:
         print(f"Channel adaptation seed={seed}", flush=True)
