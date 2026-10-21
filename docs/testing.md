@@ -26,6 +26,8 @@ Tests are grouped by the layer they exercise.
 - `test_building_blocks.py`: `gradient`, `gradient_cast`, `broadcast`, `collect_cast`.
 - `test_election.py`: `elect` (leader uniqueness, grain spacing, re-election after a
   leader dies), `descend`, and the neighbour-degree helpers.
+- `test_scr_blocks.py`: the SCR blocks `nbr`, `aligned_on`, `bounded_election` and
+  `converge_cast`.
 - `test_composition.py`: multi-primitive programs and nesting.
 - `test_implicit_naming.py`: constructs used without an explicit `name=`.
 - `test_link_fields.py`: link-domain expressions and `include_self`.
@@ -33,10 +35,15 @@ Tests are grouped by the layer they exercise.
 - `test_layers.py`: the `nn.Module` API (`GatherLayer`, `IterateLayer`, ...).
 - `test_autodiff.py`: every path stays differentiable.
 
-**`tests/device_context/`** — decentralized (node-centric) execution, verifying
-that single-device execution reproduces the globally computed state for
-programs within the local contract (see *Local execution* in
-[the architecture](architecture.md#local-execution)).
+**`tests/device_context/`** — single-device (node-centric) execution, verifying
+that it reproduces the globally computed state for programs within the local
+contract (see *Local execution* in [the architecture](architecture.md#local-execution)).
+`tests/test_device_context.py` gathers these modules for older invocations.
+
+**`tests/decentralized/`** — the same program on independent devices: equivalence
+with the batched engine on Mesa, devices that move and stop, silent neighbours that
+must not acquire state, causal collection with its transient and gradients, and the
+SCR blocks on devices.
 
 **`tests/functional/`** — the bare functional backend: PyG scatter operators and
 property-based tests on the vectorized functions.
@@ -69,7 +76,6 @@ Thanks to the integration of `hypothesis`, we apply property-based testing to cr
 uv run pytest                 # everything
 uv run pytest tests           # the library, as the library job of CI
 uv run pytest examples        # the experiments, as the examples job of CI
-uv run pytest -m "not slow"   # skip the modules marked slow
 ```
 
 ## SEAMS experiment invariants
@@ -77,7 +83,8 @@ uv run pytest -m "not slow"   # skip the modules marked slow
 `examples/seams/test_space_fluid.py` verifies lexicographic elections, strict cumulative
 radius, delayed samples, partition/rejoin and leader removal, isolated nodes,
 metric symmetry/positivity, oracle isolation and edge-order independence. It checks
-exact hard training forwards, numerical derivatives of the continuous surrogate,
+exact hard training forwards, gradients through every SCR block, the surrogate against
+hard central differences,
 identical synchronous IDs, asynchronous message delivery, batch isolation,
 deterministic checkpoint resumption, data splits and honest incomplete reports.
 
