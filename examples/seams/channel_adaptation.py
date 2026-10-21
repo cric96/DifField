@@ -28,9 +28,9 @@ from diffield.sim import (
 
 from ..channel.core import CHANNEL_THRESHOLD, channel_body
 from ..shared.artifacts import json_write, software
+from ..shared.metrics import recovery
 from ..shared.randomness import rng
 from . import SOURCES
-from .space_fluid.metrics import recovery
 
 EVENTS = ("obstacle", "clear", "relocate")
 

@@ -1,5 +1,6 @@
-"""Shared metrics layer: statistics."""
+"""Shared metrics layer: statistics and recovery after events."""
 
-from .stats import aggregate, aggregate_curve, ci95, mean, std
+from .recovery import recovery
+from .stats import aggregate, aggregate_curve, ci95, interval, mean, std
 
-__all__ = ["aggregate", "aggregate_curve", "ci95", "mean", "std"]
+__all__ = ["aggregate", "aggregate_curve", "ci95", "interval", "mean", "recovery", "std"]

@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ...shared.artifacts import read_json
-from ..metrics import interval
+from ...shared.metrics import interval
 from . import clusters, scenarios
 from .config import protocol
 from .report import PANELS, export, method_color, pooled

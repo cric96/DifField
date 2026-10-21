@@ -28,14 +28,14 @@ from threadpoolctl import threadpool_limits
 
 from ...shared.artifacts import json_write, read_json
 from ...shared.campaign import Budget
+from ...shared.metrics import interval, recovery
 from ...shared.randomness import rng, seed_for
-from ..metrics import interval
 from . import cluster_gnn
 from .campaign import output_lock
 from .config import protocol
 from .data import RegionEpisode, faults, topology
 from .execution import central, decentralized, equivalence
-from .metrics import fragmentation, recovery
+from .metrics import fragmentation
 from .program import ELECTED, LEADER, make_program
 from .report import export, method_color
 from .training import load_program, train_job

@@ -6,7 +6,6 @@ import pytest
 import torch
 
 from diffield import with_mode
-from examples.seams.metrics import interval
 from examples.seams.space_fluid.campaign import (
     campaign,
     evaluation_jobs,
@@ -24,7 +23,7 @@ from examples.seams.space_fluid.data import (
     training_bank,
 )
 from examples.seams.space_fluid.execution import central, decentralized, equivalence, kmeans
-from examples.seams.space_fluid.metrics import fragmentation, recovery, summarize
+from examples.seams.space_fluid.metrics import fragmentation, summarize
 from examples.seams.space_fluid.program import (
     COUNT,
     DISTANCE,
@@ -393,12 +392,9 @@ def test_sensitivity_preserves_checkpoint_and_compares_with_hard_differences():
         torch.testing.assert_close(value, original[key])
 
 
-def test_fragmentation_recovery_and_constant_normalization():
+def test_fragmentation_and_constant_normalization():
     labels = torch.tensor([0, 1, 0, 1])
     assert fragmentation(labels, line().edges[0], torch.ones(4, dtype=torch.bool)) == 1
-    assert recovery([0.1] * 5 + [0.9] * 2 + [0.1] * 5, 5)["rounds"] == 2
-    assert recovery([0.1] * 5 + [0.9] * 6, 5)["status"] == "no_recovery"
-    assert recovery([0.9] * 5 + [0.1] * 5, 5)["status"] == "attained"
     ep = make_episode(tiny(), family="constant")
     metrics, _ = summarize(ep, central(ep, make_program("combined")), 0.2, tiny())
     assert metrics["nrmse"] >= 0 and metrics["homogeneity"] < 1e-12
@@ -417,14 +413,6 @@ def test_kmeans_uses_observations_not_truth_and_has_no_fake_message_cost():
     assert torch.equal(a.fields, b.fields)
     metrics, _ = summarize(ep, a, 0.2, c)
     assert metrics["regions"] == 3 and metrics["message_bytes"] is None
-
-
-def test_paired_intervals_reject_incomplete_and_duplicate_cells():
-    rows = [{"seed": s, "episode": e, "metrics": {"x": s + e}} for s in range(2) for e in range(2)]
-    assert interval(rows, "x", reference=rows)["ci95"] == [0.0, 0.0]
-    assert interval(rows[:-1], "x", reference=rows)["ci95"] is None
-    with pytest.raises(ValueError, match="Duplicate"):
-        interval(rows + rows[:1], "x")
 
 
 def test_budget_records_pending_work_without_reducing_protocol(tmp_path):

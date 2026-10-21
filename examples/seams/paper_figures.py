@@ -21,6 +21,7 @@ from sklearn.metrics import adjusted_rand_score
 from diffield import AggregateContext
 
 from ..shared.artifacts import PROJECT, json_write, read_json
+from ..shared.metrics import interval, recovery
 from ..shared.plotting.common import LineCollection, plt
 from ..shared.plotting.moving import _get_identity_colors
 from ..shared.plotting.style import (
@@ -41,10 +42,8 @@ from .boids.devices import initial_states, teacher_program
 from .boids.dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
 from .boids.learning import combine, free_rollout, make_model, objective, transitions
 from .channel_adaptation import run_seed
-from .metrics import interval
 from .space_fluid import clusters
 from .space_fluid.execution import central
-from .space_fluid.metrics import recovery
 from .space_fluid.program import ELECTED, make_program
 from .space_fluid.training import load_program
 

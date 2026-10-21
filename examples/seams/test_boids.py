@@ -30,9 +30,9 @@ from examples.seams.boids.learning import (
     transitions,
 )
 from examples.seams.boids.report import METHODS, complete_panel, report
-from examples.seams.metrics import interval
 from examples.shared.artifacts import json_write, read_json, tensor_write
 from examples.shared.campaign import Budget
+from examples.shared.metrics import interval
 
 
 @pytest.fixture(autouse=True)

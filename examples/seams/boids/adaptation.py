@@ -16,9 +16,9 @@ from scipy.sparse.csgraph import connected_components
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import csv_write, json_write, read_json, software, tensor_write
+from ...shared.metrics import recovery
 from ...shared.randomness import rng
 from .. import SOURCES
-from ..space_fluid.metrics import recovery
 from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
 from .learning import VARIANTS, make_model
 

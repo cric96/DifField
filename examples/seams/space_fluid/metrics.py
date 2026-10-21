@@ -5,21 +5,8 @@ import math
 import numpy as np
 import torch
 
+from ...shared.metrics import recovery
 from .program import COUNT, ELECTED, SAMPLE, TIMESTAMP
-
-
-def recovery(errors, start, threshold=0.2, consecutive=5):
-    compliant = [e is not None and math.isfinite(e) and e <= threshold for e in errors]
-    before = compliant[max(0, start - consecutive) : start]
-    baseline = len(before) == consecutive and all(before)
-    for t in range(start, len(errors) - consecutive + 1):
-        if all(compliant[t : t + consecutive]):
-            return {
-                "status": "recovered" if baseline else "attained",
-                "rounds": t - start,
-                "baseline_compliant": baseline,
-            }
-    return {"status": "no_recovery", "rounds": None, "baseline_compliant": baseline}
 
 
 def fragmentation(labels, edges, active):

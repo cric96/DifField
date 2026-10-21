@@ -19,8 +19,8 @@ import torch
 
 from ...shared.artifacts import json_write, read_json
 from ...shared.campaign import Budget
+from ...shared.metrics import interval
 from ...shared.randomness import seed_for
-from ..metrics import interval
 from .campaign import output_lock
 from .config import TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank

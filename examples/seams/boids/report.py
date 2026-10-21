@@ -9,7 +9,7 @@ import torch
 from matplotlib.animation import FFMpegWriter
 
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
-from ..metrics import interval
+from ...shared.metrics import interval
 from .dynamics import TEACHER
 from .learning import REGIME, VARIANTS
 

@@ -12,7 +12,7 @@ from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.colors import Normalize
 
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
-from ..metrics import interval
+from ...shared.metrics import interval
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
 from .program import ELECTED, LEADER, SAMPLE
 
