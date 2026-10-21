@@ -21,7 +21,7 @@ from sklearn.metrics import adjusted_rand_score
 from diffield import AggregateContext
 
 from ..shared.artifacts import PROJECT, json_write, read_json
-from ..shared.metrics import interval, recovery
+from ..shared.metrics import bootstrap_band, interval, recovery
 from ..shared.plotting.common import LineCollection, plt
 from ..shared.plotting.moving import _get_identity_colors
 from ..shared.plotting.style import (
@@ -89,18 +89,9 @@ def style():
     )
 
 
-def band(curves, samples=2000, seed=0):
-    """Mean and 95% percentile bootstrap over runs (rows)."""
-    curves = np.asarray(curves, dtype=float)
-    generator = np.random.default_rng(seed)
-    draws = curves[generator.integers(len(curves), size=(samples, len(curves)))].mean(1)
-    low, high = np.quantile(draws, [0.025, 0.975], axis=0)
-    return curves.mean(0), low, high
-
-
 def draw(ax, x, curves, role, *, fill=True, **kwargs):
     colour, linestyle, label = STYLE[role]
-    mean, low, high = band(curves)
+    mean, low, high = bootstrap_band(curves)
     ax.plot(x, mean, color=colour, linestyle=linestyle, label=label, **kwargs)
     if fill and len(curves) > 1:
         ax.fill_between(x, low, high, color=colour, alpha=0.18, linewidth=0)
@@ -280,10 +271,10 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
     x = np.arange(scr_async["parametric"].shape[1])
     for method, colour, prefix in (("parametric", BLUE, "DifField"),
                                    ("fixed-combined", MUTED, "initial")):
-        mean_s, low_s, high_s = band(scr_sync[method])
+        mean_s, low_s, high_s = bootstrap_band(scr_sync[method])
         ax.plot(x, mean_s, color=colour, linestyle="-", linewidth=1.0, label=f"{prefix}, sync")
         ax.fill_between(x, low_s, high_s, color=colour, alpha=0.12, linewidth=0)
-        mean_a, low_a, high_a = band(scr_async[method])
+        mean_a, low_a, high_a = bootstrap_band(scr_async[method])
         ax.plot(x, mean_a, color=colour, linestyle=(0, (3, 1.2)), linewidth=1.0,
                 label=f"{prefix}, async")
         ax.fill_between(x, low_a, high_a, color=colour, alpha=0.12, linewidth=0)
@@ -311,11 +302,11 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         ("link_loss", "link loss", BLUE),
     )
     for key, label, colour in fault_styles:
-        mean, low, high = band(transient[key]["parametric"])
+        mean, low, high = bootstrap_band(transient[key]["parametric"])
         ax.plot(x, mean, color=colour, linestyle="-", linewidth=1.0, label=label)
         ax.fill_between(x, low, high, color=colour, alpha=0.14, linewidth=0)
     init_all = np.concatenate([transient[k]["fixed-combined"] for k, _, _ in fault_styles], axis=0)
-    mean_init, _, _ = band(init_all)
+    mean_init, _, _ = bootstrap_band(init_all)
     ax.plot(x, mean_init, color=MUTED, linestyle="--", linewidth=0.9, label="initial (mean)")
     ax.set(ylabel="clustering ARI", ylim=(0, 1.03), xlim=(0, x[-1]))
     ax.set_xlabel("round", labelpad=1.0)
@@ -335,7 +326,7 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         ("gnn64_async", "GNN64, async", DARK_RED, (0, (3, 1.2))),
     )
     for key, label, colour, ls in boids_series:
-        mean, low, high = band(boids_rmse[key])
+        mean, low, high = bootstrap_band(boids_rmse[key])
         ax.plot(xb, mean, color=colour, linestyle=ls, linewidth=1.0, label=label)
         if key.startswith("gnn64"):
             ax.fill_between(xb, low, high, color=colour, alpha=0.14, linewidth=0)

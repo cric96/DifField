@@ -67,6 +67,15 @@ def aggregate_curve(curves: list[list[float]]) -> tuple[list[float], list[float]
     return means, cis
 
 
+def bootstrap_band(curves, samples=2000, seed=0):
+    """Mean curve and its 95% percentile bootstrap band over the runs (rows of ``curves``)."""
+    curves = np.asarray(curves, dtype=float)
+    generator = np.random.default_rng(seed)
+    draws = curves[generator.integers(len(curves), size=(samples, len(curves)))].mean(1)
+    low, high = np.quantile(draws, [0.025, 0.975], axis=0)
+    return curves.mean(0), low, high
+
+
 def interval(rows, metric, *, reference=None, samples=2000, seed=0):
     """Two-way clustered bootstrap for the crossed seed x shared-episode design.
 
