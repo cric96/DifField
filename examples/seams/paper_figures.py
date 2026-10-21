@@ -47,6 +47,7 @@ from .boids.learning import (
 )
 from .channel_adaptation import run_seed
 from .space_fluid import clusters
+from .space_fluid.config import protocol
 from .space_fluid.execution import central
 from .space_fluid.program import ELECTED, make_program
 from .space_fluid.training import load_program
@@ -502,7 +503,7 @@ def scr_snapshot_panels(
     axes, root, scenario="static", index=0, letters="abcd", *, zones=True, one_line=False
 ):
     """Field, true zones and final regions of the initial and learned programs (batched, hard)."""
-    config = clusters.settings(read_json(root / "manifest.json")["profile"])
+    config = protocol(read_json(root / "manifest.json")["profile"])
     episode = clusters.cluster_episode(config, "test", index, moving=scenario == "moving")
     positions, truth = episode.positions.numpy(), clusters.truth_labels(episode)[-1]
     axes[0].scatter(*positions.T, c=episode.observations[-1].numpy(), cmap="viridis", s=9,
@@ -659,7 +660,7 @@ def channel_snapshots(axes, channel):
 def regions_snapshots(axes, root, scenario, index):
     """Asynchronous crash run of the learned program: before the crash, just after it, and once
     its regions have re-elected their leaders."""
-    config = clusters.settings(read_json(root / "manifest.json")["profile"])
+    config = protocol(read_json(root / "manifest.json")["profile"])
     model = scr_program(root, scenario, "parametric")
     episode = clusters.leader_crash(config, index, model, 0.5, moving=scenario == "moving")
     trace = clusters.run(episode, model, 0.5, config)

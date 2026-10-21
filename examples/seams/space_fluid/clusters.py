@@ -44,8 +44,6 @@ from .training import load_program, train_job
 LEARNERS = ("parametric",)
 CENTRAL = ("gnn-central", "kmeans", "ward")  # global view of every round
 DRIFT = 0.08  # radius of each zone centre's circular drift in the moving scenario
-# Full-batch rate of the main study (0.1 diverges at high lambda there).
-RATE = 0.03
 # Zones are disjoint: every device senses the level of its own zone, with no blur at the
 # boundaries (a blurred boundary forms an intermediate band that the program reads as a zone).
 GAP = 0.12  # minimum difference between zone levels
@@ -581,19 +579,10 @@ def overview(out):
     (out / "REPORT.md").write_text("\n".join(text) + "\n")
 
 
-def settings(profile, device="cpu"):
-    """Temperatures as in the main study (calibrated on validation for the composed program:
-    at T=0.1 the leader term dominates and validation diverges); Adam rate RATE."""
-    return replace(
-        protocol(profile),
-        validate_every=20 if profile != "smoke" else 1,
-        learning_rate=RATE,
-        device=device,
-    )
-
-
 def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
-    config = settings(profile, device)
+    # The temperatures of the main study (at T=0.1 the leader term dominates and validation
+    # diverges) and its full-batch Adam rate (0.1 diverges at high lambda).
+    config = replace(protocol(profile), device=device)
     sizes = SIZES[profile]
     with output_lock(out):
         deterministic(config.threads)

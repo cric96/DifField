@@ -4,6 +4,7 @@ import pytest
 import torch
 
 from examples.seams.space_fluid import cluster_gnn, clusters, scenarios
+from examples.seams.space_fluid.config import protocol
 from examples.shared.artifacts import json_write, read_json
 from examples.shared.campaign import Budget
 
@@ -59,7 +60,7 @@ class Countdown:
 
 
 def small_bank():
-    config = clusters.settings("smoke")
+    config = protocol("smoke")
     return config, clusters.bank(config, clusters.SIZES["smoke"], "static")
 
 
