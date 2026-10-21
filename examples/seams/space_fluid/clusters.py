@@ -589,6 +589,13 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
 
 
 def normalization(config, sizes, scenario):
+    """Mean and scale of the training observations, and the hop bound of the election.
+
+    It differs from the main study's, which takes the simulator truth and the population
+    standard deviation: here the observations equal the truth (zones are sensed without noise)
+    and the scale is the sample standard deviation. Neither changes, because the manifests
+    record them and every trained program depends on them.
+    """
     values = torch.cat([e.observations.flatten() for e in bank(config, sizes, scenario)["train"]])
     return {"mean": float(values.mean()), "scale": max(float(values.std()), 1e-6), "max_hops": HOPS}
 
