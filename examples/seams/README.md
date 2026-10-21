@@ -6,14 +6,16 @@ number of samplers (regions), compared with the hand-designed program it starts
 from, a hybrid whose link metric is a GNN over the neighbourhood, and a pure neural
 network. Parameters are learned offline and frozen for
 evaluation. The same `program(runtime)` runs in a batched `AggregateContext` and in
-independent `DeviceRuntime` instances. Boids remains a separate, unchanged experiment.
+independent `DeviceRuntime` instances. Boids is a separate experiment, in `boids/`, with
+stages of its own for runtime adaptation and for independent devices.
 
 ## Commands and artifacts
 
 From the repository root, after `uv sync --extra cpu --extra decentralized`:
 
 ```bash
-# Whole comparison: the three campaigns in parallel, then SUMMARY.md with the figures.
+# Whole comparison: the three campaigns one after the other (each retried up to five
+# times), then SUMMARY.md with the figures.
 scripts/run_seams_comparison.sh generated/seams/comparison
 PROFILE=smoke scripts/run_seams_comparison.sh generated/seams/comparison-smoke
 
@@ -27,24 +29,34 @@ python -m examples.seams space-fluid-clusters --profile compact-cpu --device cud
   --out generated/seams/comparison/clusters-sharp
 python -m examples.seams space-fluid-summary --out generated/seams/comparison
 
-# Existing standalone Boids command and checkpoints remain supported.
-python -m examples.seams boids --profile paper-cpu \
-  --out generated/seams/boids-paper-cpu
+# Boids, then its runtime adaptation and its run on independent devices, which read the
+# finished Boids run and write into it (profiles: smoke, paper-cpu).
+python -m examples.seams boids --profile paper-cpu --out generated/seams/boids-paper-cpu
+python -m examples.seams boids-adaptation --profile paper-cpu --out generated/seams/boids-paper-cpu
+python -m examples.seams boids-devices --profile paper-cpu --out generated/seams/boids-paper-cpu
+
+# Channel adaptation (profiles: smoke, paper-cpu), and the paper figures, which read the
+# finished runs under generated/ (--figures-dir to write them elsewhere).
+python -m examples.seams channel-adaptation --profile paper-cpu
+python -m examples.seams paper-figures --profile paper-cpu
 ```
 
 `uv run python` can replace `python`; the GPU needs `uv sync --extra cuda`. `scripts/run_visual_campaign.py` delegates to
 these commands and accepts `--suite space-fluid|boids`. The check/render scripts
 inspect and render Space-Fluid runs.
 
-Source and data hashes prevent incompatible resumes; use a new directory after
-changing code or configuration. A kernel-owned file lock prevents concurrent runs
-or renderers from writing the same directory. `last.pt` contains model, optimizer,
+A run refuses to resume after a change of code or configuration (the manifest keeps the
+hashes of the sources, and the main study and Boids also that of their data); use a new
+directory then. A kernel-owned file lock prevents concurrent runs or renderers from
+writing the same directory. `last.pt` contains model, optimizer,
 update index, best model and history. Mini-batches (smoke profile only) come from
 named deterministic streams, so interruption does not change their order. `best.pt`
 is selected by the **hard validation objective**, including update zero. A deadline
 is checked between atomic units. No profile is reduced on timeout. Exit code 2
-means incomplete work; `progress.json`, `plan.json`, stage status files and
-`REPORT.md` identify what remains.
+means incomplete work, after the budget ran out or an interrupt. For `space-fluid`,
+`progress.json`, `plan.json`, the stage status files and a partial `REPORT.md` identify
+what remains; the scenarios and clusters studies write their reports only once
+complete.
 
 | Artifact | Contents |
 |---|---|
@@ -136,7 +148,7 @@ not modelled.
 | Fixed variance | Cost `(2,1,1)`, strength `(0,0,-4)`: homogeneous neighbourhoods lead |
 | Learned parametric | Three positive cost weights and three strength weights, Adam |
 | Hybrid | Same plus the GNN link-metric modulator (529 parameters, 5 more floats per link), Adam |
-| Recurrent GNN | MPNN + GRU (edge MLP on both states and range, mean aggregation), same rounds, neighbours and signals; its state has the SCR wire width (17 floats per link); Adam |
+| Recurrent GNN | MPNN + GRU (edge MLP on both states and range, mean aggregation), same rounds, neighbours and signals; its state has the SCR wire width (18 floats per link); Adam |
 | Central K-means | Independent fits to `(x,y,normalized observation)` for several K; cluster means reconstruct |
 | Central GNN (clustering only) | 4-layer message passing over the whole current graph, every round, to 16 slots; a cluster is a connected component of neighbours in one slot; same objective, no K |
 
@@ -248,8 +260,9 @@ exactly one leader; with a moving one it follows the field.
 
 ## Clustering of the phenomenon (`space-fluid-clusters`)
 
-Zones dominated by one Gaussian with distinct levels and blurred boundaries, static or
-drifting. Every learned method minimises the same objective from the phenomenon,
+Disjoint zones, each dominated by one Gaussian, with distinct levels and sharp
+boundaries, static or drifting. Election candidacies expire after 12 hops, so the region
+of a crashed leader re-elects in bounded time whatever the learned link cost. Every learned method minimises the same objective from the phenomenon,
 region-mean error + 0.3 x regions / N, without labels; ARI against the zones is
 measured only at evaluation. The SCR programs form contiguous regions by construction;
 the central GNN sees the whole graph every round and its clusters are connected
@@ -353,18 +366,19 @@ quality, reconfiguration, recovery and execution cost connect this experiment to
 self-adaptation; explicit protocols, limitations, provenance and raw outputs support
 verifiability. They do not themselves establish novelty or a successful result.
 
-## Verification and unchanged Boids
+## Verification
 
 ```bash
 uv run pytest examples/seams -q    # the campaigns: Space-Fluid, Boids, adaptation
 uv run pytest tests -q             # the library, including device-by-device equivalence
 ```
 
-The second command preserves the Boids/equivalence regression. Boids lives in
+The first command covers the campaigns, the Boids regression included; the second the
+library, including device-by-device equivalence. Boids lives in
 `boids/` and Space-Fluid in `space_fluid/`; what is not specific to SEAMS lives in
 `examples/shared`: atomic artifacts and provenance, named random streams, the campaign
 harness (output lock, time budget, stage status, exit code 2 on an early stop), the
 resumable training loop, the network that runs a program device by device, and the
-statistics (paired bootstrap, recovery after events). Boids dynamics, learning,
-checkpoint tensors and command arguments are preserved; only imports were decoupled
-from the retired sensor suite.
+statistics (paired bootstrap, recovery after events). The Boids dynamics and the weights
+in `best.pt` are those of the original experiment; its command line, its harness and the
+layout of `last.pt` now follow `examples/shared`.

@@ -12,13 +12,13 @@ Run commands from the repository root after `uv sync --extra cpu`. Add
 
 The [Space-Fluid suite](seams/README.md) compares fixed and offline learned
 coordination metrics on moving spatial phenomena, with hard elections, frozen
-checkpoints and batched/distributed execution. Boids remains a separate comparison
+checkpoints and batched/distributed execution. Boids is a separate comparison
 of the three-weight program with GNN32/GNN64 using observed states.
 
 ```bash
 uv run python -m examples.seams space-fluid --profile smoke --stage all
-uv run python -m examples.seams space-fluid --profile paper-cpu --stage all \
-  --out generated/seams/space-fluid-paper-cpu
+uv run python -m examples.seams space-fluid --profile compact-cpu --stage all \
+  --out generated/seams/space-fluid-compact-cpu
 uv run python -m examples.seams boids --profile paper-cpu \
   --out generated/seams/boids-paper-cpu
 ```

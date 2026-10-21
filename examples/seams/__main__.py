@@ -1,4 +1,5 @@
-"""Run reproducible Space-Fluid or standalone Boids experiments."""
+"""Run the SEAMS experiments: the Space-Fluid studies and their summary, Boids with its
+adaptation and device stages, the channel adaptation and the paper figures."""
 
 import argparse
 import os

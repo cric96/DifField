@@ -1,10 +1,10 @@
 """Offline Adam, hard validation selection, atomic per-update resumption.
 
 Training differentiates a relaxed forward of the program with one temperature per
-loss term. Both were calibrated against hard central differences on validation
-data: the error term agrees at a sharp temperature, the leader term at a softer
-one (sharp relaxations of the leader term explode through time). Selection and
-every reported number use the hard program.
+loss term, both calibrated against hard central differences on validation data: the
+leader term agrees at T=0.1; the error term keeps its sign at the sharper T=0.07 (a
+sharper one explodes through time) but is about 3x weaker, so it is weighted by
+``error_gain``. Selection and every reported number use the hard program.
 """
 
 import copy

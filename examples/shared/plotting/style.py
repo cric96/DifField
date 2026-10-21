@@ -1,4 +1,4 @@
-"""Paper-quality matplotlib style shared by the SHAC / imitation comparison plots.
+"""Paper-quality matplotlib style shared by the VMAS and SEAMS plots.
 
 One consistent look (typography, spines, grid, legend, CI bands) and one fixed,
 colour-blind-safe categorical palette assigned *by role* (not by call order) so
