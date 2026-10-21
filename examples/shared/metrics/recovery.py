@@ -1,6 +1,9 @@
 """How long a run takes to return within tolerance after an event."""
 
+import itertools
 import math
+
+import numpy as np
 
 
 def recovery(errors, start, threshold=0.2, consecutive=5):
@@ -28,3 +31,28 @@ def recovery(errors, start, threshold=0.2, consecutive=5):
                 "baseline_compliant": baseline,
             }
     return {"status": "no_recovery", "rounds": None, "baseline_compliant": baseline}
+
+
+def event_windows(starts, end):
+    """The rounds of each event: from its start to the next event's, the last one to ``end``."""
+    return list(itertools.pairwise([*starts, end]))
+
+
+def recovery_summary(rounds):
+    """How many runs recovered, with the median and the largest number of rounds they took.
+
+    Args:
+        rounds: The rounds of every run to recover; ``None`` for a run that never did.
+    """
+    done = [r for r in rounds if r is not None]
+    return {
+        "recovered": len(done),
+        "median_rounds": float(np.median(done)) if done else None,
+        "max_rounds": max(done) if done else None,
+    }
+
+
+def relative_deviation(curve, reference):
+    """Mean |curve - reference| over the rounds, relative to the mean of the reference."""
+    curve, reference = np.asarray(curve, dtype=float), np.asarray(reference, dtype=float)
+    return float(np.mean(np.abs(curve - reference)) / np.mean(reference))

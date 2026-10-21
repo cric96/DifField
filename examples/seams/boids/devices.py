@@ -19,6 +19,7 @@ from diffield import AggregateContext
 
 from ...shared.artifacts import json_write, read_json, software
 from ...shared.devices import DeviceNetwork
+from ...shared.metrics import recovery_summary, relative_deviation
 from ...shared.randomness import seed_for
 from .. import SOURCES
 from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
@@ -174,11 +175,9 @@ def episode(task):
 
 
 def deviation(rows, reference):
-    """Mean |spread - reference spread| relative to the reference mean, per episode."""
-    ratios = []
-    for row in rows:
-        other = np.array(reference[row["episode"]]["curves"]["spread"])
-        ratios.append(np.mean(np.abs(np.array(row["curves"]["spread"]) - other)) / other.mean())
+    """The mean over episodes of the spread's relative deviation from the reference's."""
+    spread = {episode: row["curves"]["spread"] for episode, row in reference.items()}
+    ratios = [relative_deviation(r["curves"]["spread"], spread[r["episode"]]) for r in rows]
     return float(np.mean(ratios))
 
 
@@ -194,12 +193,9 @@ def summarize(rows, config):
         complete = [r for r in panel if r["status"] == "complete"]
         entry = {"runs": len(panel), "diverged": len(panel) - len(complete)}
         for name in EVENTS:
-            rounds = [r["metrics"][name]["recovery"]["rounds"] for r in complete
-                      if r["metrics"][name]["recovery"]["rounds"] is not None]  # fmt: skip
+            rounds = [r["metrics"][name]["recovery"]["rounds"] for r in complete]
             entry[name] = {
-                "recovered": len(rounds),
-                "median_rounds": float(np.median(rounds)) if rounds else None,
-                "max_rounds": max(rounds) if rounds else None,
+                **recovery_summary(rounds),
                 "peak_change": float(
                     np.mean([r["metrics"][name]["peak_change"] for r in complete])
                 ),

@@ -19,7 +19,13 @@ from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import adjusted_rand_score
 
 from ..shared.artifacts import PROJECT, json_write, read_json
-from ..shared.metrics import bootstrap_band, interval, recovery
+from ..shared.metrics import (
+    bootstrap_band,
+    interval,
+    recovery,
+    recovery_summary,
+    relative_deviation,
+)
 from ..shared.plotting.common import LineCollection, plt
 from ..shared.plotting.moving import _get_identity_colors
 from ..shared.plotting.style import (
@@ -154,9 +160,7 @@ def scr_numbers(scr, fault=32, restore=64, tolerance=0.05, consecutive=5):
             "ari_trough": float(ari[:, fault:restore].min(1).mean()),
             "ari_during": float(ari[:, fault:restore].mean()),
             "ari_final": float(ari[:, -10:].mean()),
-            "recovered": len(rounds),
-            "median_rounds": float(np.median(rounds)) if rounds else None,
-            "max_rounds": max(rounds) if rounds else None,
+            **recovery_summary(rounds),
             "rounds": rounds,
             "after_restore_rounds": after_restore,
             "after_restore_median": float(np.median(after_restore)) if after_restore else None,
@@ -290,12 +294,6 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         "sync_deviation": {k: {"mean": float(v.mean()), "episodes": len(v)}
                            for k, v in deviations.items()},
     }
-
-
-def relative_deviation(curve, reference):
-    """Mean |curve - reference| over the rounds, relative to the mean of the reference."""
-    curve, reference = np.asarray(curve, dtype=float), np.asarray(reference, dtype=float)
-    return float(np.mean(np.abs(curve - reference)) / np.mean(reference))
 
 
 def sync_deviations(boids, scr_root, size=64, scenario="static"):

@@ -28,7 +28,7 @@ from diffield.sim import (
 
 from ..channel.core import CHANNEL_THRESHOLD, channel_body
 from ..shared.artifacts import json_write, software
-from ..shared.metrics import recovery
+from ..shared.metrics import event_windows, recovery, recovery_summary
 from ..shared.randomness import rng
 from . import SOURCES
 
@@ -211,10 +211,9 @@ def run_seed(config, seed, extra=()):
         if t in keep:
             snapshots[t] = {"channel": torch.from_numpy(channel), "failed": failed.clone()}
     errors = [1 - q for q in curves["quality"]]
-    bounds = [*(events[name] for name in EVENTS), config["rounds"]]
+    windows = event_windows([events[name] for name in EVENTS], config["rounds"])
     summary = {}
-    for k, name in enumerate(EVENTS):
-        start, stop = bounds[k], bounds[k + 1]
+    for name, (start, stop) in zip(EVENTS, windows, strict=True):
         summary[name] = {
             "round": start,
             "recovery": recovery(
@@ -242,14 +241,13 @@ def aggregate(runs, config):
     result = {}
     for name in EVENTS:
         entries = [r["events"][name] for r in runs]
+        summary = recovery_summary(e["recovery"]["rounds"] for e in entries)
         rounds = [e["recovery"]["rounds"] for e in entries if e["recovery"]["rounds"] is not None]
         result[name] = {
             "round": config["events"][name],
-            "recovered": len(rounds),
-            "censored": len(entries) - len(rounds),
-            "median_rounds": float(np.median(rounds)) if rounds else None,
+            **summary,
+            "censored": len(entries) - summary["recovered"],
             "min_rounds": min(rounds) if rounds else None,
-            "max_rounds": max(rounds) if rounds else None,
             "quality_min_mean": float(np.mean([e["quality_min"] for e in entries])),
             "frozen_mean": float(np.mean([e["frozen_mean"] for e in entries])),
             "stale_end_mean": float(np.mean([e["stale_end"] for e in entries])),

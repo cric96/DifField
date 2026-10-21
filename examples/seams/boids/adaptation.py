@@ -16,7 +16,12 @@ from scipy.sparse.csgraph import connected_components
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import csv_write, json_write, read_json, software, tensor_write
-from ...shared.metrics import recovery
+from ...shared.metrics import (
+    event_windows,
+    recovery,
+    recovery_summary,
+    relative_deviation,
+)
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges, swarm
@@ -121,10 +126,10 @@ def perturbed_rollout(model, positions, velocities, rounds, schedule):
 
 
 def episode_metrics(curves, config):
-    spread, bounds = curves["spread"], [*config["events"].values(), config["rounds"]]
+    spread = curves["spread"]
+    windows = event_windows([config["events"][name] for name in EVENTS], config["rounds"])
     result = {}
-    for k, name in enumerate(EVENTS):
-        start, stop = bounds[k], bounds[k + 1]
+    for name, (start, stop) in zip(EVENTS, windows, strict=True):
         pre = float(np.mean(spread[start - 5 : start]))
         errors = [abs(s - pre) / pre for s in spread[:stop]]
         result[name] = {
@@ -160,14 +165,9 @@ def summarize(rows, config):
             done = [r for r in panel if r["status"] == "complete"]
             entry = {"runs": len(panel), "diverged": len(panel) - len(done)}
             for name in EVENTS:
-                rounds = [
-                    r["metrics"][name]["recovery"]["rounds"] for r in done
-                    if r["metrics"][name]["recovery"]["rounds"] is not None
-                ]  # fmt: skip
+                rounds = [r["metrics"][name]["recovery"]["rounds"] for r in done]
                 entry[name] = {
-                    "recovered": len(rounds),
-                    "median_rounds": float(np.median(rounds)) if rounds else None,
-                    "max_rounds": max(rounds) if rounds else None,
+                    **recovery_summary(rounds),
                     "peak_change": float(np.mean([r["metrics"][name]["peak_change"] for r in done]))
                     if done
                     else None,
@@ -176,11 +176,10 @@ def summarize(rows, config):
                     else None,
                 }
             deviation = [
-                float(np.mean(np.abs(np.array(r["curves"]["spread"])
-                                     - np.array(teacher[r["episode"]]["curves"]["spread"]))))
-                / float(np.mean(teacher[r["episode"]]["curves"]["spread"]))
-                for r in done if r["episode"] in teacher
-            ]  # fmt: skip
+                relative_deviation(r["curves"]["spread"], teacher[r["episode"]]["curves"]["spread"])
+                for r in done
+                if r["episode"] in teacher
+            ]
             entry["spread_deviation_from_teacher"] = (
                 float(np.mean(deviation)) if deviation else None
             )
