@@ -141,8 +141,15 @@ def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROL
     return result
 
 
-def scr_numbers(scr, fault=32, restore=64, tolerance=0.05, consecutive=5):
-    """ARI before the fault, at its trough and at the end; recovery measured after the trough."""
+def scr_numbers(scr, fault=None, restore=None, tolerance=0.05, consecutive=5):
+    """ARI before the fault, at its trough and at the end; recovery measured after the trough.
+
+    By default the fault comes at a third of the rounds and the restore at two thirds, where
+    the episodes schedule them.
+    """
+    rounds = next(iter(scr.values())).shape[1]
+    fault = rounds // 3 if fault is None else fault
+    restore = 2 * rounds // 3 if restore is None else restore
     numbers = {}
     for method, ari in scr.items():
         rounds, after_restore = [], []
@@ -216,10 +223,15 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         ax.plot(x, mean_a, color=colour, linestyle=(0, (3, 1.2)), linewidth=1.0,
                 label=f"{prefix}, async")
         ax.fill_between(x, low_a, high_a, color=colour, alpha=0.12, linewidth=0)
-    fault = 32
+    rounds = len(x)
+    fault, restore = rounds // 3, 2 * rounds // 3
+    crash = scr_numbers(scr_async, restore=rounds)  # a crash is never restored
+    learned, initial = crash["parametric"], crash["fixed-combined"]
     ax.axvspan(fault, x[-1], color=MUTED, alpha=0.07, linewidth=0)
     events(ax, {"leader crash": fault}, top=0.98)
-    ax.text(95, 0.05, "recovered: 10/10\n(initial: 6/10)", fontsize=FONT - 2.0, color=INK,
+    recovered = (f"recovered: {learned['recovered']}/{learned['runs']}\n"
+                 f"(initial: {initial['recovered']}/{initial['runs']})")  # fmt: skip
+    ax.text(x[-1], 0.05, recovered, fontsize=FONT - 2.0, color=INK,
             ha="right", va="bottom", linespacing=1.05)
     ax.set(ylabel="clustering ARI", ylim=(0, 1.03), xlim=(0, x[-1]))
     ax.set_xlabel("round", labelpad=1.0)
@@ -231,7 +243,6 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
 
     # (c) Regions: transient network and device faults (async)
     ax = axes[2]
-    fault, restore = 32, 64
     ax.axvspan(fault, restore, color=MUTED, alpha=0.11, linewidth=0)
     events(ax, {"fault": fault, "restored": restore}, top=0.98)
     fault_styles = (
@@ -268,8 +279,9 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         ax.plot(xb, mean, color=colour, linestyle=ls, linewidth=1.0, label=label)
         if key.startswith("gnn64"):
             ax.fill_between(xb, low, high, color=colour, alpha=0.14, linewidth=0)
-    ax.text(23.5, 0.006, r"DifField: $<10^{-3}$", fontsize=FONT - 1.5, color=BLUE,
-            ha="right", va="bottom")
+    peak = max(boids_rmse[k].mean(0).max() for k in ("diffield_sync", "diffield_async"))
+    bound = r"DifField: $<10^{-3}$" if peak < 1e-3 else f"DifField: {peak:.3f}"
+    ax.text(xb[-1] - 0.5, 0.006, bound, fontsize=FONT - 1.5, color=BLUE, ha="right", va="bottom")
     ax.set(ylabel="position RMSE", xlim=(1, xb[-1]), ylim=(-0.003, 0.095))
     ax.set_xlabel("round", labelpad=1.0)
     ax.set_xticks([1, 8, 16, 24])
@@ -282,7 +294,7 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
     save_figure(fig, out / "rq2-adaptation")
     deviations = sync_deviations(boids, scr_root, size, scenario)
     return {
-        "scr": scr_numbers(scr_async, restore=scr_async["parametric"].shape[1]),
+        "scr": crash,
         "scr_sync": scr_numbers(scr_sync, restore=scr_sync["parametric"].shape[1]),
         "scr_clean": scr_numbers(clean),
         "scr_transient": {k: scr_numbers(v) for k, v in transient.items()},

@@ -250,7 +250,7 @@ def video(out, data, config, budget, metadata):
                         yticks=[],
                         title="Recorded teacher" if method == "teacher" else LABELS[method],
                     )
-                fig.suptitle(f"{REGIME} · seed 0 · {source['episode']} · round {t + 1}/24")
+                fig.suptitle(f"{REGIME} · seed 0 · {source['episode']} · round {t + 1}/{config['rounds']}")
                 fig.tight_layout(rect=(0, 0, 1, 0.94))
                 for _ in range(6):  # Four simulated rounds/s, no interpolated states.
                     writer.grab_frame()
@@ -285,7 +285,7 @@ def videos(out, data, config, budget):
     (directory / "index.html").write_text(
         '<!doctype html><html lang="en"><meta charset="utf-8"><title>Boids: GNN Comparison</title>'
         "<style>body{font:17px system-ui;max-width:1100px;margin:32px auto}video{width:100%}</style>"
-        "<h1>Boids: GNN Comparison</h1><p>Seed 0, first three test episodes, 24 rounds. "
+        f"<h1>Boids: GNN Comparison</h1><p>Seed 0, first three test episodes, {config['rounds']} rounds. "
         'Frozen weights, 4 rounds/s, no interpolation.</p><a href="../REPORT.md">Report</a>'
         + f'<h2>{REGIME}</h2><video controls src="{REGIME}.mp4"></video>'
         + "</html>"
@@ -349,8 +349,8 @@ def report(out, data, config, budget, render=True):
         "",
         "SEAMS v1 uses a loss over 24-round free-running trajectories; the new training "
         "supervises one step at a time from observed positions and velocities. "
-        "The control compares one-step and 24-step training with the "
-        "same 100 updates (2 in the smoke test), Adam 0.03, minibatches, and normalized loss. "
+        f"The control compares one-step and {config['rounds']}-step training with the "
+        f"same {config['diagnostic_updates']} updates, Adam 0.03, minibatches, and normalized loss. "
         "Float64 precision is only a numerical control.",
         "",
     ]
@@ -376,7 +376,7 @@ def report(out, data, config, budget, render=True):
         "## Protocol",
         "",
         f"Shared data: {config['train_episodes']} train, {config['validation_episodes']} validation, "
-        f"{config['test_episodes']} test episodes; {len(config['seeds'])} seeds, 32 boids, 24 rounds. "
+        f"{config['test_episodes']} test episodes; {len(config['seeds'])} seeds, {config['nodes']} boids, {config['rounds']} rounds. "
         f"{config['updates']} updates; tuning on seed 10001 and checkpoint selection by "
         "observed validation loss. No test-set tuning. CPU float32, one thread.",
         "",
