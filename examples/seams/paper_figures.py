@@ -18,8 +18,6 @@ from matplotlib.patches import Rectangle
 from scipy.optimize import linear_sum_assignment
 from sklearn.metrics import adjusted_rand_score
 
-from diffield import AggregateContext
-
 from ..shared.artifacts import PROJECT, json_write, read_json
 from ..shared.metrics import bootstrap_band, interval, recovery
 from ..shared.plotting.common import LineCollection, plt
@@ -37,9 +35,8 @@ from ..shared.plotting.style import (
     YELLOW,
     apply_paper_style,
 )
-from ..shared.randomness import seed_for
-from .boids.devices import initial_states, teacher_program
-from .boids.dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
+from .boids.devices import sync_async_rmse
+from .boids.dynamics import FIXED, TEACHER
 from .boids.learning import (
     combine,
     free_rollout,
@@ -134,77 +131,6 @@ def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROL
     return result
 
 
-@torch.no_grad()
-def boids_sync_async_rmse(boids):
-    """Per-round position RMSE vs the teacher on the 20 test episodes (all 5 seeds, no faults)."""
-    source = read_json(boids / "manifest.json")["config"]
-    states = initial_states(boids, source, source["nodes"], source["test_episodes"])
-    rounds = source["rounds"]
-    teacher = teacher_program()
-
-    def rollout(model, pos, vel, activation, seed):
-        p, v = pos.clone(), vel.clone()
-        command = torch.zeros_like(p)
-        gen = torch.Generator().manual_seed(seed)
-        ps = []
-        is_dsl = isinstance(model, Boids)
-        for t in range(rounds):
-            edges = radius_edges(p)
-            draws = torch.rand(len(p), generator=gen)
-            active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
-            if is_dsl:
-                with AggregateContext(edges, len(p)).round():
-                    acc = model.acceleration(p, v)
-            else:
-                acc = model.net(p, v, edges)
-            command[active] = acc[active]
-            step = integrate(p, v, command)
-            p, v = step.positions, step.velocities
-            ps.append(p.clone())
-        return torch.stack(ps)
-
-    references = {}
-    for key, pos, vel in states:
-        aseed = seed_for(source["data_seed"], "boids-devices", key)
-        references[key] = (
-            rollout(teacher, pos, vel, 1.0, aseed),
-            rollout(teacher, pos, vel, 0.5, aseed),
-            aseed,
-        )
-
-    curves = {
-        "diffield_sync": [],
-        "diffield_async": [],
-        "diffield_async_vs_sync_teacher": [],
-        "gnn64_sync": [],
-        "gnn64_async": [],
-        "gnn32_sync": [],
-        "gnn32_async": [],
-        "teacher_async": [
-            (t_async - t_sync).square().mean((-2, -1)).sqrt().numpy()
-            for t_sync, t_async, _ in references.values()
-        ],
-    }
-    for variant, prefix in (("parametric", "diffield"), ("gnn64", "gnn64"), ("gnn32", "gnn32")):
-        for seed in source["seeds"]:
-            model = load_model(boids, variant, seed)
-            for key, pos, vel in states:
-                t_sync, t_async, aseed = references[key]
-                p_sync = rollout(model, pos, vel, 1.0, aseed)
-                p_async = rollout(model, pos, vel, 0.5, aseed)
-                curves[f"{prefix}_sync"].append(
-                    (p_sync - t_sync).square().mean((-2, -1)).sqrt().numpy()
-                )
-                curves[f"{prefix}_async"].append(
-                    (p_async - t_async).square().mean((-2, -1)).sqrt().numpy()
-                )
-                if prefix == "diffield":
-                    curves["diffield_async_vs_sync_teacher"].append(
-                        (p_async - t_sync).square().mean((-2, -1)).sqrt().numpy()
-                    )
-    return {k: np.asarray(v, dtype=float) for k, v in curves.items()}
-
-
 def scr_numbers(scr, fault=32, restore=64, tolerance=0.05, consecutive=5):
     """ARI before the fault, at its trough and at the end; recovery measured after the trough."""
     numbers = {}
@@ -245,7 +171,7 @@ def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", con
         c: scr_curves(scr_root, scenario, c, executor="async-0.5")
         for c in ("node_stop", "partition", "link_loss")
     }
-    boids_rmse = boids_sync_async_rmse(boids)
+    boids_rmse = sync_async_rmse(boids)
 
     fig, axes = plt.subplots(1, 4, figsize=(7.16, 1.28), constrained_layout=True,
                              gridspec_kw={"width_ratios": (1.02, 1, 1, 1)})  # fmt: skip

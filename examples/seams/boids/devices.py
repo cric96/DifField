@@ -15,6 +15,8 @@ from pathlib import Path
 import numpy as np
 import torch
 
+from diffield import AggregateContext
+
 from ...shared.artifacts import json_write, read_json, software
 from ...shared.devices import DeviceNetwork
 from ...shared.randomness import seed_for
@@ -76,6 +78,73 @@ def device_rollout(model, positions, velocities, rounds, schedule, *, activation
             curves[key].append(value)
         curves["activated"].append(float(active.float().mean()))
     return "complete", curves, (p, v)
+
+
+@torch.no_grad()
+def batched_rollout(model, positions, velocities, rounds, activation, seed):
+    """The positions after every round of :func:`device_rollout` without events, computed on
+    the whole swarm at once, so that the GNN baselines can run it too."""
+    p, v = positions.clone(), velocities.clone()
+    command = torch.zeros_like(p)
+    generator = torch.Generator().manual_seed(seed)
+    trajectory = []
+    for t in range(rounds):
+        edges = radius_edges(p)
+        draws = torch.rand(len(p), generator=generator)
+        active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
+        if isinstance(model, Boids):
+            with AggregateContext(edges, len(p)).round():
+                acceleration = model.acceleration(p, v)
+        else:
+            acceleration = model.net(p, v, edges)
+        command[active] = acceleration[active]
+        step = integrate(p, v, command)
+        p, v = step.positions, step.velocities
+        trajectory.append(p.clone())
+    return torch.stack(trajectory)
+
+
+def sync_async_rmse(run):
+    """Per-round position RMSE against the teacher on the test episodes of a Boids run, for
+    every seed and model, on synchronous and asynchronous agents (no faults)."""
+    source = read_json(run / "manifest.json")["config"]
+    states = initial_states(run, source, source["nodes"], source["test_episodes"])
+    rounds = source["rounds"]
+    teacher = teacher_program()
+
+    def rmse(a, b):
+        return (a - b).square().mean((-2, -1)).sqrt().numpy()
+
+    references = {}
+    for key, pos, vel in states:
+        seed = seed_for(source["data_seed"], "boids-devices", key)
+        references[key] = (
+            batched_rollout(teacher, pos, vel, rounds, 1.0, seed),
+            batched_rollout(teacher, pos, vel, rounds, 0.5, seed),
+            seed,
+        )
+    curves = {
+        "diffield_sync": [],
+        "diffield_async": [],
+        "diffield_async_vs_sync_teacher": [],
+        "gnn64_sync": [],
+        "gnn64_async": [],
+        "gnn32_sync": [],
+        "gnn32_async": [],
+        "teacher_async": [rmse(t_async, t_sync) for t_sync, t_async, _ in references.values()],
+    }
+    for variant, prefix in (("parametric", "diffield"), ("gnn64", "gnn64"), ("gnn32", "gnn32")):
+        for model_seed in source["seeds"]:
+            model = load_model(run, variant, model_seed)
+            for key, pos, vel in states:
+                t_sync, t_async, seed = references[key]
+                p_sync = batched_rollout(model, pos, vel, rounds, 1.0, seed)
+                p_async = batched_rollout(model, pos, vel, rounds, 0.5, seed)
+                curves[f"{prefix}_sync"].append(rmse(p_sync, t_sync))
+                curves[f"{prefix}_async"].append(rmse(p_async, t_async))
+                if prefix == "diffield":
+                    curves["diffield_async_vs_sync_teacher"].append(rmse(p_async, t_sync))
+    return {k: np.asarray(v, dtype=float) for k, v in curves.items()}
 
 
 def episode(task):

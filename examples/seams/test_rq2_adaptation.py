@@ -6,7 +6,7 @@ import torch
 from diffield.sim import normalize_vectors
 from examples.seams.boids.adaptation import configuration as boids_configuration
 from examples.seams.boids.adaptation import events, perturbed_rollout
-from examples.seams.boids.devices import device_rollout, teacher_program
+from examples.seams.boids.devices import batched_rollout, device_rollout, teacher_program
 from examples.seams.boids.dynamics import SPEED, Boids
 from examples.seams.boids.learning import GraphBoids
 from examples.seams.channel_adaptation import campaign, configuration, run_seed
@@ -125,3 +125,12 @@ def test_asynchronous_devices_repeat_their_activations_through_events_for_a_seed
     assert curves["nodes"][19:21] == [16, 12]
     assert sum(curves["activated"]) == pytest.approx(21.16666668653488, abs=1e-12)
     assert float(p_end.sum()) == pytest.approx(15.441049575805664, abs=1e-6)
+
+
+def test_batched_asynchronous_rollout_matches_the_one_on_devices():
+    p, v = swarm(12, seed=1)
+
+    _, _, (p_devices, _) = device_rollout(teacher_program(), p, v, 20, {}, activation=0.5, seed=3)
+    batched = batched_rollout(teacher_program(), p, v, 20, 0.5, seed=3)
+
+    torch.testing.assert_close(batched[-1], p_devices)
