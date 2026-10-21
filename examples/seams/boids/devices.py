@@ -42,6 +42,13 @@ def teacher_program():
     return model.eval()
 
 
+def active_agents(generator, count, t, probability):
+    """The agents that compute a new command in round ``t``: all of them in the first round,
+    then each with ``probability``. Every round draws once per agent."""
+    draws = torch.rand(count, generator=generator)
+    return draws < probability if t > 0 else torch.ones(count, dtype=torch.bool)
+
+
 @torch.no_grad()
 def device_rollout(model, positions, velocities, rounds, schedule, *, activation=1.0, seed=0):
     """Closed loop with one runtime per agent; the first round runs everywhere."""
@@ -67,8 +74,7 @@ def device_rollout(model, positions, velocities, rounds, schedule, *, activation
             network = DeviceNetwork(program, edges, len(p), command, signals=signals)
         else:
             network.move(edges, signals=signals)
-        draws = torch.rand(len(p), generator=generator)
-        active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
+        active = active_agents(generator, len(p), t, activation)
         network.run(active.nonzero().flatten().tolist())
         step = integrate(p, v, command)
         p, v = step.positions, step.velocities
@@ -90,8 +96,7 @@ def batched_rollout(model, positions, velocities, rounds, activation, seed):
     trajectory = []
     for t in range(rounds):
         edges = radius_edges(p)
-        draws = torch.rand(len(p), generator=generator)
-        active = draws < activation if t > 0 else torch.ones(len(p), dtype=torch.bool)
+        active = active_agents(generator, len(p), t, activation)
         if isinstance(model, Boids):
             with AggregateContext(edges, len(p)).round():
                 acceleration = model.acceleration(p, v)
