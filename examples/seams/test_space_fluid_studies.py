@@ -111,3 +111,24 @@ def test_interrupted_central_gnn_training_resumes_exactly(tmp_path):
     best = [torch.load(tmp_path / n / "best.pt", weights_only=True) for n in ("full", "resumed")]
     for key, value in best[0]["model"].items():
         assert torch.equal(value, best[1]["model"][key])
+
+
+def test_clusters_refuse_a_synchronous_run_whose_messages_differ_from_batched(
+    tmp_path, monkeypatch
+):
+    def other_traffic(expected, actual):
+        return {
+            "identifiers_equal": True,
+            "values_close": True,
+            "elections_equal": True,
+            "traffic_equal": False,
+        }
+
+    monkeypatch.setattr("examples.seams.space_fluid.execution.equivalence", other_traffic)
+    config = protocol("smoke")
+    spec = {"panel": "distributed", "moving": False, "count": 4, "separation": 0.3,
+            "index": 0, "condition": "clean", "executor": "sync"}  # fmt: skip
+    job = (tmp_path, config, NORM, spec, "fixed-combined", 0, "sync", tmp_path / "row.json")
+
+    with pytest.raises(AssertionError, match="Synchronous mismatch"):
+        clusters.evaluate_one(job)

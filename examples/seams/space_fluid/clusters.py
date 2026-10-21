@@ -34,7 +34,7 @@ from .. import SOURCES
 from . import cluster_gnn
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .data import RegionEpisode, faults, topology
-from .execution import SAME_REGIONS, execute, observed_features, on_devices
+from .execution import SAME_RUN, execute, observed_features, on_devices
 from .metrics import fragmentation
 from .program import ELECTED, LEADER
 from .report import episode_rows, export, fault_windows, method_color
@@ -360,9 +360,7 @@ def evaluate_one(job):
             if executor != "batched" and spec["condition"] == "crash":
                 episode = leader_crash(config, spec["index"], model, executor,
                                        moving=spec["moving"])  # fmt: skip
-            trace, check = execute(
-                episode, model, executor, config.data_seed, required=SAME_REGIONS
-            )
+            trace, check = execute(episode, model, executor, config.data_seed)
         labels, elected = trace.leaders, trace.fields[..., ELECTED]
     metrics, curves = cluster_metrics(episode, labels, elected)
     json_write(
@@ -452,7 +450,7 @@ def report(out, config, scenario):
             f"| {method} | {condition} | {before:.3f} | {during:.3f} | {final:.3f} | {rate} |"
         )
     checks = [r["equivalence"] for r in rows if r.get("equivalence")]
-    passed = sum(c["identifiers_equal"] and c["values_close"] for c in checks)
+    passed = sum(all(c[k] for k in SAME_RUN) for c in checks)
     text += [
         "",
         f"Synchronous DeviceRuntime equals batched execution in {passed}/{len(checks)} "

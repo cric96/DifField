@@ -14,10 +14,9 @@ from ...shared.devices import DeviceNetwork, nbytes
 from ...shared.randomness import seed_for
 from .program import DISTANCE, ELECTED, LEADER, OUTPUT_DIM, SAMPLE, TIMESTAMP
 
-# What a synchronous run on devices must share with the batched run: the regions, or also the
+# What a synchronous run on devices must share with the batched run: regions, values,
 # elections and every message.
-SAME_REGIONS = ("identifiers_equal", "values_close")
-SAME_RUN = (*SAME_REGIONS, "elections_equal", "traffic_equal")
+SAME_RUN = ("identifiers_equal", "values_close", "elections_equal", "traffic_equal")
 
 
 @dataclass
@@ -139,11 +138,11 @@ def on_devices(episode, model, executor, data_seed):
     )
 
 
-def execute(episode, model, executor, data_seed, *, required=SAME_RUN):
+def execute(episode, model, executor, data_seed):
     """The trace of ``episode`` under ``executor``, ``batched`` or on devices.
 
     A synchronous run on devices also returns its comparison with the batched run, which
-    must pass every check in ``required``; otherwise the comparison is ``None``.
+    must pass every check of ``SAME_RUN``; otherwise the comparison is ``None``.
 
     Raises:
         AssertionError: The synchronous run differs from the batched one.
@@ -154,7 +153,7 @@ def execute(episode, model, executor, data_seed, *, required=SAME_RUN):
     if trace.executor != "sync":
         return trace, None
     check = equivalence(central(episode, model), trace)
-    if not all(check[k] for k in required):
+    if not all(check[k] for k in SAME_RUN):
         raise AssertionError(f"Synchronous mismatch: {check}")
     return trace, check
 

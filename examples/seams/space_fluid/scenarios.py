@@ -23,7 +23,7 @@ from ...shared.metrics import interval, interval_cell
 from .. import SOURCES
 from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank
-from .execution import SAME_REGIONS, execute
+from .execution import SAME_RUN, execute
 from .metrics import summarize
 from .report import episode_rows, export, fault_windows, method_color
 from .training import checkpoint_directory, load_method, objective, train_job
@@ -107,8 +107,7 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
             config, "test", spec["family"], spec["index"], condition=spec["condition"],
             static=spec["test"] == "static",
         )  # fmt: skip
-        executor = spec["executor"]
-        trace, check = execute(episode, model, executor, config.data_seed, required=SAME_REGIONS)
+        trace, check = execute(episode, model, spec["executor"], config.data_seed)
         scale = norms[spec["test"]]["scale"]
         metrics, curves = summarize(episode, trace, scale, config)
         metrics["objective"] = float(objective(episode, trace, scale, config.main_lambda))
@@ -226,7 +225,7 @@ def report(out, config):
         read_json(path)["equivalence"]
         for path in sorted(out.glob("*/episodes/*/seed*/equivalence-*.json"))
     ]
-    passed = sum(c["identifiers_equal"] and c["values_close"] for c in checks)
+    passed = sum(all(c[k] for k in SAME_RUN) for c in checks)
     text += [
         "",
         f"Synchronous DeviceRuntime equals batched execution (partition episode, every method, "
