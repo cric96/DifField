@@ -8,6 +8,7 @@ the pages pick one with ``<picture>`` and ``prefers-color-scheme``:
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from html import escape
 from pathlib import Path
@@ -17,6 +18,9 @@ SANS = "Inter, -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif"
 MONO = "'JetBrains Mono', SFMono-Regular, Menlo, Consolas, monospace"
 # Distances along the colours of the logo: near is blue, far is orange; white text on all.
 RAMP = ("#1f5fa8", "#1f7f74", "#3f7f2f", "#b45309", "#9a3412")
+# Arrowheads are 10 px whatever the stroke, and reach this far past the end of their stroke,
+# so that the stroke ends inside the head instead of poking out of its tip.
+ARROW_TIP = 3
 
 
 @dataclass(frozen=True)
@@ -79,8 +83,11 @@ class Svg:
 
     def line(self, x1: float, y1: float, x2: float, y2: float, *, color: str | None = None,
              width: float = 1.5, arrow: bool = False, dashed: bool = False) -> None:
-        """A straight segment, with an arrowhead at its end if asked."""
-        marker = f' marker-end="url(#{self._marker(color or self.theme.edge)})"' if arrow else ""
+        """A straight segment, with the tip of an arrowhead at its end if asked."""
+        marker = ""
+        if arrow:
+            marker = f' marker-end="url(#{self._marker(color or self.theme.edge)})"'
+            x1, y1, x2, y2 = shorten(x1, y1, x2, y2, 0, ARROW_TIP)
         dash = ' stroke-dasharray="5 4"' if dashed else ""
         self.add(
             f'<line x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}" stroke="{color or self.theme.edge}" '
@@ -88,7 +95,7 @@ class Svg:
         )
 
     def path(self, d: str, *, color: str, width: float = 2, dashed: bool = False) -> None:
-        """A path ending in an arrowhead."""
+        """A path ending in an arrowhead, whose tip lies ARROW_TIP px past the end of d."""
         dash = ' stroke-dasharray="6 5"' if dashed else ""
         self.add(
             f'<path d="{d}" fill="none" stroke="{color}" stroke-width="{width}" '
@@ -118,8 +125,9 @@ class Svg:
         colors = {part.split("url(#arrow-")[1].split(")")[0]
                   for part in self.parts if "url(#arrow-" in part}
         markers = "".join(
-            f'<marker id="arrow-{color}" viewBox="0 0 10 10" refX="8.5" refY="5" '
-            f'markerWidth="7" markerHeight="7" orient="auto-start-reverse">'
+            f'<marker id="arrow-{color}" viewBox="0 0 10 10" refX="{10 - ARROW_TIP}" refY="5" '
+            f'markerUnits="userSpaceOnUse" markerWidth="10" markerHeight="10" '
+            f'orient="auto-start-reverse">'
             f'<path d="M0,0 L10,5 L0,10 z" fill="#{color}"/></marker>'
             for color in sorted(colors)
         )
@@ -128,6 +136,14 @@ class Svg:
             f'height="{self.height}" viewBox="0 0 {self.width} {self.height}">'
             f"<defs>{markers}</defs>{''.join(self.parts)}</svg>\n"
         )
+
+
+def shorten(x1: float, y1: float, x2: float, y2: float, start: float,
+            end: float) -> tuple[float, float, float, float]:
+    """The segment from (x1, y1) to (x2, y2), less ``start`` px at its start, ``end`` at its end."""
+    length = math.hypot(x2 - x1, y2 - y1)
+    ux, uy = (x2 - x1) / length, (y2 - y1) / length
+    return x1 + ux * start, y1 + uy * start, x2 - ux * end, y2 - uy * end
 
 
 def code(*tokens: tuple[str, str | None]) -> str:
@@ -178,8 +194,9 @@ def program(theme: Theme) -> Svg:
     for first, second in links:
         (x1, y1, _), (x2, y2, _) = nodes[first], nodes[second]
         svg.line(x1, y1, x2, y2)
-    for x1, y1, x2, y2 in ((446, 168, 512, 199), (586, 170, 530, 202), (380, 230, 502, 217)):
-        svg.line(x1, y1, x2, y2, color=green, width=2.5, arrow=True)
+    for sender in ("b", "e", "g"):
+        (x1, y1, _), (x2, y2, _) = nodes[sender], nodes["d"]
+        svg.line(*shorten(x1, y1, x2, y2, 17, 19), color=green, width=2.5, arrow=True)
     for key, (x, y, label) in nodes.items():
         svg.node(x, y, label, RAMP[int(label)], ring=green if key == "d" else None)
     svg.text(479, 300, "values cross the links, each node", size=13, color=theme.muted,
@@ -196,13 +213,15 @@ def program(theme: Theme) -> Svg:
         svg.card(712, y, 116, 34, fill=theme.tint, stroke=theme.border, radius=8)
         svg.text(770, y + 22, label, size=14, weight=600, anchor="middle")
         svg.line(690, 248, 711, y + 17, color=theme.muted, width=1)
-    for y1, y2 in ((104, 118), (152, 166), (200, 214)):
+    for y1, y2 in ((105, 117), (153, 165), (201, 213)):
         svg.line(770, y1, 770, y2, color=blue, width=2, arrow=True)
     svg.card(712, 262, 116, 34, fill=theme.card, stroke=orange, radius=8)
     svg.text(770, 284, "loss", size=14, weight=700, anchor="middle", color=orange)
-    svg.line(770, 248, 770, 260, color=blue, width=2, arrow=True)
-    svg.path("M 832 279 C 862 279, 862 87, 832 87", color=orange, width=2.2, dashed=True)
-    svg.text(902, 190, "∂loss/∂θ", size=14, weight=700, color=orange, anchor="middle")
+    svg.line(770, 249, 770, 261, color=blue, width=2, arrow=True)
+    # The length of the route ends on a dash, so the arrowhead stays attached to the line.
+    svg.path("M 830 279 H 852 A 12 12 0 0 0 864 267 V 99 A 12 12 0 0 0 852 87 H 834",
+             color=orange, width=2.2, dashed=True)
+    svg.text(906, 190, "∂loss/∂θ", size=14, weight=700, color=orange, anchor="middle")
     svg.card(656, 232, 34, 32, fill=theme.card, stroke=theme.muted, radius=16)
     svg.text(673, 253, "θ", size=16, weight=700, anchor="middle", color=theme.muted)
     svg.text(797, 318, "θ: link costs, weights, networks", size=13, color=theme.muted,
@@ -235,12 +254,14 @@ def round_anatomy(theme: Theme) -> Svg:
                      color=theme.edge if index != 1 else theme.border)
         if index == 1:
             # The values the links into d carry: the distance of the sender, plus one.
-            for sender, value in (("b", "2"), ("c", "3")):
+            for sender, value, side in (("b", "2", 1), ("c", "3", -1)):
                 (x1, y1), (x2, y2) = graph[sender], graph["d"]
-                svg.line(ox + x1, oy + y1, ox + x2 + (x1 - x2) * 0.22, oy + y2 + (y1 - y2) * 0.22,
-                         color=green, width=2.5, arrow=True)
-                svg.chip(ox + (x1 + x2) / 2 + (14 if sender == "c" else -16), oy + (y1 + y2) / 2,
-                         value, green)
+                svg.line(*shorten(ox + x1, oy + y1, ox + x2, oy + y2, 17, 19), color=green,
+                         width=2.5, arrow=True)
+                # Beside the link, on the side away from the other one.
+                length = math.hypot(x2 - x1, y2 - y1)
+                nx, ny = side * (y1 - y2) / length, side * (x2 - x1) / length
+                svg.chip(ox + (x1 + x2) / 2 + 18 * nx, oy + (y1 + y2) / 2 + 18 * ny, value, green)
         for position, (key, (x, y)) in enumerate(graph.items()):
             if index == 1:
                 svg.add(f'<circle cx="{ox + x}" cy="{oy + y}" r="15" fill="{theme.card}" '
@@ -252,9 +273,10 @@ def round_anatomy(theme: Theme) -> Svg:
             fill = RAMP[min(int(value), 4)] if value != "∞" else theme.edge
             ring = orange if index == 2 and key == "d" else None
             svg.node(ox + x, oy + y, value, fill, ring=ring)
-    for x in (302, 620):
-        svg.line(x, 135, x + 14, 135, color=theme.muted, width=2, arrow=True)
-    svg.path("M 790 262 C 790 312, 160 312, 160 266", color=blue, width=2)
+    for x in (300, 618):
+        svg.line(x + 4, 135, x + 24, 135, color=theme.muted, width=2, arrow=True)
+    svg.path("M 790 262 V 288 A 12 12 0 0 1 778 300 H 172 A 12 12 0 0 1 160 288 V 265",
+             color=blue, width=2)
     svg.text(475, 330, "iterate keeps the result: the next round starts from it", size=13.5,
              color=blue, anchor="middle", weight=600)
     return svg
@@ -293,8 +315,8 @@ def architecture(theme: Theme) -> Svg:
         svg.text(670, y + 28, name, size=15, weight=700, mono=True, color=color)
         for index, row in enumerate(rows):
             svg.text(670, y + 56 + index * 20, row, size=13, color=theme.muted)
-    svg.path("M 649 165 H 626 V 350 H 614", color=green, width=2)
-    svg.path("M 649 321 H 636 V 372 H 614", color=orange, width=2)
+    svg.path("M 649 165 H 628 V 350 H 615", color=green, width=2)
+    svg.path("M 649 321 H 638 V 372 H 615", color=orange, width=2)
     svg.text(310, 412, "dsl, sim and decentralized build on core, never the other way round",
              size=13, color=theme.muted, anchor="middle")
     return svg
