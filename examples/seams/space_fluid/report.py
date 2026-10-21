@@ -8,12 +8,11 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.colors import Normalize
 
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
-from ...shared.plotting.common import save_figure
+from ...shared.plotting.common import save_animation, save_figure
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
 from .plan import evaluation_jobs, progress, result_path
 from .program import ELECTED, LEADER, SAMPLE
@@ -263,10 +262,7 @@ def animate(out, family, budget, names):
 
     draw(frames // 2)
     fig.savefig(path.with_suffix(".png"), dpi=120)
-    animation = FuncAnimation(fig, draw, frames=frames, interval=125, blit=False)
-    temporary = path.with_name(path.stem + ".tmp.gif")
-    animation.save(temporary, writer=PillowWriter(fps=8), dpi=85)
-    temporary.replace(path)
+    save_animation(fig, draw, frames, path, fps=8, dpi=85)
     plt.close(fig)
     json_write(
         record,

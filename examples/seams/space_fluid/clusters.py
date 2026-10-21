@@ -20,7 +20,6 @@ from multiprocessing import get_context
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
-from matplotlib.animation import FuncAnimation, PillowWriter
 from scipy.sparse import coo_matrix
 from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import adjusted_rand_score
@@ -29,6 +28,7 @@ from threadpoolctl import threadpool_limits
 from ...shared.artifacts import json_write, read_json, software
 from ...shared.campaign import Budget, deterministic, open_run, output_lock, resumable
 from ...shared.metrics import interval, interval_cell, recovery
+from ...shared.plotting.common import save_animation
 from ...shared.randomness import rng, seed_for
 from .. import SOURCES
 from . import cluster_gnn
@@ -647,12 +647,7 @@ def animate(out, config, condition, scenario, index=0):
         return []
 
     fig.subplots_adjust(left=0.01, right=0.99, bottom=0.02, top=0.74, wspace=0.08)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(path.stem + ".tmp.gif")
-    FuncAnimation(fig, draw, frames=episode.rounds, interval=125).save(
-        temporary, writer=PillowWriter(fps=8), dpi=80
-    )
-    temporary.replace(path)
+    save_animation(fig, draw, episode.rounds, path, fps=8, dpi=80)
     draw(episode.rounds - 1)
     fig.savefig(path.with_suffix(".png"), dpi=120)
     plt.close(fig)

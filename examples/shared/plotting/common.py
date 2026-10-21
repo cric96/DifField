@@ -37,6 +37,19 @@ def save_figure(
     plt.close(fig)
 
 
+def save_animation(fig, draw, frames, path: Path, *, fps: int = 8, dpi: float | None = None):
+    """Write the frames ``draw(0)`` to ``draw(frames - 1)`` of ``fig`` as the GIF ``path``.
+
+    The GIF is written atomically, so an interrupted render never leaves a partial file; the
+    figure stays open.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.stem + ".tmp.gif")
+    animation = FuncAnimation(fig, draw, frames=frames, interval=1000 / fps)
+    animation.save(temporary, writer=PillowWriter(fps=fps), dpi=dpi)
+    temporary.replace(path)
+
+
 def save_gif(
     render_frame_fn: Callable[[Axes, int], None],
     frames: Sequence[int],
@@ -55,9 +68,6 @@ def save_gif(
         ax.clear()
         render_frame_fn(ax, frame_idx)
 
-    Path(output_path).parent.mkdir(parents=True, exist_ok=True)
-    anim = FuncAnimation(fig, update, frames=frames)  # type: ignore[arg-type]
-    writer = PillowWriter(fps=fps)
-    anim.save(output_path, writer=writer)
+    save_animation(fig, update, frames, Path(output_path), fps=fps)
     plt.close(fig)
     print(f"Saved GIF to {output_path}")
