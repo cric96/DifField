@@ -11,7 +11,7 @@ from matplotlib.animation import FFMpegWriter
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
 from .dynamics import TEACHER
-from .learning import REGIME, VARIANTS
+from .learning import REGIME, VARIANTS, job_path, replay_path
 
 COLORS = {
     "oracle": "#222222",
@@ -110,7 +110,7 @@ def figures(out, rows, summaries, paired, config):
     for variant in VARIANTS:
         histories = []
         for seed in config["seeds"]:
-            path = out / "jobs" / REGIME / variant / f"seed{seed}" / "training.json"
+            path = job_path(out, variant, seed) / "training.json"
             if path.exists():
                 histories.append(read_json(path)["history"])
         if not histories:
@@ -146,7 +146,7 @@ def figures(out, rows, summaries, paired, config):
     for j, name in enumerate(("Separation", "Alignment", "Cohesion")):
         ax = axes[0, j]
         for seed in config["seeds"]:
-            path = out / "jobs" / REGIME / "parametric" / f"seed{seed}" / "training.json"
+            path = job_path(out, "parametric", seed) / "training.json"
             if path.exists():
                 history = read_json(path)["history"]
                 ax.plot(
@@ -214,7 +214,7 @@ def video(out, data, config, budget, metadata):
     for ep in data["test"][:3]:
         states = {"teacher": {"positions": ep["target_pos"], "velocities": ep["target_vel"]}}
         for method in methods[1:]:
-            path = out / "replays" / REGIME / method / f"{ep['key']}.pt"
+            path = replay_path(out, method, ep["key"])
             states[method] = torch.load(path, weights_only=True)
             sources.append({"path": str(path.relative_to(out)), "sha256": checksum(path)})
         sources.append({"episode": ep["key"], "states": states})
@@ -476,7 +476,7 @@ def report(out, data, config, budget, render=True):
         verification = []
         for method in methods:
             for ep in data["test"][:3]:
-                path = out / "replays" / REGIME / method / f"{ep['key']}.pt"
+                path = replay_path(out, method, ep["key"])
                 if not path.exists():
                     continue
                 replay = torch.load(path, weights_only=True)

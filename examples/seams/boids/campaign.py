@@ -34,6 +34,7 @@ from .learning import (
     METHODS,
     RATES,
     REGIME,
+    TRACES,
     TUNING_SEED,
     VARIANTS,
     combine,
@@ -41,6 +42,7 @@ from .learning import (
     job_path,
     minibatch,
     objective,
+    replay_path,
     train_job,
     transitions,
     weights,
@@ -119,7 +121,7 @@ def initialize(out, config):
     if not path.exists():
         require_new(out)
     out.mkdir(parents=True, exist_ok=True)
-    data_path = out / "data/traces.pt"
+    data_path = out / TRACES
     if not data_path.exists():
         if path.exists():
             raise ValueError(
@@ -318,12 +320,12 @@ def evaluate_job(out, data, config, variant, seed, model, training, budget):
     for episode in data["test"]:
         budget.check()
         path = directory / f"{episode['key']}.json"
-        replay_path = out / "replays" / REGIME / variant / f"{episode['key']}.pt"
+        replay = replay_path(out, variant, episode["key"])
         needs_replay = seed == 0 and episode["key"] in {e["key"] for e in data["test"][:3]}
         if (
             path.exists()
             and read_json(path).get("status") == "complete"
-            and (not needs_replay or replay_path.exists())
+            and (not needs_replay or replay.exists())
         ):
             continue
         started = time.perf_counter()
@@ -383,7 +385,7 @@ def evaluate_job(out, data, config, variant, seed, model, training, budget):
         }
         if needs_replay:
             tensor_write(
-                replay_path,
+                replay,
                 {"positions": p, "velocities": v},
             )
         json_write(path, row)

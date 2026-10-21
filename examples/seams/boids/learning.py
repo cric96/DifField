@@ -133,10 +133,20 @@ def weights(model):
     return model.log_weights.exp().detach().tolist() if isinstance(model, Boids) else None
 
 
+# Where a Boids run keeps the teacher trajectories of its data splits.
+TRACES = "data/traces.pt"
+
+
 def job_path(out, variant, seed, rate=None):
+    """The training job of a variant and seed in a Boids run, or of a rate when tuning."""
     if rate is not None:
         return out / "tuning" / REGIME / variant / f"lr{rate}"
     return out / "jobs" / REGIME / variant / f"seed{seed}"
+
+
+def replay_path(out, method, key):
+    """The saved free-running replay of a method on a test episode of a Boids run."""
+    return out / "replays" / REGIME / method / f"{key}.pt"
 
 
 def load_model(run, variant, seed):

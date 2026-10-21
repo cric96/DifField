@@ -38,8 +38,10 @@ from ..shared.plotting.style import (
 from .boids.devices import sync_async_rmse
 from .boids.dynamics import FIXED, TEACHER
 from .boids.learning import (
+    TRACES,
     combine,
     free_rollout,
+    job_path,
     load_model,
     make_model,
     objective,
@@ -332,7 +334,7 @@ def sync_deviations(boids, scr_root, size=64, scenario="static"):
 def boids_validation(boids, variant, validation):
     """Validation loss every few updates of each seed, from update 0, and the selected update."""
     runs = []
-    for path in sorted((boids / "jobs/observed" / variant).glob("seed*/training.json")):
+    for path in sorted(job_path(boids, variant, 0).parent.glob("seed*/training.json")):
         job = read_json(path)
         with torch.no_grad():  # update 0 is evaluated for selection but not kept in the history
             start = float(objective(make_model(variant, job["seed"]), validation))
@@ -368,7 +370,7 @@ def trajectories_panel(ax, traj, colours, title, *, background="white"):
 def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
     """Validation loss (a), learned weights relative to the teacher's (b), and free-running
     trajectories of the untrained and trained program, a GNN, and the teacher (c-f)."""
-    data = torch.load(boids / "data/traces.pt", weights_only=True)
+    data = torch.load(boids / TRACES, weights_only=True)
     validation = combine([transitions(e) for e in data["validation"]])
     ax, losses = axes[0], {}
     for variant in ("gnn32", "gnn64", "parametric"):
@@ -422,7 +424,7 @@ def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
     ax.set_title(panel("b", "weights"), loc="left", pad=2)
 
     test = data["test"][episode]
-    training = read_json(boids / f"jobs/observed/parametric/seed{seed}/training.json")
+    training = read_json(job_path(boids, "parametric", seed) / "training.json")
     history = {h["update"]: h["weights"] for h in training["history"]}
     rounds, colours = len(test["target_pos"]), _get_identity_colors(len(test["positions"]))
     errors = {}

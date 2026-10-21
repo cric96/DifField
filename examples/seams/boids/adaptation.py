@@ -20,7 +20,7 @@ from ...shared.metrics import recovery
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges, swarm
-from .learning import METHODS, VARIANTS, load_model
+from .learning import METHODS, TRACES, VARIANTS, load_model
 
 EVENTS = ("split", "crash", "join")
 CURVES = ("spread", "lcc", "speed", "polarization", "crowding", "nodes")
@@ -49,7 +49,7 @@ def configuration(profile):
 def initial_states(run, campaign, size, count):
     """The campaign's test states at its size; fresh states, same recipe, otherwise."""
     if size == campaign["nodes"]:
-        test = torch.load(run / "data/traces.pt", weights_only=True)["test"][:count]
+        test = torch.load(run / TRACES, weights_only=True)["test"][:count]
         return [(e["key"], e["positions"], e["velocities"]) for e in test]
     states = []
     for i in range(count):
