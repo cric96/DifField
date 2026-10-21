@@ -13,11 +13,10 @@ import time
 
 import numpy as np
 import torch
-from scipy.sparse import coo_matrix
-from scipy.sparse.csgraph import connected_components
 from torch import nn
 
 from ...shared.artifacts import json_write, tensor_write
+from .metrics import components
 from .program import mlp
 from .training import scheduled_rate
 
@@ -127,12 +126,7 @@ def labels(model, episode):
         graph = graphs([episode], lambda _, t=t: [t])
         ids = episode.active[t].nonzero().flatten().numpy()
         slot = model(graph).argmax(-1).numpy()
-        a, b = graph["edges"].numpy()
-        joined = slot[a] == slot[b]
-        links = coo_matrix(
-            (np.ones(joined.sum()), (a[joined], b[joined])), shape=(len(ids), len(ids))
-        )
-        _, component = connected_components(links, directed=False)
+        component = components(slot, graph["edges"].numpy(), np.ones(len(ids), dtype=bool))
         smallest = np.full(component.max() + 1, np.iinfo(np.int64).max)
         np.minimum.at(smallest, component, ids)
         result[t, ids] = torch.from_numpy(smallest[component])

@@ -4,30 +4,32 @@ import math
 
 import numpy as np
 import torch
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 
 from ...shared.metrics import recovery
 from .program import COUNT, ELECTED, SAMPLE, TIMESTAMP
 
 
+def components(labels, edges, active):
+    """The component of every device in the graph of links between active devices that share a
+    label (numpy arrays: ``labels`` and ``active`` per device, ``edges`` of shape [2, E])."""
+    a, b = edges
+    joined = active[a] & active[b] & (labels[a] == labels[b])
+    links = coo_matrix(
+        (np.ones(joined.sum()), (a[joined], b[joined])), shape=(len(labels), len(labels))
+    )
+    return connected_components(links, directed=False)[1]
+
+
 def fragmentation(labels, edges, active):
     """Extra connected components per label, on the *current* communication graph."""
-    selected = active.nonzero().flatten().tolist()
-    parent = list(range(len(labels)))
-
-    def root(a):
-        while parent[a] != a:
-            parent[a] = parent[parent[a]]
-            a = parent[a]
-        return a
-
-    values = labels.tolist()
-    for a, b in edges.T.tolist():
-        if active[a] and active[b] and values[a] == values[b]:
-            parent[root(a)] = root(b)
-    components = {}
-    for node in selected:
-        components.setdefault(values[node], set()).add(root(node))
-    return sum(len(c) - 1 for c in components.values()) / max(len(components), 1)
+    labels, active = labels.numpy(), active.numpy()
+    component = components(labels, edges.numpy(), active)
+    pieces = {}
+    for node in np.flatnonzero(active):
+        pieces.setdefault(labels[node], set()).add(component[node])
+    return sum(len(c) - 1 for c in pieces.values()) / max(len(pieces), 1)
 
 
 def summarize(episode, trace, scale, config):
