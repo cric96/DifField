@@ -3,7 +3,14 @@
 import pytest
 
 from examples.shared.artifacts import json_write, read_json
-from examples.shared.campaign import Budget, output_lock, resumable, status_file
+from examples.shared.campaign import (
+    Budget,
+    check_resume,
+    output_lock,
+    require_new,
+    resumable,
+    status_file,
+)
 
 
 def test_output_lock_excludes_concurrent_runs_and_releases_after_failure(tmp_path):
@@ -57,3 +64,25 @@ def test_resumable_writes_the_partial_report_and_exits_with_2_when_stopped(tmp_p
 
     assert code == 2 and reports == ["partial"]
     assert resumable(tmp_path, lambda: 0) == 0
+
+
+def test_check_resume_compares_the_sources_of_the_software_only():
+    saved = {"config": {"rounds": 3}, "software": {"source_sha256": {"a.py": "1"}, "cpu": "x"}}
+
+    check_resume(saved, {"config": {"rounds": 3}, "software": {"source_sha256": {"a.py": "1"}}})
+
+    with pytest.raises(ValueError, match="Resume mismatch: software"):
+        check_resume(saved, {"software": {"source_sha256": {"a.py": "2"}}})
+    with pytest.raises(ValueError, match="Resume mismatch: config"):
+        check_resume(saved, {"config": {"rounds": 4}})
+
+
+def test_require_new_refuses_a_directory_with_files_or_inside_another_run(tmp_path):
+    with output_lock(tmp_path / "run"):
+        require_new(tmp_path / "run")
+    json_write(tmp_path / "run/manifest.json", {})
+
+    with pytest.raises(ValueError, match="empty"):
+        require_new(tmp_path / "run")
+    with pytest.raises(ValueError, match="nested"):
+        require_new(tmp_path / "run/inner")

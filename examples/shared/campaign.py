@@ -1,6 +1,7 @@
 """Long, resumable experiment campaigns: lock, torch setup, time budget and stop handling."""
 
 import fcntl
+import json
 import time
 from contextlib import contextmanager
 
@@ -26,6 +27,37 @@ def output_lock(out):
             yield
         finally:
             fcntl.flock(handle, fcntl.LOCK_UN)
+
+
+def require_new(out):
+    """Refuse to start a run in a directory that holds files, or inside another run.
+
+    Raises:
+        ValueError: ``out`` holds anything but its lock, or a parent holds a manifest.
+    """
+    if out.exists() and any(p.name != ".run.lock" for p in out.iterdir()):
+        raise ValueError("New output directory must be empty")
+    if any((p / "manifest.json").exists() for p in out.resolve().parents):
+        raise ValueError("Experiment output directories must not be nested")
+
+
+def check_resume(saved, expected):
+    """Refuse to resume a run whose configuration, data or sources changed.
+
+    Args:
+        saved: The manifest of the run.
+        expected: What the manifest would hold now; values compare as JSON stores them, and
+            of ``software`` only the hashes of the sources.
+
+    Raises:
+        ValueError: Naming the first key whose value changed.
+    """
+    for key, value in expected.items():
+        old, new = saved.get(key), json.loads(json.dumps(value))
+        if key == "software":
+            old, new = (old or {}).get("source_sha256"), new["source_sha256"]
+        if old != new:
+            raise ValueError(f"Resume mismatch: {key}; use a new output directory")
 
 
 @contextmanager

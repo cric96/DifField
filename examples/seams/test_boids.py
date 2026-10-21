@@ -298,7 +298,7 @@ def test_standalone_dataset_is_deterministic_and_resume_checks_hashes(tmp_path):
     assert len(keys) == len(set(keys)) == 7
     data["test"][0]["target_pos"][0, 0, 0] += 0.1
     tensor_write(out / "data/traces.pt", data)
-    with pytest.raises(ValueError, match="resume mismatch: data_sha256"):
+    with pytest.raises(ValueError, match="Resume mismatch: data_sha256"):
         initialize(out, config)
 
 

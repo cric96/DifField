@@ -7,7 +7,15 @@ from pathlib import Path
 import torch
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget, deterministic, output_lock, resumable, status_file
+from ...shared.campaign import (
+    Budget,
+    check_resume,
+    deterministic,
+    output_lock,
+    require_new,
+    resumable,
+    status_file,
+)
 from ...shared.randomness import seed_for
 from .. import SOURCES
 from .config import LEARNERS, TEST_FAMILIES, TRAIN_FAMILIES
@@ -39,21 +47,13 @@ def initialization(out, config):
     provenance = software(SOURCES)
     if path.exists():
         manifest = read_json(path)
-        if manifest.get("experiment") != "space-fluid" or manifest["config"] != config_dict:
-            raise ValueError("Configuration mismatch; choose a separate --out directory")
-        if manifest["software"]["source_sha256"] != provenance["source_sha256"]:
-            raise ValueError("Source mismatch; choose a new --out directory")
-        if checksum(out / "data/bank.pt") != manifest["data_sha256"]:
-            raise ValueError("Training data checksum mismatch")
+        expected = {"experiment": "space-fluid", "config": config_dict, "software": provenance}
+        check_resume(manifest, {**expected, "data_sha256": checksum(out / "data/bank.pt")})
         payload = torch.load(out / "data/bank.pt", weights_only=True)
         return {k: [RegionEpisode(**e) for e in v] for k, v in payload.items()}, manifest[
             "normalization"
         ]
-    # Do not accidentally place an experiment inside another run or a nonempty directory.
-    if out.exists() and any(p.name != ".run.lock" for p in out.iterdir()):
-        raise ValueError("New output directory must be empty")
-    if any((p / "manifest.json").exists() for p in out.resolve().parents):
-        raise ValueError("Experiment output directories must not be nested")
+    require_new(out)
     bank = training_bank(config)
     norm = normalization(bank["train"])
     tensor_write(out / "data/bank.pt", {k: [e.payload() for e in v] for k, v in bank.items()})

@@ -417,7 +417,7 @@ def test_budget_records_pending_work_without_reducing_protocol(tmp_path):
     assert state["status"] == "incomplete" and state["evaluation"]["complete"] == 0
     assert read_json(tmp_path / "run/manifest.json")["config"]["updates"] == 3
     assert (tmp_path / "run/REPORT.md").exists()
-    with pytest.raises(ValueError, match="Configuration mismatch"):
+    with pytest.raises(ValueError, match="Resume mismatch: config"):
         initialization(tmp_path / "run", replace(c, updates=1))
 
 

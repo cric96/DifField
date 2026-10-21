@@ -8,7 +8,7 @@ import torch
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget, deterministic, resumable, status_file
+from ...shared.campaign import Budget, check_resume, deterministic, resumable, status_file
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import (
@@ -128,12 +128,7 @@ def initialize(out, config):
         "software": provenance,
     }
     if path.exists():
-        old = read_json(path)
-        for key in ("config", "data_sha256"):
-            if old.get(key) != manifest[key]:
-                raise ValueError(f"Boids resume mismatch: {key}; use a new output directory")
-        if old["software"]["source_sha256"] != provenance["source_sha256"]:
-            raise ValueError("Sources changed; use a new output directory")
+        check_resume(read_json(path), manifest)
     data = torch.load(data_path, weights_only=True)
     selected, keys = {}, set()
     for split, count_key in splits:
