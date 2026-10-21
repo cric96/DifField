@@ -5,15 +5,6 @@ from __future__ import annotations
 import math
 
 
-def is_finite_number(value: object) -> bool:
-    """Check if a value is a finite float or integer."""
-    try:
-        fval = float(value)  # type: ignore[arg-type]
-        return math.isfinite(fval)
-    except (TypeError, ValueError):
-        return False
-
-
 def mean(values: list[float]) -> float:
     """Compute the arithmetic mean of a list of numbers. Ignores NaNs."""
     valid_values = [v for v in values if not math.isnan(v)]

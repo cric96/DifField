@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from torch import nn
-
 
 def parse_int_csv(seed_csv: str) -> list[int]:
     """Parse a comma-separated string of integers into a list."""
@@ -17,11 +12,3 @@ def parse_int_csv(seed_csv: str) -> list[int]:
         else [int(item.strip()) for item in text.split(",") if item.strip()]
     )
 
-
-def grad_norm(params: list[nn.Parameter]) -> float:
-    """Compute the combined Frobenius norm of gradients for a list of parameters."""
-    total = 0.0
-    for param in params:
-        if param.grad is not None:
-            total += float(param.grad.detach().pow(2).sum().item())
-    return total**0.5

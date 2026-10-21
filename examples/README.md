@@ -90,5 +90,5 @@ Artifacts land under `generated/vmas-<scenario>-{shac,imitation}/` and
 `generated/vmas-comparison/`. Training is checkpointed per `(policy, seed)`, so a
 re-run resumes rather than restarting.
 
-Shared plotting, diagnostics, checkpoint and training utilities live in `shared/`.
+Shared plotting, metrics and training utilities live in `shared/`.
 Generated artifacts are saved under `generated/`.

@@ -1,6 +1,5 @@
-"""Shared training layer: history tracking and utilities."""
+"""Shared training layer: utilities."""
 
-from .history import MetricHistory
-from .utils import grad_norm, parse_int_csv
+from .utils import parse_int_csv
 
-__all__ = ["MetricHistory", "grad_norm", "parse_int_csv"]
+__all__ = ["parse_int_csv"]
