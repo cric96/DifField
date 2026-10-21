@@ -34,7 +34,7 @@ from .. import SOURCES
 from . import cluster_gnn
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .data import RegionEpisode, faults, topology
-from .execution import SAME_REGIONS, execute, on_devices
+from .execution import SAME_REGIONS, execute, observed_features, on_devices
 from .metrics import fragmentation
 from .program import ELECTED, LEADER
 from .report import export, method_color
@@ -221,9 +221,7 @@ def central_baseline(episode, kind, norm, seed):
     with threadpool_limits(limits=1):
         for t in range(episode.rounds):
             ids = episode.active[t].nonzero().flatten()
-            observed = episode.observations[t, ids]
-            value = (observed - norm["mean"]) / norm["scale"]
-            features = torch.cat((episode.positions[ids], value[:, None]), -1).numpy()
+            features = observed_features(episode, t, ids, norm).numpy()
             k = min(count, len(ids))
             if kind == "kmeans":
                 fitted = KMeans(n_clusters=k, n_init=5, random_state=seed).fit_predict(features)

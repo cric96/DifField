@@ -170,6 +170,13 @@ def equivalence(expected, actual, tolerance=2e-6):
     }
 
 
+def observed_features(episode, t, ids, normalization):
+    """What a central clustering sees of the devices ``ids`` in round ``t``: each position,
+    and the observation normalized with ``normalization``."""
+    value = (episode.observations[t, ids] - normalization["mean"]) / normalization["scale"]
+    return torch.cat((episode.positions[ids], value[:, None]), -1)
+
+
 @torch.no_grad()
 def kmeans(episode, k, normalization, seed=0):
     """Conventional global fit on position and normalized observations, every round.
@@ -184,16 +191,7 @@ def kmeans(episode, k, normalization, seed=0):
             ids = episode.active[t].nonzero().flatten()
             result = torch.zeros(episode.nodes, OUTPUT_DIM)
             if len(ids):
-                features = torch.cat(
-                    (
-                        episode.positions[ids],
-                        (
-                            (episode.observations[t, ids] - normalization["mean"])
-                            / normalization["scale"]
-                        )[:, None],
-                    ),
-                    -1,
-                )
+                features = observed_features(episode, t, ids, normalization)
                 model = KMeans(n_clusters=min(k, len(ids)), n_init=5, random_state=seed)
                 labels = torch.from_numpy(model.fit_predict(features.numpy()))
                 for label in labels.unique():
