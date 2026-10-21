@@ -32,13 +32,10 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
     parser.add_argument(
         "--figures-dir", type=Path, help="Where paper-figures writes (default: the paper)"
     )
-    parser.add_argument("--device-policy", choices=("cpu", "hybrid"), default="cpu")
     parser.add_argument(
         "--device", choices=("cpu", "cuda"), default="cpu", help="Space-Fluid training device"
     )
     args = parser.parse_args(argv)
-    if args.device_policy != "cpu":
-        parser.error("Boids and Space-Fluid campaigns use CPU")
     if args.device == "cuda":
         if args.command not in ("space-fluid", "space-fluid-clusters", "space-fluid-scenarios"):
             parser.error("--device cuda is supported by the space-fluid campaigns only")
