@@ -9,6 +9,7 @@ import numpy as np
 
 from ...shared.artifacts import read_json
 from ...shared.metrics import interval, interval_cell
+from ...shared.plotting.style import seed_band
 from . import clusters, scenarios
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .report import PANELS, episode_rows, export, method_color, pooled
@@ -330,9 +331,7 @@ def training(out, text):
             ]
             steps = [h["step"] for h in histories[0]]
             values = np.array([[h["validation_hard"] for h in hist] for hist in histories])
-            color = method_color(method)
-            ax.fill_between(steps, values.min(0), values.max(0), color=color, alpha=0.15, lw=0)
-            ax.plot(steps, values.mean(0), color=color, lw=2, label=label(method))
+            seed_band(ax, steps, values, color=method_color(method), label=label(method))
         ax.set(title=title, xlabel="Adam update", yscale="log")
         ax.grid(alpha=0.15)
         ax.legend(fontsize=7, frameon=False)

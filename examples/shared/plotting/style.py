@@ -213,6 +213,12 @@ def band(
     ax.fill_between(x, lower, upper, color=color, alpha=0.18, linewidth=0)
 
 
+
+def seed_band(ax: Axes, x: Sequence[float], values, *, color: str, label: str) -> None:
+    """The mean over seeds (the rows of ``values``) as a line, and their range as a band."""
+    ax.fill_between(x, values.min(0), values.max(0), color=color, alpha=0.15, linewidth=0)
+    ax.plot(x, values.mean(0), color=color, linewidth=2, label=label)
+
 def style_axes(ax: Axes, *, ylabel: str | None = None, xlabel: str | None = None) -> None:
     if xlabel is not None:
         ax.set_xlabel(xlabel)

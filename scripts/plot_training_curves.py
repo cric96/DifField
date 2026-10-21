@@ -16,6 +16,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from examples.seams.space_fluid.report import method_color
+from examples.shared.plotting.style import seed_band
 
 SMOOTH = 10
 
@@ -46,11 +47,6 @@ def smooth(values):
     return np.stack([np.convolve(v, kernel, mode="valid") for v in values])
 
 
-def band(ax, x, values, color, label):
-    ax.fill_between(x, values.min(0), values.max(0), color=color, alpha=0.15, linewidth=0)
-    ax.plot(x, values.mean(0), color=color, linewidth=2, label=label)
-
-
 def figure(grouped, title, target):
     penalties = sorted(grouped, key=lambda p: (p is None, p))
     fig, axes = plt.subplots(
@@ -63,12 +59,12 @@ def figure(grouped, title, target):
             label = f"{method} ({len(histories)} seeds)"
             if any("training_surrogate" in r for r in histories[0]):
                 x, y = series(histories, "training_surrogate")
-                band(row[0], x[SMOOTH - 1 :], smooth(y), color, label)
+                seed_band(row[0], x[SMOOTH - 1 :], smooth(y), color=color, label=label)
                 x, y = series(histories, "validation_hard")
-                band(row[1], x, y, color, label)
+                seed_band(row[1], x, y, color=color, label=label)
             x, y = series(histories, "validation_hard")
             budget = x / x[-1]
-            band(row[2], budget, np.minimum.accumulate(y, axis=1), color, label)
+            seed_band(row[2], budget, np.minimum.accumulate(y, axis=1), color=color, label=label)
         row[0].set(title=f"Training loss, surrogate{suffix}", xlabel="Update", yscale="log")
         row[1].set(title=f"Hard validation objective{suffix}", xlabel="Update", yscale="log")
         row[2].set(
