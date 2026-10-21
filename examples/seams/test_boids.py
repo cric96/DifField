@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from examples.seams.artifacts import Budget, checksum, json_write, read_json, tensor_write
+from examples.seams.artifacts import Budget, json_write, read_json, tensor_write
 from examples.seams.boids import CampaignBudget, configuration, evaluate_job, initialize, traces
 from examples.seams.boids_dynamics import (
     TEACHER,
@@ -239,7 +239,7 @@ def test_evaluation_repairs_missing_replay_and_records_nonfinite_failure(tmp_pat
     config = {"rounds": 3}
     out = tmp_path / "out"
     json_write(out / "manifest.json", {"data_sha256": "fixture"})
-    args = (out, tmp_path / "source", data, config, "observed", "fixed", 0)
+    args = (out, data, config, "observed", "fixed", 0)
     evaluate_job(*args, Boids(), {}, Budget(60))
     replay = out / "replays/observed/fixed/episode-0.pt"
     replay.unlink()
@@ -249,18 +249,13 @@ def test_evaluation_repairs_missing_replay_and_records_nonfinite_failure(tmp_pat
     with torch.no_grad():
         next(model.parameters()).fill_(float("nan"))
     with pytest.raises(FloatingPointError, match="Nonfinite Boids rollout"):
-        evaluate_job(
-            out, tmp_path / "source", data, config, "observed", "gnn32", 0, model, {}, Budget(60)
-        )
+        evaluate_job(out, data, config, "observed", "gnn32", 0, model, {}, Budget(60))
     failed = read_json(out / "episodes/observed/gnn32/seed0/episode-0.json")
     assert failed["status"] == "failed" and not failed["metrics"]
 
 
-@pytest.mark.parametrize("historical", [False, True])
-def test_report_ignores_artifacts_outside_observed_comparison(tmp_path, historical):
+def test_report_ignores_artifacts_outside_observed_comparison(tmp_path):
     config = configuration("smoke")
-    if historical:
-        config["methods"].insert(2, "legacy")
     data = {"test": [episode(0), episode(1)]}
     for method in config["methods"]:
         for ep in data["test"]:
@@ -286,18 +281,16 @@ def test_report_ignores_artifacts_outside_observed_comparison(tmp_path, historic
     assert len(results) == expected and {r["regime"] for r in results} == {"observed"}
     document = (tmp_path / "REPORT.md").read_text()
     assert f"{expected}/{expected}" in document and "retired" not in document
-    assert ("Legacy" in document) == historical
 
 
 def test_standalone_dataset_is_deterministic_and_resume_checks_hashes(tmp_path):
     config = configuration("smoke")
     out = tmp_path / "run"
-    data = initialize(None, out, config)
+    data = initialize(out, config)
     manifest = read_json(out / "manifest.json")
-    assert manifest["source"] is None and manifest["source_sha256"] == {}
     assert manifest["config"]["methods"] == list(METHODS)
-    resumed = initialize(None, out, config)
-    repeated = initialize(None, tmp_path / "repeat", config)
+    resumed = initialize(out, config)
+    repeated = initialize(tmp_path / "repeat", config)
     keys = []
     for split in ("train", "validation", "test"):
         for a, b, c in zip(data[split], resumed[split], repeated[split], strict=True):
@@ -308,41 +301,18 @@ def test_standalone_dataset_is_deterministic_and_resume_checks_hashes(tmp_path):
     data["test"][0]["target_pos"][0, 0, 0] += 0.1
     tensor_write(out / "data/traces.pt", data)
     with pytest.raises(ValueError, match="resume mismatch: data_sha256"):
-        initialize(None, out, config)
+        initialize(out, config)
 
 
-@pytest.mark.parametrize("historical", [False, True])
-def test_source_import_is_optional_and_read_only(tmp_path, historical):
-    config = configuration("smoke")
-    source = tmp_path / "archive"
-    data = initialize(None, tmp_path / "fresh", config)
-    tensor_write(source / "boids/traces.pt", data)
-    json_write(source / "manifest.json", {"archived": True})
-    if historical:
-        tensor_write(source / "boids/seed0.pt", {"model": Boids().state_dict()})
-        json_write(source / "boids/results.json", [{"historical": True}])
-    hashes = {p: checksum(p) for p in source.rglob("*") if p.is_file()}
-    out = tmp_path / "imported"
-    initialize(source, out, config)
-    manifest = read_json(out / "manifest.json")
-    assert ("legacy" in manifest["config"]["methods"]) == historical
-    assert (out / "historical-results.json").exists() == historical
-    initialize(source, out, config)
-    assert hashes == {p: checksum(p) for p in hashes}
-    if historical:
-        with pytest.raises(ValueError, match="checkpoint for every seed"):
-            initialize(source, tmp_path / "partial", {**config, "seeds": [0, 1]})
-
-
-def test_cli_has_only_boids_and_no_source_requirement(monkeypatch, tmp_path, capsys):
+def test_cli_runs_boids_in_its_output_directory(monkeypatch, tmp_path, capsys):
     from examples.seams.__main__ import main
 
     calls = []
     monkeypatch.setattr("examples.seams.boids.campaign", lambda *args: calls.append(args) or 0)
     assert main(["boids", "--out", str(tmp_path)]) == 0
-    assert calls == [(None, tmp_path, "smoke", 14400)]
+    assert calls == [(tmp_path, "smoke", 14400)]
     assert main(["boids"]) == 0
-    assert calls[-1] == (None, Path("generated/seams/boids-smoke"), "smoke", 14400)
+    assert calls[-1] == (Path("generated/seams/boids-smoke"), "smoke", 14400)
     with pytest.raises(SystemExit) as error:
         main(["boids-v2"])
     assert error.value.code == 2

@@ -19,7 +19,6 @@ METHODS = ("oracle", "fixed", *VARIANTS)
 COLORS = {
     "oracle": "#222222",
     "fixed": "#888888",
-    "legacy": "#bd7b24",
     "parametric": "#16734a",
     "gnn32": "#3066be",
     "gnn64": "#9b438c",
@@ -27,7 +26,6 @@ COLORS = {
 LABELS = {
     "oracle": "Teacher replay",
     "fixed": "Fixed",
-    "legacy": "Legacy",
     "parametric": "DIFFIELD (3)",
     "gnn32": "GNN32",
     "gnn64": "GNN64",
@@ -489,12 +487,7 @@ def report(out, data, config, budget, render=True):
     text += [
         "",
         "Training and inference times for all methods and parameter counts are in `tables/episodes.csv`; "
-        "training times repeated across episodes refer to the same checkpoint and should not be summed."
-        + (
-            " Legacy is a historical checkpoint imported and reevaluated in the current environment."
-            if "legacy" in methods
-            else ""
-        ),
+        "training times repeated across episodes refer to the same checkpoint and should not be summed.",
         "",
         "## Limitations and Artifacts",
         "",

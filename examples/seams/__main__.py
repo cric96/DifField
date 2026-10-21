@@ -27,7 +27,6 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
         "--stage", choices=("all", "train", "insights", "evaluate", "report"), default="all"
     )
     parser.add_argument("--out", type=Path)
-    parser.add_argument("--source-run", type=Path, help="Optional historical Boids source")
     parser.add_argument("--budget-seconds", type=float, default=14400)
     parser.add_argument(
         "--figures-dir", type=Path, help="Where paper-figures writes (default: the paper)"
@@ -67,7 +66,7 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
         if args.stage != "all":
             parser.error("Boids retains its existing all-stage campaign command")
         out = args.out or Path("generated/seams") / f"boids-{args.profile}"
-        return campaign(args.source_run, out, args.profile, args.budget_seconds)
+        return campaign(out, args.profile, args.budget_seconds)
     if args.command == "space-fluid-summary":
         from .space_fluid.summary import summary
 
@@ -85,8 +84,6 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
     from .space_fluid.campaign import campaign
     from .space_fluid.config import protocol
 
-    if args.source_run is not None:
-        parser.error("Space-Fluid resumes directly from --out; --source-run is for Boids")
     out = args.out or Path("generated/seams") / f"space-fluid-{args.profile}"
     config = replace(protocol(args.profile), device=args.device)
     return campaign(out, config, args.stage, args.budget_seconds)

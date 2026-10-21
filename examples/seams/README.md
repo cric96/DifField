@@ -364,4 +364,4 @@ The second command preserves the 38-test Boids/equivalence regression. Shared
 random streams, paired bootstrap, atomic artifacts and directory guards are
 independent utilities. Boids dynamics, learning, checkpoint tensors and command
 arguments are preserved; only imports were decoupled from the retired sensor
-suite. `boids --source-run` can still read historical Boids traces and checkpoints.
+suite.

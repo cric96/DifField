@@ -31,7 +31,6 @@ from .boids_learning import (
     transitions,
     weights,
 )
-from .directories import separate
 from .randomness import rng
 
 
@@ -127,56 +126,37 @@ def traces(config, split, count):
     return result
 
 
-def initialize(source, out, config):
+def initialize(out, config):
     path = out / "manifest.json"
-    hashes, historical = {}, None
-    methods = ["oracle", "fixed", *VARIANTS]
     splits = (
         ("train", "train_episodes"),
         ("validation", "validation_episodes"),
         ("test", "test_episodes"),
     )
-    if source is not None:
-        separate(source, out)
-        data_path = source / "boids/traces.pt"
-        paths = [source / "manifest.json", data_path]
-        checkpoints = [source / "boids" / f"seed{s}.pt" for s in config["seeds"]]
-        if any(p.exists() for p in checkpoints):
-            if not all(p.exists() for p in checkpoints):
-                raise ValueError("Historical comparison requires a checkpoint for every seed")
-            paths += checkpoints
-            methods.insert(2, "legacy")
-        historical = source / "boids/results.json"
-        if historical.exists():
-            paths.append(historical)
-        hashes = {str(p.relative_to(source)): checksum(p) for p in paths}
-    else:
-        out.mkdir(parents=True, exist_ok=True)
-        data_path = out / "data/traces.pt"
-        if not data_path.exists():
-            if path.exists():
-                raise ValueError(
-                    "Saved Boids dataset is missing; restore it or use a new output directory"
-                )
-            tensor_write(
-                data_path, {split: traces(config, split, config[key]) for split, key in splits}
+    out.mkdir(parents=True, exist_ok=True)
+    data_path = out / "data/traces.pt"
+    if not data_path.exists():
+        if path.exists():
+            raise ValueError(
+                "Saved Boids dataset is missing; restore it or use a new output directory"
             )
+        tensor_write(
+            data_path, {split: traces(config, split, config[key]) for split, key in splits}
+        )
     config = {
         **config,
-        "methods": methods,
+        "methods": ["oracle", "fixed", *VARIANTS],
         "physics": {**config["physics"], "teacher": list(TEACHER), "fixed": list(FIXED)},
     }
     provenance = software()
     manifest = {
         "config": config,
-        "source": str(source.resolve()) if source is not None else None,
-        "source_sha256": hashes,
         "data_sha256": checksum(data_path),
         "software": provenance,
     }
     if path.exists():
         old = read_json(path)
-        for key in ("config", "source", "source_sha256", "data_sha256"):
+        for key in ("config", "data_sha256"):
             if old.get(key) != manifest[key]:
                 raise ValueError(f"Boids resume mismatch: {key}; use a new output directory")
         if old["software"]["source_sha256"] != provenance["source_sha256"]:
@@ -205,8 +185,6 @@ def initialize(source, out, config):
                 raise ValueError("Nonfinite source trace")
     if not path.exists():
         json_write(path, manifest)
-        if historical is not None and historical.exists():
-            json_write(out / "historical-results.json", read_json(historical))
     return selected
 
 
@@ -362,13 +340,9 @@ def diagnose(out, data, config, budget):
 
 
 @torch.no_grad()
-def evaluate_job(out, source, data, config, regime, variant, seed, model, training, budget):
+def evaluate_job(out, data, config, regime, variant, seed, model, training, budget):
     directory = out / "episodes" / regime / variant / f"seed{seed}"
-    checkpoint = (
-        source / "boids" / f"seed{seed}.pt"
-        if variant == "legacy"
-        else job_path(out, regime, variant, seed) / "best.pt"
-    )
+    checkpoint = job_path(out, regime, variant, seed) / "best.pt"
     checkpoint_hash = checksum(checkpoint) if checkpoint.exists() else None
     for episode in data["test"]:
         budget.check()
@@ -444,12 +418,12 @@ def evaluate_job(out, source, data, config, regime, variant, seed, model, traini
         json_write(path, row)
 
 
-def campaign(source: Path | None, out: Path, profile="paper-cpu", seconds=14400):
+def campaign(out: Path, profile="paper-cpu", seconds=14400):
     started = time.monotonic()
     torch.set_num_threads(1)
     torch.use_deterministic_algorithms(True)
     config = configuration(profile)
-    data = initialize(source, out, config)
+    data = initialize(out, config)
     config = read_json(out / "manifest.json")["config"]
     budget = CampaignBudget(out, seconds)
     budget.started = started
@@ -531,20 +505,9 @@ def campaign(source: Path | None, out: Path, profile="paper-cpu", seconds=14400)
                         frozen[regime][variant]["rate"],
                         budget,
                     )
-                    evaluate_job(
-                        out, source, data, config, regime, variant, seed, model, result, budget
-                    )
-                baselines = [("fixed", Boids()), ("oracle", None)]
-                if "legacy" in config["methods"]:
-                    legacy = Boids()
-                    legacy.load_state_dict(
-                        torch.load(source / "boids" / f"seed{seed}.pt", weights_only=True)["model"]
-                    )
-                    baselines.append(("legacy", legacy))
-                for variant, model in baselines:
-                    evaluate_job(
-                        out, source, data, config, regime, variant, seed, model, {}, budget
-                    )
+                    evaluate_job(out, data, config, regime, variant, seed, model, result, budget)
+                for variant, model in (("fixed", Boids()), ("oracle", None)):
+                    evaluate_job(out, data, config, regime, variant, seed, model, {}, budget)
         stage = "report"
         json_write(progress, {"status": "running", "stage": stage})
         from .boids_report import report
