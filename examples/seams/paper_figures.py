@@ -59,8 +59,6 @@ STYLE = {  # role: (colour, linestyle, label)
     "diffield_async": (BLUE, (0, (3, 1.2)), "DifField, async devices"),
     "teacher_async": (INK, (0, (3, 1.2)), "teacher, async devices"),
 }
-LEGEND = ("diffield", "diffield_async", "teacher", "teacher_async", "gnn32", "gnn64",
-          "initial", "frozen")  # fmt: skip
 BOIDS_ROLE = {"oracle": "teacher", "fixed": "initial", "parametric": "diffield",
               "gnn32": "gnn32", "gnn64": "gnn64"}  # fmt: skip
 SCR_ROLE = {"parametric": "diffield", "fixed-combined": "initial"}
@@ -119,11 +117,6 @@ def events(ax, marks, top=1.02):
 def panel(letter, text=""):
     """Panel label: the letter in italics, then plain text."""
     return rf"$\mathit{{({letter})}}$ {text}".rstrip()
-
-
-def tag(ax, label):
-    """Panel letter above the left end of the axes, clear of the y-axis labels."""
-    ax.set_title(panel(label), loc="left", fontsize=FONT, pad=2)
 
 
 def scr_curves(root, scenario="static", condition="crash", methods=tuple(SCR_ROLE),
@@ -246,25 +239,6 @@ def scr_numbers(scr, fault=32, restore=64, tolerance=0.05, consecutive=5):
             "after_restore_median": float(np.median(after_restore)) if after_restore else None,
         }
     return numbers
-
-
-def boids_adaptation_curves(run, size, key="spread"):
-    by_method = {}
-    for path in sorted((run / "adaptation/episodes").glob(f"*/*/N{size}-*.json")):
-        row = read_json(path)
-        if row["status"] == "complete":
-            by_method.setdefault(row["method"], []).append(row["curves"][key])
-    return {m: np.array(c) for m, c in by_method.items()}
-
-
-def boids_device_curves(run, size, executor="async", key="spread"):
-    """Curves of the device stage: the learned program and the teacher on independent agents."""
-    curves = {}
-    for method in ("parametric", "oracle"):
-        paths = sorted((run / "devices/episodes" / f"{method}-{executor}").glob(f"N{size}-*.json"))
-        rows = [read_json(path) for path in paths]
-        curves[method] = np.array([r["curves"][key] for r in rows if r["status"] == "complete"])
-    return curves
 
 
 def rq2_figure(channel, boids, scr_root, out, *, size=64, scenario="static", condition="crash"):
@@ -434,32 +408,6 @@ def sync_deviations(boids, scr_root, size=64, scenario="static"):
     return result
 
 
-DEVIATION_ROWS = (  # key, label, colour
-    ("Boids, teacher", "teacher", INK),
-    ("Boids, diffield", "DifField", BLUE),
-    ("regions, initial", "initial", MUTED),
-    ("regions, diffield", "DifField", BLUE),
-)
-
-
-def deviation_panel(ax, deviations):
-    """Mean deviation from synchronous execution, with 95% bootstrap intervals over episodes."""
-    for y, (key, label, colour) in enumerate(DEVIATION_ROWS):
-        values = 100 * deviations[key]
-        mean, low, high = band(values[:, None])
-        ax.plot([low[0], high[0]], [y, y], color=colour, linewidth=2.2, alpha=0.35,
-                solid_capstyle="butt")  # fmt: skip
-        ax.plot(mean, y, "o", color=colour, markersize=3.5)
-        ax.text(1.02, y, label, transform=ax.get_yaxis_transform(), fontsize=FONT - 1,
-                color=colour, va="center", ha="left")  # fmt: skip
-    ax.axhline(1.5, color=MUTED, linewidth=0.5, linestyle=":")
-    ax.set_yticks([0.5, 2.5], ["Boids\nspread", "regions\nARI"], fontsize=FONT - 1)
-    ax.tick_params(axis="y", length=0)
-    ax.set(xlabel="async vs sync (%)", ylim=(3.6, -0.6))
-    ax.set_xlim(left=0)
-    ax.grid(axis="y", visible=False)
-
-
 def boids_validation(boids, variant, validation):
     """Validation loss every few updates of each seed, from update 0, and the selected update."""
     runs = []
@@ -479,76 +427,6 @@ def boids_validation(boids, variant, validation):
     return runs
 
 
-def rq1_boids_figure(boids, out, *, zoom=200):
-    """Validation loss over training (a) and the three learned weights against the teacher's."""
-    data = torch.load(boids / "data/traces.pt", weights_only=True)
-    validation = combine([transitions(e) for e in data["validation"]])
-    errors = {}
-    for method in BOIDS_ROLE:
-        paths = sorted((boids / "episodes/observed" / method).glob("*/*.json"))
-        errors[method] = float(np.mean([read_json(p)["metrics"]["position_rmse"] for p in paths]))
-
-    fig, axes = plt.subplots(1, 4, figsize=(7.16, 1.55), constrained_layout=True,
-                             gridspec_kw={"width_ratios": (1.35, 1, 1, 1)})  # fmt: skip
-    ax, losses = axes[0], {}
-    for variant in ("gnn32", "gnn64", "parametric"):
-        runs = boids_validation(boids, variant, validation)
-        x = np.array([u for u, _ in runs[0]["points"]])
-        curves = np.array([[v for _, v in run["points"]] for run in runs])
-        picks = [(run["selected"], dict(run["points"])[run["selected"]]) for run in runs]
-        colour, linestyle, label = STYLE[BOIDS_ROLE[variant]]
-        ax.fill_between(x, curves.min(0), curves.max(0), color=colour, alpha=0.18, linewidth=0)
-        ax.plot(x, np.median(curves, 0), color=colour, linestyle=linestyle, label=label)
-        ax.scatter(*zip(*picks, strict=True), s=9, color=colour, edgecolors="white",
-                   linewidths=0.4, zorder=3)  # fmt: skip
-        losses[variant] = {
-            "initial_median": float(np.median(curves[:, 0])),
-            "final_median": float(np.median(curves[:, -1])),
-            "selected_median": float(np.median([v for _, v in picks])),
-        }
-        if variant == "parametric":
-            initial = float(curves[0, 0])  # the untrained weights: identical for every seed
-            weight_runs = runs
-    colour, linestyle, label = STYLE["initial"]
-    ax.axhline(initial, color=colour, linestyle=linestyle, linewidth=0.9, zorder=1)
-    plateau = np.median([losses[v]["final_median"] for v in ("gnn32", "gnn64")])
-    ax.text(x[-1], 2 * initial, f"GNNs: {plateau:.2f}", fontsize=FONT - 1, color=DARK_RED,
-            ha="right", va="bottom")  # fmt: skip
-    ax.set(xlabel="update", ylabel="validation loss", yscale="log")
-    ax.set(xlim=(0, x[-1]), ylim=(1e-13, 30))
-    ax.set_yticks([1e0, 1e-4, 1e-8, 1e-12])
-    ax.set_title(panel("a", "one-step loss"), loc="left")
-
-    colour = STYLE["diffield"][0]
-    for j, (ax, name, label) in enumerate(
-        zip(axes[1:], ("separation", "alignment", "cohesion"), "bcd", strict=True)
-    ):
-        for run in weight_runs:
-            ax.plot(range(len(run["weights"])), [w[j] for w in run["weights"]], color=colour,
-                    linewidth=0.7, alpha=0.6)  # fmt: skip
-        ax.axhline(TEACHER[j], color=INK, linestyle="--", linewidth=0.8)
-        ax.text(zoom, TEACHER[j], f"teacher {TEACHER[j]:g} ", fontsize=FONT - 1, color=INK,
-                ha="right", va="top")  # fmt: skip
-        ax.set(xlabel="update", xlim=(0, zoom))
-        ax.set_title(panel(label, name), loc="left")
-        if j == 0:
-            ax.set_ylabel("weight")
-
-    handles = [plt.Line2D([], [], color=STYLE[r][0], linestyle=STYLE[r][1], label=STYLE[r][2])
-               for r in ("diffield", "gnn32", "gnn64", "initial")]  # fmt: skip
-    handles += [
-        plt.Line2D([], [], color=INK, linestyle="--", label="teacher"),
-        plt.Line2D([], [], color=MUTED, marker="o", markersize=3, linestyle="none",
-                   label="selected checkpoint"),
-    ]  # fmt: skip
-    fig.legend(handles=handles, loc="outside lower center", ncol=len(handles), frameon=False,
-               handlelength=2.2, columnspacing=1.2)  # fmt: skip
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq1-boids.{suffix}")
-    plt.close(fig)
-    return {"position_rmse": errors, "validation_loss": losses, "initial_weights_loss": initial}
-
-
 def trajectories_panel(ax, traj, colours, title, *, background="white"):
     """Fading trails per agent (start: faint dot, end: cross), as in the earlier Boids figure."""
     segments = len(traj) - 1
@@ -564,45 +442,6 @@ def trajectories_panel(ax, traj, colours, title, *, background="white"):
     ax.scatter(traj[-1, :, 0], traj[-1, :, 1], c=colours, marker="x", s=9, linewidths=0.8)
     ax.set(xlim=(0, 1), ylim=(0, 1), xticks=[], yticks=[], aspect="equal", facecolor=background)
     ax.set_title(title, loc="left", pad=2)
-
-
-def rq1_boids_trajectories(boids, out, *, episode=0, seed=0, early=10, gnn="gnn64"):
-    """Free-running trajectories on a test episode: DifField during training, a trained GNN,
-    and the teacher."""
-    test = torch.load(boids / "data/traces.pt", weights_only=True)["test"][episode]
-    training = read_json(boids / f"jobs/observed/parametric/seed{seed}/training.json")
-    history = {h["update"]: h["weights"] for h in training["history"]}
-    early = min(history, key=lambda update: abs(update - early))  # short runs record fewer
-    selected = training["selected_update"]
-    stages = (("untrained", FIXED), (f"update {early}", history[early]),
-              (f"update {selected}", history[selected]))  # fmt: skip
-    rounds = len(test["target_pos"])
-    colours = _get_identity_colors(len(test["positions"]))
-    fig, axes = plt.subplots(1, 5, figsize=(7.16, 1.62), constrained_layout=True)
-    errors = {}
-    for ax, (label, weights), letter in zip(axes, stages, "abc", strict=False):
-        model = make_model("parametric", seed)
-        with torch.no_grad():
-            model.log_weights.copy_(torch.tensor(weights).log())
-            positions, _ = free_rollout(model, test["positions"], test["velocities"], rounds)
-        traj = torch.cat((test["positions"][None], positions)).numpy()
-        trajectories_panel(ax, traj, colours, f"({letter}) DifField, {label}")
-        errors[label] = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
-    model = make_model(gnn, seed)
-    checkpoint = boids / "jobs/observed" / gnn / f"seed{seed}" / "best.pt"
-    model.load_state_dict(torch.load(checkpoint, weights_only=True)["model"])
-    with torch.no_grad():
-        positions, _ = free_rollout(model.eval(), test["positions"], test["velocities"], rounds)
-    traj = torch.cat((test["positions"][None], positions)).numpy()
-    trajectories_panel(axes[3], traj, colours, f"(d) {STYLE[gnn][2]}, trained")
-    errors[gnn] = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
-    teacher = torch.cat((test["positions"][None], test["target_pos"])).numpy()
-    trajectories_panel(axes[4], teacher, colours, "(e) teacher", background="#f4f8ff")
-    for suffix in ("pdf", "png"):
-        fig.savefig(out / f"rq1-boids-trajectories.{suffix}")
-    plt.close(fig)
-    return {"episode": test["key"], "seed": seed, "updates": [0, early, selected],
-            "position_rmse": errors}  # fmt: skip
 
 
 def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
@@ -1126,8 +965,6 @@ def paper_figures(profile="paper-cpu", figures=None):
     )
     out.mkdir(parents=True, exist_ok=True)
     numbers = rq2_figure(channel, boids, scr_root, out)
-    numbers["boids_rq1"] = rq1_boids_figure(boids, out)
-    numbers["boids_trajectories"] = rq1_boids_trajectories(boids, out)
     numbers["rq1"] = rq1_figure(boids, scr_root, out)
     numbers["scr_snapshot"] = rq1_scr_snapshot(scr_root, out)
     numbers["rq2_snapshots"] = rq2_snapshots(channel, scr_root, out)
