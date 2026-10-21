@@ -184,13 +184,13 @@ def test_resume_preserves_optimizer_batches_and_selected_checkpoint(tmp_path, va
         train_job(tmp_path / "resumed", *arguments, Interrupt())
     for name in ("full", "resumed"):
         train_job(tmp_path / name, *arguments, Budget(60))
-    a, b = [
-        torch.load(tmp_path / name / "last.pt", weights_only=True) for name in ("full", "resumed")
+    a, b = [read_json(tmp_path / name / "training.json") for name in ("full", "resumed")]
+    assert a["history"] == b["history"] and a["selected_update"] == b["selected_update"]
+    best = [
+        torch.load(tmp_path / name / "best.pt", weights_only=True) for name in ("full", "resumed")
     ]
-    assert a["history"] == b["history"]
-    assert a["best_checkpoint"]["selected_update"] == b["best_checkpoint"]["selected_update"]
-    for key in a["model"]:
-        assert torch.equal(a["model"][key], b["model"][key])
+    for key in best[0]["model"]:
+        assert torch.equal(best[0]["model"][key], best[1]["model"][key])
 
 
 def test_minibatches_are_shared_across_variants(tmp_path):

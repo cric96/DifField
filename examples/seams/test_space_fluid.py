@@ -360,15 +360,16 @@ def test_resume_matches_uninterrupted_optimizer_batches_and_hard_selection(tmp_p
         train_job(tmp_path / "resumed", c, bank, norm, method, 0, 0.1, Interrupt())
     for name in ("full", "resumed"):
         train_job(tmp_path / name, c, bank, norm, method, 0, 0.1, Budget(60))
-    a, b = [
-        torch.load(tmp_path / name / "last.pt", weights_only=True) for name in ("full", "resumed")
-    ]
+    a, b = [read_json(tmp_path / name / "training.json") for name in ("full", "resumed")]
     assert a["history"] == b["history"] and a["selected_update"] == b["selected_update"]
     assert a["best_score"] == min(
         row["validation_hard"] for row in a["history"] if "validation_hard" in row
     )
-    for key in a["model"]:
-        torch.testing.assert_close(a["model"][key], b["model"][key], atol=0, rtol=0)
+    best = [
+        torch.load(tmp_path / name / "best.pt", weights_only=True) for name in ("full", "resumed")
+    ]
+    for key in best[0]["model"]:
+        torch.testing.assert_close(best[0]["model"][key], best[1]["model"][key], atol=0, rtol=0)
     loaded = load_program(tmp_path / "full/best.pt")
     assert all(not p.requires_grad for p in loaded.parameters())
 
