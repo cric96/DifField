@@ -321,7 +321,7 @@ def report(out, config, *, render=True, budget=None):
     json_write(out / "summaries.json", summaries)
     json_write(out / "paired.json", paired)
     recoveries = defaultdict(lambda: defaultdict(int))
-    for row in rows:
+    for row in counted(rows):
         key = (row["panel"], row["executor"], row["condition"], row["method"])
         for event in ("fault_recovery", "restoration_recovery"):
             recoveries[(*key, event)][row["metrics"][event]["status"]] += 1
@@ -449,12 +449,12 @@ def report(out, config, *, render=True, budget=None):
             text.append(f"| {name} | {averages[0]:.4f} | {averages[1]:.2f} | {averages[2]:.4f} |")
         text.append("")
         counts = defaultdict(int)
-        for row in rows:
+        for row in counted(rows):
             counts[row["metrics"]["restoration_recovery"]["status"]] += 1
+        outcomes = ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
         text += [
-            "Restoration outcomes among completed jobs: "
-            + ", ".join(f"{k}={v}" for k, v in sorted(counts.items()))
-            + ".",
+            "Restoration outcomes among completed runs (once per episode for a method that "
+            f"ignores the seed): {outcomes}.",
             "",
         ]
     if rows:
@@ -492,6 +492,29 @@ def report(out, config, *, render=True, budget=None):
             {"animations": visual, "status": "complete" if all(visual.values()) else "incomplete"},
         )
     return state
+
+
+def deterministic(method):
+    """Whether a method gives one result whatever the training seed: the fixed programs and
+    the central K-means and Ward."""
+    return method.startswith(("fixed-", "kmeans", "ward"))
+
+
+def counted(rows):
+    """The runs among ``rows``: a deterministic method counts once per episode, at its first
+    seed, however many seeds hold a copy of it."""
+    seeds = [r["seed"] for r in rows if deterministic(r["method"])]
+    return [r for r in rows if not deterministic(r["method"]) or r["seed"] == min(seeds)]
+
+
+def with_every_seed(rows):
+    """``rows`` with each deterministic run repeated for every seed of the learned runs, so
+    that intervals and paired differences meet it at every seed."""
+    seeds = sorted({r["seed"] for r in rows if not deterministic(r["method"])})
+    runs = counted(rows)
+    once = [r for r in runs if deterministic(r["method"])]
+    repeated = [{**r, "seed": seed} for r in once for seed in seeds] if seeds else once
+    return [r for r in runs if not deterministic(r["method"])] + repeated
 
 
 def episode_rows(directory):

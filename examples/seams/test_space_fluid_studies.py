@@ -7,6 +7,7 @@ from examples.seams.space_fluid import cluster_gnn, clusters, scenarios
 from examples.seams.space_fluid.config import RUNTIME_CONDITIONS, protocol
 from examples.shared.artifacts import json_write, read_json
 from examples.shared.campaign import Budget
+from examples.shared.metrics import interval
 
 
 @pytest.fixture(autouse=True)
@@ -162,3 +163,37 @@ def test_central_baselines_leave_a_round_without_active_devices_unlabelled(kind)
     labels = clusters.central_baseline(episode, kind, NORM, seed=0)
 
     assert (labels[3] == -1).all() and (labels[4] >= 0).all()
+
+
+def rows_of_runs(methods, seeds, episodes=(0, 1)):
+    return [
+        {"method": m, "seed": s, "episode": e, "metrics": {"x": float(e)}}
+        for m in methods
+        for s in seeds
+        for e in episodes
+    ]
+
+
+def test_deterministic_methods_count_once_per_episode_whatever_their_copies():
+    from examples.seams.space_fluid.report import counted
+
+    copies = rows_of_runs(("fixed-combined", "kmeans-k4"), (0, 1, 2))
+    learned = rows_of_runs(("parametric-l0.3",), (0, 1, 2))
+
+    runs = counted(copies + learned)
+
+    assert [r for r in runs if r["method"] == "fixed-combined"] == copies[:2]
+    assert len([r for r in runs if r["method"] == "parametric-l0.3"]) == 6
+
+
+def test_deterministic_methods_pair_with_every_learned_seed_in_intervals():
+    from examples.seams.space_fluid.report import with_every_seed
+
+    once = rows_of_runs(("ward",), (0,))
+    learned = rows_of_runs(("parametric",), (0, 1, 2))
+
+    ward = [r for r in with_every_seed(once + learned) if r["method"] == "ward"]
+
+    expected = [(seed, episode) for seed in range(3) for episode in (0, 1)]
+    assert sorted((r["seed"], r["episode"]) for r in ward) == expected
+    assert interval(ward, "x")["ci95"] is not None

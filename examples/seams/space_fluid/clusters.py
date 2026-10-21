@@ -37,7 +37,7 @@ from .data import RegionEpisode, faults, topology
 from .execution import SAME_RUN, execute, observed_features, on_devices
 from .metrics import fragmentation
 from .program import ELECTED, LEADER
-from .report import episode_rows, export, fault_windows, method_color
+from .report import episode_rows, export, fault_windows, method_color, with_every_seed
 from .training import checkpoint_directory, load_method, train_job
 
 # The hybrid (GNN link metric) is not reported in the paper, and its training fails on sharp zones.
@@ -385,6 +385,7 @@ PANELS = (("static", "batched"), ("moving", "batched"), ("distributed", ASYNC))
 
 def report(out, config, scenario):
     rows = episode_rows(out)
+    pairs = with_every_seed(rows)  # intervals meet the deterministic methods at every seed
     text = [
         f"# Space-Fluid clustering, trained on {scenario} zones",
         "",
@@ -417,7 +418,7 @@ def report(out, config, scenario):
             for panel, executor in PANELS:
                 selected = [
                     r
-                    for r in rows
+                    for r in pairs
                     if r["method"] == method
                     and r["panel"] == panel
                     and r["executor"] == executor

@@ -12,7 +12,7 @@ from ...shared.metrics import interval, interval_cell
 from ...shared.plotting.style import seed_band
 from . import clusters, scenarios
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
-from .report import PANELS, episode_rows, export, method_color, pooled
+from .report import PANELS, episode_rows, export, method_color, pooled, with_every_seed
 
 # Where scripts/run_seams_comparison.sh writes the clustering study (sharp zone boundaries).
 CLUSTERS = "clusters-sharp"
@@ -164,7 +164,7 @@ def clustering(study, text):
         "",
     ]
     for ax, trained in zip(axes, SCENARIOS, strict=True):
-        rows = episode_rows(study / trained)
+        rows = with_every_seed(episode_rows(study / trained))
         methods = clusters.methods()
         text += [
             f"Trained on {trained} zones:",
@@ -220,7 +220,7 @@ def cluster_counts(study, text):
     ]
     titles = ["test static", "test moving", *(f"async {c}" for c in RUNTIME_CONDITIONS)]
     methods = ("fixed-combined", *LEARNED, "gnn-central")
-    rows = {trained: episode_rows(study / trained) for trained in SCENARIOS}
+    rows = {trained: with_every_seed(episode_rows(study / trained)) for trained in SCENARIOS}
     truth = rows["static"][0]["count"]
 
     text += [

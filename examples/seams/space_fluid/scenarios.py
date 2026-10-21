@@ -25,7 +25,7 @@ from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIE
 from .data import make_episode, normalization, training_bank
 from .execution import SAME_RUN, execute
 from .metrics import summarize
-from .report import episode_rows, export, fault_windows, method_color
+from .report import counted, episode_rows, export, fault_windows, method_color, with_every_seed
 from .training import checkpoint_directory, load_method, objective, train_job
 
 METHODS = ("fixed-combined", *LEARNERS)
@@ -127,13 +127,8 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
 
 
 def rows_of(out, scenario):
-    rows = episode_rows(out / scenario)
-    seeds = sorted({r["seed"] for r in rows if r["method"] in LEARNERS})
-    # The initial configuration is deterministic: pair it with every learned seed.
-    fixed = [r for r in rows if r["method"] == "fixed-combined"]
-    return [r for r in rows if r["method"] != "fixed-combined"] + [
-        {**r, "seed": s} for r in fixed for s in seeds
-    ]
+    """The episodes of a scenario, the initial configuration paired with every learned seed."""
+    return with_every_seed(episode_rows(out / scenario))
 
 
 def select(rows, method, **keys):
@@ -206,7 +201,7 @@ def report(out, config):
                 if condition in ("node_stop", "partition", "link_loss")
                 else "fault_recovery"
             )
-            rounds = [r["metrics"][event]["rounds"] for r in selected]
+            rounds = [r["metrics"][event]["rounds"] for r in counted(selected)]
             done = [x for x in rounds if x is not None]
             recovery = (
                 "—"

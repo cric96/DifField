@@ -59,6 +59,7 @@ from .space_fluid import clusters
 from .space_fluid.config import ASYNC, protocol
 from .space_fluid.execution import central, on_devices
 from .space_fluid.program import ELECTED
+from .space_fluid.report import deterministic, with_every_seed
 from .space_fluid.training import load_method
 
 DARK_RED = "#8f2f1d"
@@ -575,7 +576,11 @@ def regions_panel_ari(ax, root, *, scenario="static", letter="f"):
     for y, (method, _, colour, given) in enumerate(SCR_METHODS):
         numbers[method] = {}
         for zone, offset, hatch in (("static", -height / 2, None), ("moving", height / 2, "///")):
-            stats = interval(scr_panel_rows(root, method, zone, scenario), "ari_final")
+            rows = scr_panel_rows(root, method, zone, scenario)
+            if deterministic(method):  # one run per episode, met at every learned seed
+                learned = scr_panel_rows(root, "parametric", zone, scenario)
+                rows = [r for r in with_every_seed(rows + learned) if r["method"] == method]
+            stats = interval(rows, "ari_final")
             mean = stats["finite_mean"]
             face = to_rgba(colour, 0.8) if hatch is None else "white"
             ax.barh(y + offset, mean, height, color=face, edgecolor=colour, hatch=hatch,
