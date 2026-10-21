@@ -38,6 +38,7 @@ from .learning import (
     combine,
     free_rollout,
     job_path,
+    minibatch,
     objective,
     train_job,
     transitions,
@@ -246,8 +247,7 @@ def diagnose(out, data, config, budget):
             completed, history = saved["completed"], saved["history"]
         for update in range(completed, config["diagnostic_updates"]):
             budget.check()
-            idx = torch.randperm(len(train), generator=rng(0, "boids-v2-batch", update))
-            idx = idx[: config["batch_size"]].tolist()
+            idx = minibatch(len(train), config["batch_size"], 0, update)
             optimizer.zero_grad()
             if horizon == 1:
                 loss = objective(model, combine([train[i] for i in idx]))

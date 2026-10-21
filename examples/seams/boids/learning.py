@@ -1,6 +1,5 @@
 """Models and reproducible one-step training for the Boids experiment."""
 
-import time
 from dataclasses import dataclass
 
 import torch
@@ -9,7 +8,7 @@ from torch_geometric.nn import MessagePassing
 
 from ...shared.artifacts import json_write, read_json, tensor_write
 from ...shared.randomness import rng, seed_for
-from ...shared.training import frozen
+from ...shared.training import fit, frozen
 from .dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.
@@ -144,6 +143,12 @@ def load_model(run, variant, seed):
     return frozen(job_path(run, variant, seed) / "best.pt", lambda _: make_model(variant, seed))
 
 
+def minibatch(count, size, seed, update):
+    """The indices of the training transitions of an update, the same for every variant."""
+    indices = torch.randperm(count, generator=rng(seed, "boids-v2-batch", update))
+    return indices[:size].tolist()
+
+
 def train_job(directory, config, train, validation, variant, seed, rate, budget):
     """Resume exactly at an update boundary; checkpoint selection uses observed validation."""
     identity = {
@@ -161,89 +166,62 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
     json_write(identity_path, identity)
     model = make_model(variant, seed)
     optimizer = torch.optim.Adam(model.parameters(), lr=rate)
-    last, best_path = directory / "last.pt", directory / "best.pt"
-    completed, history, elapsed = 0, [], 0.0
-    with torch.no_grad():
-        best = float(objective(model, validation))
-    if not torch.isfinite(torch.tensor(best)):
-        raise FloatingPointError("Nonfinite initial validation")
-    if last.exists():
-        saved = torch.load(last, weights_only=True)
-        model.load_state_dict(saved["model"])
-        optimizer.load_state_dict(saved["optimizer"])
-        completed, best = saved["completed"], saved["best"]
-        history, elapsed = saved["history"], saved["seconds"]
-        tensor_write(best_path, saved["best_checkpoint"])
-    else:
-        tensor_write(
-            best_path, {"model": model.state_dict(), "selected_update": 0, "validation_loss": best}
-        )
-    started = time.perf_counter()
-    best_checkpoint = torch.load(best_path, weights_only=True)
-    for update in range(completed, config["updates"]):
-        budget.check()
-        indices = torch.randperm(len(train), generator=rng(seed, "boids-v2-batch", update))
-        selected = indices[: config["batch_size"]].tolist()
-        batch = combine([train[i] for i in selected])
+
+    def update(step):
+        selected = minibatch(len(train), config["batch_size"], seed, step - 1)
         optimizer.zero_grad()
-        total = objective(model, batch)
-        total.backward()
+        loss = objective(model, combine([train[i] for i in selected]))
+        loss.backward()
         gradients = [p.grad for p in model.parameters()]
-        if not torch.isfinite(total) or any(
+        if not torch.isfinite(loss) or any(
             g is None or not torch.isfinite(g).all() for g in gradients
         ):
-            json_write(directory / "failure.json", {"update": update, "reason": "nonfinite"})
+            json_write(directory / "failure.json", {"update": step - 1, "reason": "nonfinite"})
             raise FloatingPointError(f"Nonfinite training: {directory}")
         norm = float(torch.stack([g.detach().square().sum() for g in gradients]).sum().sqrt())
         optimizer.step()
-        validation_loss = None
-        if (update + 1) % config["validate_every"] == 0 or update + 1 == config["updates"]:
-            with torch.no_grad():
-                validation_loss = float(objective(model, validation))
-            if not torch.isfinite(torch.tensor(validation_loss)):
-                raise FloatingPointError(f"Nonfinite validation: {directory}")
-            if validation_loss < best:
-                best = validation_loss
-                best_checkpoint = {
-                    "model": {k: v.detach().clone() for k, v in model.state_dict().items()},
-                    "selected_update": update + 1,
-                    "validation_loss": best,
-                }
-                tensor_write(best_path, best_checkpoint)
-        history.append(
-            {
-                "update": update + 1,
-                "train_loss": float(total.detach()),
-                "observed_train_loss": float(total.detach()),
-                "validation_loss": validation_loss,
-                "gradient_norm": norm,
-                "weights": weights(model),
-                "batch_indices": selected,
-            }
-        )
-        tensor_write(
-            last,
-            {
-                "model": model.state_dict(),
-                "optimizer": optimizer.state_dict(),
-                "completed": update + 1,
-                "best": best,
-                "best_checkpoint": best_checkpoint,
-                "history": history,
-                "seconds": elapsed + time.perf_counter() - started,
-            },
-        )
+        return {
+            "update": step,
+            "train_loss": float(loss.detach()),
+            "observed_train_loss": float(loss.detach()),
+            "validation_loss": None,
+            "gradient_norm": norm,
+            "weights": weights(model),
+            "batch_indices": selected,
+        }
+
+    def scored():
+        loss = float(objective(model, validation))
+        return loss, {"validation_loss": loss}
+
+    state = fit(
+        model,
+        optimizer,
+        update,
+        scored,
+        updates=config["updates"],
+        validate_every=config["validate_every"],
+        last=directory / "last.pt",
+        budget=budget,
+    )
+    tensor_write(
+        directory / "best.pt",
+        {
+            "model": state.best_model,
+            "selected_update": state.selected_update,
+            "validation_loss": state.best_score,
+        },
+    )
     result = {
         **identity,
         "status": "complete",
-        "history": history,
-        "seconds": elapsed + time.perf_counter() - started,
+        "history": state.history,
+        "seconds": state.seconds,
         "parameters": sum(p.numel() for p in model.parameters()),
-        "best_validation": best,
-        "selected_update": best_checkpoint["selected_update"],
-        "episodes_processed": sum(len(row["batch_indices"]) for row in history),
+        "best_validation": state.best_score,
+        "selected_update": state.selected_update,
+        "episodes_processed": sum(len(row["batch_indices"]) for row in state.history),
     }
     json_write(directory / "training.json", result)
-    model.load_state_dict(best_checkpoint["model"])
     model.eval()
     return model, result
