@@ -4,11 +4,11 @@ import pytest
 import torch
 
 from diffield.sim import normalize_vectors
-from examples.seams.boids_adaptation import configuration as boids_configuration
-from examples.seams.boids_adaptation import events, perturbed_rollout
-from examples.seams.boids_devices import device_rollout, teacher_program
-from examples.seams.boids_dynamics import SPEED, Boids
-from examples.seams.boids_learning import GraphBoids
+from examples.seams.boids.adaptation import configuration as boids_configuration
+from examples.seams.boids.adaptation import events, perturbed_rollout
+from examples.seams.boids.devices import device_rollout, teacher_program
+from examples.seams.boids.dynamics import SPEED, Boids
+from examples.seams.boids.learning import GraphBoids
 from examples.seams.channel_adaptation import configuration, run_seed
 
 

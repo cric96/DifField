@@ -7,9 +7,9 @@ import torch
 from torch import nn
 from torch_geometric.nn import MessagePassing
 
-from .artifacts import json_write, read_json, tensor_write
-from .boids_dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
-from .randomness import rng, seed_for
+from ..artifacts import json_write, read_json, tensor_write
+from ..randomness import rng, seed_for
+from .dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.
 VARIANTS = ("parametric", "gnn32", "gnn64")

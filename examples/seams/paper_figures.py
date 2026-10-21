@@ -36,9 +36,9 @@ from ..shared.plotting.style import (
     apply_paper_style,
 )
 from .artifacts import PROJECT, json_write, read_json
-from .boids_devices import initial_states, teacher_program
-from .boids_dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
-from .boids_learning import combine, free_rollout, make_model, objective, transitions
+from .boids.devices import initial_states, teacher_program
+from .boids.dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
+from .boids.learning import combine, free_rollout, make_model, objective, transitions
 from .channel_adaptation import run_seed
 from .metrics import interval
 from .randomness import seed_for

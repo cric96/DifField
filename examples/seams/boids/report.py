@@ -10,10 +10,10 @@ import numpy as np
 import torch
 from matplotlib.animation import FFMpegWriter
 
-from .artifacts import checksum, json_write, read_json
-from .boids_dynamics import TEACHER
-from .boids_learning import REGIME, VARIANTS
-from .metrics import interval
+from ..artifacts import checksum, json_write, read_json
+from ..metrics import interval
+from .dynamics import TEACHER
+from .learning import REGIME, VARIANTS
 
 METHODS = ("oracle", "fixed", *VARIANTS)
 COLORS = {

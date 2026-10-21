@@ -16,11 +16,11 @@ from scipy.sparse.csgraph import connected_components
 
 from diffield.sim import normalize_vectors
 
-from .artifacts import json_write, read_json, software, tensor_write
-from .boids_dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
-from .boids_learning import VARIANTS, make_model
-from .randomness import rng
-from .space_fluid.metrics import recovery
+from ..artifacts import json_write, read_json, software, tensor_write
+from ..randomness import rng
+from ..space_fluid.metrics import recovery
+from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
+from .learning import VARIANTS, make_model
 
 EVENTS = ("split", "crash", "join")
 METHODS = ("oracle", "fixed", *VARIANTS)

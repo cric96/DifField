@@ -46,12 +46,12 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
                 args.profile)  # fmt: skip
         return 0
     if args.command == "boids-adaptation":
-        from .boids_adaptation import campaign as adaptation
+        from .boids.adaptation import campaign as adaptation
 
         adaptation(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
         return 0
     if args.command == "boids-devices":
-        from .boids_devices import campaign as devices
+        from .boids.devices import campaign as devices
 
         devices(args.out or Path("generated/seams") / f"boids-{args.profile}", args.profile)
         return 0
@@ -61,7 +61,7 @@ def main(argv=None):  # noqa: PLR0911 -- one dispatcher per experiment
         paper_figures(args.profile, args.figures_dir)
         return 0
     if args.command == "boids":
-        from .boids import campaign
+        from .boids.campaign import campaign
 
         if args.stage != "all":
             parser.error("Boids retains its existing all-stage campaign command")

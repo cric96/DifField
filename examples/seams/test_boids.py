@@ -7,14 +7,20 @@ import pytest
 import torch
 
 from examples.seams.artifacts import Budget, json_write, read_json, tensor_write
-from examples.seams.boids import CampaignBudget, configuration, evaluate_job, initialize, traces
-from examples.seams.boids_dynamics import (
+from examples.seams.boids.campaign import (
+    CampaignBudget,
+    configuration,
+    evaluate_job,
+    initialize,
+    traces,
+)
+from examples.seams.boids.dynamics import (
     TEACHER,
     Boids,
     dense_step,
     radius_edges,
 )
-from examples.seams.boids_learning import (
+from examples.seams.boids.learning import (
     GraphBoids,
     ObservedBatch,
     combine,
@@ -24,7 +30,7 @@ from examples.seams.boids_learning import (
     train_job,
     transitions,
 )
-from examples.seams.boids_report import METHODS, complete_panel, report
+from examples.seams.boids.report import METHODS, complete_panel, report
 from examples.seams.metrics import interval
 
 
@@ -137,7 +143,7 @@ def test_training_uses_only_observed_states(monkeypatch, tmp_path):
     def forbidden(*args, **kwargs):
         raise AssertionError("Observed training accessed the teacher")
 
-    monkeypatch.setattr("examples.seams.boids_learning.dense_step", forbidden)
+    monkeypatch.setattr("examples.seams.boids.learning.dense_step", forbidden)
     model = Boids()
     objective(model, batch).backward()
     assert torch.isfinite(model.log_weights.grad).all()
@@ -307,7 +313,9 @@ def test_cli_runs_boids_in_its_output_directory(monkeypatch, tmp_path, capsys):
     from examples.seams.__main__ import main
 
     calls = []
-    monkeypatch.setattr("examples.seams.boids.campaign", lambda *args: calls.append(args) or 0)
+    monkeypatch.setattr(
+        "examples.seams.boids.campaign.campaign", lambda *args: calls.append(args) or 0
+    )
     assert main(["boids", "--out", str(tmp_path)]) == 0
     assert calls == [(tmp_path, "smoke", 14400)]
     assert main(["boids"]) == 0

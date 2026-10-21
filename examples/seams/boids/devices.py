@@ -18,12 +18,12 @@ import torch
 from diffield.decentralized.runner import build_runtimes
 from diffield.decentralized.topology import all_in_edges
 
-from .artifacts import json_write, read_json, software
-from .boids_adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
-from .boids_adaptation import configuration as adaptation_configuration
-from .boids_dynamics import TEACHER, Boids, integrate, radius_edges
-from .boids_learning import make_model
-from .randomness import seed_for
+from ..artifacts import json_write, read_json, software
+from ..randomness import seed_for
+from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
+from .adaptation import configuration as adaptation_configuration
+from .dynamics import TEACHER, Boids, integrate, radius_edges
+from .learning import make_model
 
 RUNS = (("parametric", "sync"), ("parametric", "async"), ("oracle", "async"))
 

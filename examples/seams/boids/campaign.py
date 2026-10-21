@@ -7,8 +7,9 @@ import torch
 
 from diffield.sim import normalize_vectors
 
-from .artifacts import checksum, json_write, read_json, software, tensor_write
-from .boids_dynamics import (
+from ..artifacts import checksum, json_write, read_json, software, tensor_write
+from ..randomness import rng
+from .dynamics import (
     DAMPING,
     FIXED,
     RADIUS,
@@ -19,7 +20,7 @@ from .boids_dynamics import (
     dense_step,
     radius_edges,
 )
-from .boids_learning import (
+from .learning import (
     RATES,
     REGIME,
     TUNING_SEED,
@@ -31,7 +32,6 @@ from .boids_learning import (
     transitions,
     weights,
 )
-from .randomness import rng
 
 
 class CampaignBudget:
@@ -504,7 +504,7 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
                 evaluate_job(out, data, config, variant, seed, model, {}, budget)
         stage = "report"
         json_write(progress, {"status": "running", "stage": stage})
-        from .boids_report import report
+        from .report import report
 
         if not report(out, data, config, budget):
             raise RuntimeError("Boids evaluation panel is incomplete")  # noqa: TRY301
@@ -513,7 +513,7 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
         )
     except (TimeoutError, KeyboardInterrupt) as error:
         json_write(progress, {"status": "incomplete", "stage": stage, "reason": str(error)})
-        from .boids_report import report
+        from .report import report
 
         report(out, data, config, None, render=False)
         print(f"Boids incomplete: {error}", flush=True)
