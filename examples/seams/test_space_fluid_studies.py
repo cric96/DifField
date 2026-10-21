@@ -5,6 +5,7 @@ import torch
 
 from examples.seams.space_fluid import cluster_gnn, clusters, scenarios
 from examples.shared.artifacts import json_write, read_json
+from examples.shared.campaign import Budget
 
 
 @pytest.fixture(autouse=True)
@@ -42,6 +43,21 @@ def test_study_refuses_to_resume_a_run_whose_configuration_changed(tmp_path, stu
         study.campaign(tmp_path, "smoke", 1e-9)
 
 
+NORM = {"mean": 0.5, "scale": 0.3}
+
+
+class Countdown:
+    """A budget that runs out after a number of checks."""
+
+    def __init__(self, checks):
+        self.checks = checks
+
+    def check(self):
+        self.checks -= 1
+        if self.checks < 0:
+            raise TimeoutError("budget")
+
+
 def small_bank():
     config = clusters.settings("smoke")
     return config, clusters.bank(config, clusters.SIZES["smoke"], "static")
@@ -50,7 +66,7 @@ def small_bank():
 def test_central_gnn_keeps_the_model_of_lowest_hard_validation(tmp_path):
     config, bank = small_bank()
 
-    cluster_gnn.train(tmp_path, config, bank, {"mean": 0.5, "scale": 0.3}, seed=0, penalty=0.3)
+    cluster_gnn.train(tmp_path, config, bank, NORM, seed=0, penalty=0.3, budget=Budget(60))
 
     record = read_json(tmp_path / "training.json")
     validated = [r for r in record["history"] if "validation_hard" in r]
@@ -78,3 +94,19 @@ def test_central_gnn_labels_each_cluster_by_its_smallest_active_device():
         for label in labels[t, active].unique():
             members = (labels[t] == label).nonzero().flatten()
             assert label == members.min() and active[label]
+
+
+def test_interrupted_central_gnn_training_resumes_exactly(tmp_path):
+    config, bank = small_bank()
+    arguments = (config, bank, NORM)
+    with pytest.raises(TimeoutError):
+        cluster_gnn.train(tmp_path / "resumed", *arguments, seed=0, penalty=1, budget=Countdown(2))
+
+    for name in ("resumed", "full"):
+        cluster_gnn.train(tmp_path / name, *arguments, seed=0, penalty=1, budget=Budget(60))
+
+    a, b = [read_json(tmp_path / name / "training.json") for name in ("full", "resumed")]
+    assert a["history"] == b["history"] and a["selected_update"] == b["selected_update"]
+    best = [torch.load(tmp_path / n / "best.pt", weights_only=True) for n in ("full", "resumed")]
+    for key, value in best[0]["model"].items():
+        assert torch.equal(value, best[1]["model"][key])

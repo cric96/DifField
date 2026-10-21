@@ -8,18 +8,15 @@ lambda * clusters / N, with no labels and no K. Soft training propagates the
 probability of sharing a slot along the graph; with one-hot slots it is exact.
 """
 
-import copy
-import time
-
 import numpy as np
 import torch
 from torch import nn
 
 from ...shared.artifacts import json_write, tensor_write
-from ...shared.training import frozen
+from ...shared.training import fit, frozen
 from .metrics import components
 from .program import mlp
-from .training import scheduled_rate
+from .training import history_row, scheduled_rate, training_record
 
 SLOTS = 16
 SQUARINGS = 5  # reachability over paths of up to 2**5 hops
@@ -134,8 +131,8 @@ def labels(model, episode):
     return result
 
 
-def train(directory, config, bank, norm, *, seed, penalty, rate=0.01):
-    """Full-batch Adam with cosine decay, hard validation selection (one atomic job)."""
+def train(directory, config, bank, norm, *, seed, penalty, budget, rate=0.01):
+    """Full-batch Adam with cosine decay and hard validation selection, resumable."""
     if (directory / "best.pt").exists():
         return load(directory / "best.pt")
     directory.mkdir(parents=True, exist_ok=True)
@@ -148,32 +145,10 @@ def train(directory, config, bank, norm, *, seed, penalty, rate=0.01):
         {k: v.to(device) if torch.is_tensor(v) else v for k, v in graphs(split, sample).items()}
         for split in (bank["train"], bank["validation"])
     )
-    with torch.device(device):
-        best, history, seconds = fit(model, config, training, validation, norm, penalty, rate)
-    best_state = {k: v.cpu() for k, v in best[1].items()}
-    model.cpu().load_state_dict(best_state)
-    tensor_write(directory / "best.pt", {"normalization": norm, "model": best_state})
-    json_write(
-        directory / "training.json",
-        {
-            "step": config.updates,
-            "best_score": best[0],
-            "selected_update": best[2],
-            "history": history,
-            "seconds": seconds,
-            "complete": True,
-        },
-    )
-    return model.eval().requires_grad_(False)
-
-
-def fit(model, config, training, validation, norm, penalty, rate):
     optimizer = torch.optim.Adam(model.parameters(), lr=rate)
-    scale, started = norm["scale"], time.perf_counter()
-    scores = hard_scores(model, validation, scale, penalty)
-    history = [{"step": 0, **row(scores)}]
-    best = (scores["objective"], copy.deepcopy(model.state_dict()), 0)
-    for step in range(1, config.updates + 1):
+    scale = norm["scale"]
+
+    def update(step):
         for group in optimizer.param_groups:
             group["lr"] = scheduled_rate(rate, config, step, config.updates)
         optimizer.zero_grad(set_to_none=True)
@@ -181,22 +156,26 @@ def fit(model, config, training, validation, norm, penalty, rate):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), 5.0, error_if_nonfinite=True)
         optimizer.step()
-        entry = {"step": step, "training_surrogate": float(loss.detach())}
-        if step % config.validate_every == 0 or step == config.updates:
-            scores = hard_scores(model, validation, scale, penalty)
-            entry |= row(scores)
-            if scores["objective"] < best[0]:
-                best = (scores["objective"], copy.deepcopy(model.state_dict()), step)
-        history.append(entry)
-    return best, history, time.perf_counter() - started
+        return {"step": step, "training_surrogate": float(loss.detach())}
 
+    def scored():
+        scores = hard_scores(model, validation, scale, penalty)
+        return scores["objective"], history_row(scores)
 
-def row(scores):
-    return {
-        "validation_hard": scores["objective"],
-        "validation_error": scores["error"],
-        "validation_leaders": scores["leaders"],
-    }
+    with torch.device(device):
+        state = fit(
+            model,
+            optimizer,
+            update,
+            scored,
+            updates=config.updates,
+            validate_every=config.validate_every,
+            last=directory / "last.pt",
+            budget=budget,
+        )
+    tensor_write(directory / "best.pt", {"normalization": norm, "model": state.best_model})
+    json_write(directory / "training.json", training_record(state))
+    return model.cpu().eval().requires_grad_(False)
 
 
 def load(path):

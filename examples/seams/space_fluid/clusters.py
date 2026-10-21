@@ -309,8 +309,9 @@ def train(out, config, sizes, norm, budget, *, scenario):
             print(f"train gnn-central seed={seed}", flush=True)
             scale = {k: norm[k] for k in ("mean", "scale")}
             cluster_gnn.train(
-                directory, config, bank_, scale, seed=seed, penalty=config.main_lambda
-            )
+                directory, config, bank_, scale, seed=seed, penalty=config.main_lambda,
+                budget=budget,
+            )  # fmt: skip
 
 
 def evaluate(out, config, sizes, norm, budget, *, scenario):
