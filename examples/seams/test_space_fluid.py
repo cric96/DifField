@@ -255,6 +255,19 @@ def test_remote_observations_are_delayed_and_oracle_is_not_visible():
     assert set(ep.signals(0)) == {"observation", "priority", "time"}
 
 
+def test_async_devices_repeat_their_activations_and_traffic_for_a_schedule_seed():
+    ep = make_episode(tiny(), condition="node_stop")
+    model = make_program("combined")
+
+    trace = decentralized(ep, model, activation_probability=0.5, seed=7)
+
+    # Recorded values: the schedule seed fixes every activation and so every message.
+    assert trace.activations == [6, 3, 2, 1, 4, 4, 2, 2]
+    assert trace.traffic == [2160, 1080, 576, 288, 1152, 1440, 720, 720]
+    assert trace.state_bytes == central(ep, model).state_bytes == 432
+    assert trace.leaders[-1].tolist() == [0, 1, 1, 3, 3, 5]
+
+
 @pytest.mark.parametrize("probability", [0.5, 0.8])
 def test_async_is_reproducible_with_stale_samples_and_fewer_transmissions(probability):
     ep = line()
