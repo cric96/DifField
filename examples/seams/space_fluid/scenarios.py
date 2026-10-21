@@ -19,7 +19,7 @@ import torch
 
 from ...shared.artifacts import json_write, read_json
 from ...shared.campaign import Budget
-from ...shared.metrics import interval
+from ...shared.metrics import interval, interval_cell
 from ...shared.randomness import seed_for
 from .campaign import output_lock
 from .config import TEST_FAMILIES, protocol
@@ -166,15 +166,6 @@ def select(rows, method, **keys):
     return [r for r in rows if r["method"] == method and all(r[k] == v for k, v in keys.items())]
 
 
-def cell(stats, digits=3):
-    if stats["mean"] is None:
-        return "—"
-    ci = stats["ci95"]
-    return f"{stats['mean']:.{digits}f}" + (
-        f" [{ci[0]:.{digits}f}, {ci[1]:.{digits}f}]" if ci else ""
-    )
-
-
 def report(out, config):
     text = [
         "# Space-Fluid learned in a static and in a moving world",
@@ -203,15 +194,14 @@ def report(out, config):
             cells = []
             for metric in ("objective", "nrmse", "leader_fraction"):
                 for test in SCENARIOS:
-                    cells.append(
-                        cell(interval(select(rows, method, panel="cross", test=test), metric))
-                    )
+                    selected = select(rows, method, panel="cross", test=test)
+                    cells.append(interval_cell(interval(selected, metric)))
             text.append(f"| {scenario} | {NAMES[method]} | " + " | ".join(cells) + " |")
         for test in SCENARIOS:
             reference = select(rows, "fixed-combined", panel="cross", test=test)
             learned = select(rows, "parametric", panel="cross", test=test)
             stats = interval(learned, "objective", reference=reference)
-            paired_rows.append(f"| {scenario} | {test} | {cell(stats, 4)} |")
+            paired_rows.append(f"| {scenario} | {test} | {interval_cell(stats, 4)} |")
     text += [
         "",
         "## Improvement over the initial configuration (Adam - initial, objective)",
@@ -256,7 +246,7 @@ def report(out, config):
             )
             text.append(
                 f"| {scenario} | {condition} | {NAMES[method]} | "
-                f"{cell(interval(selected, 'objective'))} | {before:.3f} | {during:.3f} | "
+                f"{interval_cell(interval(selected, 'objective'))} | {before:.3f} | {during:.3f} | "
                 f"{curves[:, -10:].mean():.3f} | {recovery} |"
             )
     checks = [

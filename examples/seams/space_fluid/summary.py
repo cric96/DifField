@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 from ...shared.artifacts import read_json
-from ...shared.metrics import interval
+from ...shared.metrics import interval, interval_cell
 from . import clusters, scenarios
 from .config import protocol
 from .report import PANELS, export, method_color, pooled
@@ -65,12 +65,7 @@ def reconstruction(study, text):
             reference = pooled(rows, "fixed-combined", keep, "nrmse")
             stats.append(interval(selected, "nrmse", reference=reference))
             regions.append(interval(pooled(rows, name, keep, "regions"), "regions"))
-            ci = stats[-1]["ci95"]
-            cells.append(
-                f"{stats[-1]['mean']:+.3f}"
-                + (f" [{ci[0]:+.3f}, {ci[1]:+.3f}]" if ci else "")
-                + f" ({regions[-1]['mean']:.0f})"
-            )
+            cells.append(f"{interval_cell(stats[-1], sign=True)} ({regions[-1]['mean']:.0f})")
         x = np.arange(len(PANELS)) + delta
         dots(left, x, stats, method_color(method), label(method))
         dots(right, x, regions, method_color(method), label(method))

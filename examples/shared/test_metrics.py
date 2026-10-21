@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from examples.shared.metrics import bootstrap_band, interval, recovery
+from examples.shared.metrics import bootstrap_band, interval, interval_cell, recovery
 
 
 def test_paired_intervals_reject_incomplete_and_duplicate_cells():
@@ -28,3 +28,9 @@ def test_bootstrap_band_holds_the_mean_curve_and_collapses_on_identical_runs():
     assert mean.tolist() == [1.0, 2.0]
     assert (low <= mean).all() and (mean <= high).all()
     assert bootstrap_band(np.ones((3, 2)))[1].tolist() == [1.0, 1.0]
+
+
+def test_interval_cell_shows_the_mean_its_interval_or_a_dash():
+    assert interval_cell({"mean": 0.25, "ci95": [0.125, 0.5]}) == "0.250 [0.125, 0.500]"
+    assert interval_cell({"mean": 0.25, "ci95": None}, 1, sign=True) == "+0.2"
+    assert interval_cell({"mean": None, "ci95": None}) == "—"

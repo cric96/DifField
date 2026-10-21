@@ -28,7 +28,7 @@ from threadpoolctl import threadpool_limits
 
 from ...shared.artifacts import json_write, read_json
 from ...shared.campaign import Budget
-from ...shared.metrics import interval, recovery
+from ...shared.metrics import interval, interval_cell, recovery
 from ...shared.randomness import rng, seed_for
 from . import cluster_gnn
 from .campaign import output_lock
@@ -451,11 +451,7 @@ def report(out, config, scenario):
                 if not selected:
                     cells.append("—")
                     continue
-                stats = interval(selected, metric)
-                ci = stats["ci95"]
-                cells.append(
-                    f"{stats['mean']:.3f}" + (f" [{ci[0]:.3f}, {ci[1]:.3f}]" if ci else "")
-                )
+                cells.append(interval_cell(interval(selected, metric)))
             text.append(f"| {method} | " + " | ".join(cells) + " |")
         text.append("")
     text += [

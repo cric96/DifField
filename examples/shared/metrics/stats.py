@@ -123,3 +123,12 @@ def interval(rows, metric, *, reference=None, samples=2000, seed=0):
         result["ci95"] = np.quantile(draws, [0.025, 0.975]).tolist()
         result["ci_reason"] = "two_way_cluster_bootstrap"
     return result
+
+
+def interval_cell(stats, digits=3, *, sign=False):
+    """A table cell: the mean of ``interval`` and its 95% interval, or a dash without a mean."""
+    if stats["mean"] is None:
+        return "—"
+    number = f"{'+' if sign else ''}.{digits}f"
+    ci = stats["ci95"]
+    return f"{stats['mean']:{number}}" + (f" [{ci[0]:{number}}, {ci[1]:{number}}]" if ci else "")
