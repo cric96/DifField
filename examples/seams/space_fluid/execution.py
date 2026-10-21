@@ -10,7 +10,7 @@ from threadpoolctl import threadpool_limits
 
 from diffield import AggregateContext
 
-from ...shared.devices import DeviceNetwork
+from ...shared.devices import DeviceNetwork, nbytes
 from .program import DISTANCE, ELECTED, LEADER, OUTPUT_DIM, SAMPLE, TIMESTAMP
 
 
@@ -31,17 +31,12 @@ class RegionTrace:
         return dict(vars(self))
 
 
-def ranges(episode, t):
-    a, b = episode.edges[t]
-    return (episode.positions[a] - episode.positions[b]).norm(dim=-1)
-
-
 def central(episode, program):
     started = time.perf_counter()
     context = AggregateContext(episode.edges[0], episode.nodes)
     fields, traffic, activations = [], [], []
     for t in range(episode.rounds):
-        context.update_topology(episode.edges[t], edge_weight=ranges(episode, t))
+        context.update_topology(episode.edges[t], positions=episode.positions)
         active = episode.active[t]
         carried = context.state.snapshot() if not bool(active.all()) else {}
         with context.round():
@@ -57,9 +52,8 @@ def central(episode, program):
         fields.append(result)
         # Numeric wire representation is exactly the exported eight-float iterate row.
         # A device sends its own row of every state slot to each neighbour.
-        published = sum(
-            state[0].numel() * state.element_size() for state in context.state._states.values()
-        )
+        slots = context.state.keys()  # a StateManager is not a mapping
+        published = nbytes(context.get_state(key)[0] for key in slots)
         traffic.append(episode.edges[t].shape[1] * published)
         activations.append(int(active.sum()))
     return RegionTrace(
