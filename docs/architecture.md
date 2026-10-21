@@ -1,12 +1,12 @@
-# Architecture & Design
+# Architecture
 
-High-level conceptual model of DifField — focusing on **what** each component represents and **how** they compose, not on implementation details.
+How DifField is put together. A program is a Python function over fields: every
+primitive it calls is a `torch.nn.Module` over a tensor operation, a context holds the
+graph and the state of the program, and an engine runs the rounds. What a program can
+use is in [Writing programs](programs.md); running it is in [Simulation](simulation.md)
+and [Decentralized execution](decentralized.md).
 
----
-
-## System Overview
-
-DifField implements a **field calculus** runtime on top of PyTorch. The core idea is that programs are written as **field operations** — computations that happen simultaneously across all nodes of a graph — and are executed through rounds of message passing.
+## Packages
 
 <p align="center">
   <picture>
@@ -15,644 +15,107 @@ DifField implements a **field calculus** runtime on top of PyTorch. The core ide
   </picture>
 </p>
 
-The rest of this page details each package with class diagrams; the user-facing
-side is in [Writing programs](programs.md), [Simulation](simulation.md) and
-[Decentralized execution](decentralized.md).
-
----
-
-## Layer Architecture
-
-### 1. Core Runtime
-
-The foundation — manages graph topology, per-node state, and round execution.
-
-```mermaid
-classDiagram
-    class AggregateContext {
-        +edge_index: Tensor
-        +num_nodes: int
-        +edge_weight: Tensor?
-        +round() ContextManager
-        +reset()
-        +update_topology(edge_index, positions, edge_weight)
-    }
-
-    class RoundContext {
-        +edge_index: Tensor
-        +edge_weight: Tensor
-        +num_nodes: int
-        +round_num: int
-        +state: StateManager
-        +exports: dict
-        +round() ContextManager
-        +reset()
-    }
-
-    class StateManager {
-        +num_nodes: int
-        +get_or_init(name, init) Tensor
-        +update(name, value)
-        +resolve(label) path
-        +restrict(keys, keep)
-        +snapshot() dict
-        +restore(snapshot)
-    }
-
-    class Aligner {
-        +key(kind, label) path
-        +scope(kind, label) ContextManager
-        +frame(kind, label) ContextManager
-        +reset()
-    }
-
-    class DeviceContext {
-        +num_neighbors: int
-        +round(neighbor_exports, neighbor_messages, neighbor_ranges)
-        +local_field(own, scatter) Tensor
-        +result(tensor) Tensor
-        +get_state(name) float
-    }
-
-    AggregateContext *-- RoundContext
-    RoundContext *-- StateManager
-    DeviceContext --> AggregateContext : wraps for local execution
-```
-
-**Concepts:**
-
-- **AggregateContext** — the global execution environment for a graph. One context per simulation.
-  `update_topology(edge_index, positions=...)` swaps the graph in place between rounds while the
-  node set and its `StateManager` persist: the mobile-network execution model, where links appear
-  and disappear and stateful fields (`gradient`, `elect`, `iterate`) self-heal rather than restart.
-  Edge lengths derived from `positions` are detached — routing cost is structure, not a gradient path.
-- **RoundContext** — the per-round snapshot of topology, state, and exports. Created fresh each round.
-- **StateManager** — persistent per-node memory across rounds. Handles `iterate` state, per-partition restriction, and snapshots.
-- **Aligner** — the evaluation-tree path that identifies each occurrence of a construct. See *Alignment* below.
-- **DeviceContext** — a local view of execution from a single device's perspective, useful for debugging and didactic purposes. See *Local execution* below for what it can and cannot reproduce.
-
-### Alignment
-
-A construct's persistent state is identified by where it sits in the *evaluation
-tree*, not where it sits in the source text. The identity is a `/`-joined path
-of tokens, each `kind#index` or `kind:label`:
-
-```
-/gradient:dist/it#0/gt#0
-/br:obstacle/T#0/collect_cast#0/it#0
-/it#2
-```
-
-`index` counts occurrences of that kind within the current frame, so two calls
-to the same block never alias — which is what makes the building blocks
-stackable. Paths hold no filenames, line numbers or object ids, so they are
-identical across processes and can be checkpointed or sent over a wire.
-
-- `iterate` and `gather` mint a token; `iterate` also opens a frame, so
-  constructs inside its body nest beneath it.
-- `branch` opens `T`/`F` frames, giving the partitions disjoint slots. After
-  both have run, each partition's slots are *restricted* to its own nodes, so a
-  node that is not in a partition reads that partition's initializers. This is
-  the availability mask of the field-calculus store, and it removes the need
-  for manual state resets on partition switches.
-- `mux` mints nothing: its arms are evaluated in the caller's frame.
-- `@aggregate` opens a frame for a function, and is what library blocks and
-  user-written blocks use. It is not required for correctness — occurrence
-  counters already keep sibling calls apart — but it keeps keys stable when the
-  caller changes, and keeps them readable.
-- `name=` / `tag=` supply a *label* rather than an absolute key. Labelled tokens
-  carry no index, so adding an unlabelled sibling never renames a slot you
-  checkpoint. Lookups accept either a full path or a bare label; a label that
-  matches more than one slot (the same name in both arms of a `branch`) raises
-  rather than silently picking one.
-
-### Local execution
-
-`DeviceContext` holds one device (node 0) and its neighbours (nodes 1..k). The
-neighbours have no incoming edges of their own, so a program is reproducible
-there only if **every `gather` reads a sensor, a constant, or an `iterate` state
-from the previous round**. A `gather` of a gather-derived field has no
-neighbour values to read and yields fill values locally, while the global
-engine would propagate two hops in one round. `mid()` likewise numbers the
-local view unless real ids are supplied via `device_id` / `neighbor_ids`.
-
-### 2. Functional Utilities
-
-Low-level differentiable building blocks — scatter operations, soft conditionals, masking, and folding.
-
-```mermaid
-graph LR
-    subgraph Aggregation
-        SA[scatter_aggr] --> |"sum, min, mean, max"| WV[weighted variants]
-    end
-
-    subgraph Conditionals
-        SW[soft_where] --> |hard| BS[boolean selection]
-        SW --> |soft| DB[differentiable blending]
-    end
-
-    subgraph Masking
-        ME[mask_edges] --> FEC[filter edges by condition]
-        MEP[mask_edges_for_partition] --> PAM[partition-aware masking]
-    end
-
-    subgraph Folding
-        SBF[scatter_binary_fold] --> ABO[accumulate with binary op]
-        SFM[scatter_min_by_first] --> LM[lexicographic minimum]
-    end
-```
-
-**Concepts:**
-
-- **scatter_aggr** — differentiable neighborhood aggregation with multiple modes (hard/soft).
-- **soft_where** — differentiable conditional: `soft_where(cond, a, b)` blends between `a` and `b` based on `cond`.
-- **mask_edges** — filter edges based on node/edge conditions.
-- **scatter_binary_fold** — fold values from neighbors using a binary accumulation function.
-
-### 3. PyTorch Layers
-
-`nn.Module` wrappers that make DSL primitives compatible with PyTorch's autograd and parameter management.
-
-```mermaid
-classDiagram
-    class IterateLayer {
-        +name: str
-        +init: float
-        +fn: Callable
-        +forward(x) Tensor
-    }
-
-    class GatherLayer {
-        +aggr: str
-        +mode: str (hard|soft)
-        +tau: float
-        +forward(expr) Tensor
-    }
-
-    class BranchLayer {
-        +true_mod: Module
-        +false_mod: Module
-        +branch_name: str
-        +mode: str (hard|soft)
-        +forward(x, cond) Tensor
-    }
-
-    class MuxLayer {
-        +forward(cond, if_true, if_false) Tensor
-    }
-
-    note for IterateLayer "Per-node recurrent state with branch-aware reset"
-    note for GatherLayer "Neighborhood message passing with aggregation"
-    note for BranchLayer "Domain restriction with communication isolation"
-    note for MuxLayer "Pointwise conditional without topology change"
-```
-
-**Concepts:**
-
-- **IterateLayer** — wraps `iterate`: manages named recurrent state, automatically resets on branch switches.
-- **GatherLayer** — wraps `gather`: sends messages along edges, aggregates with configurable strategy.
-- **BranchLayer** — wraps `branch`: splits execution domain, isolates communication between branches.
-- **MuxLayer** — wraps `mux`: pointwise selection without affecting communication topology.
-
-### 4. DSL Primitives
-
-The user-facing API — composable field operators.
-
-```mermaid
-graph TB
-    subgraph Core["Core Primitives"]
-        iterate["iterate(init, fn, name)"]
-        scatter["scatter(expr, aggr)"]
-        branch["branch(cond, if_true, if_false)"]
-        mux["mux(cond, if_true, if_false)"]
-    end
-
-    subgraph Blocks["Building Blocks"]
-        gradient["gradient(source)"]
-        gradient_cast["gradient_cast(source, center, acc)"]
-        broadcast["broadcast(mask, value)"]
-        collect_cast["collect_cast(potential, local, null, acc)"]
-        elect["elect(key, eligible, grain)"]
-        descend["descend(potential, toward)"]
-    end
-
-    subgraph Helpers["Field Helpers"]
-        field_of["field.of(value)"]
-        field_zeros["field.zeros()"]
-        field_ones["field.ones()"]
-        field_inf["field.inf()"]
-        const["const(value)"]
-        mid["mid()"]
-        scatter_range["scatter_range()"]
-    end
-
-    gradient --> iterate
-    gradient --> scatter
-    gradient --> mux
-
-    gradient_cast --> iterate
-    gradient_cast --> scatter
-
-    broadcast --> gradient_cast
-
-    collect_cast --> iterate
-    collect_cast --> scatter
-
-    elect --> iterate
-    elect --> gradient
-    elect --> mux
-
-    descend --> scatter
-```
-
-**Conceptual semantics:**
-
-| Operator | Meaning |
-|----------|---------|
-| `iterate` | "Remember this value across rounds, evolving it with `fn`" |
-| `scatter` | "Send this expression to neighbors and aggregate their messages" |
-| `branch` | "Split the domain: nodes where `cond` is true run `if_true`, others run `if_false`, with no communication between branches" |
-| `mux` | "Select between two values per-node, without changing communication" |
-| `gradient` | "Compute minimum-cost distance from source nodes" |
-| `gradient_cast` | "Route payloads along gradient paths toward sources" |
-| `broadcast` | "Spread a value from root nodes to the rest of the network" |
-| `collect_cast` | "Gather payloads from children toward local minima of a potential field" |
-| `elect` | "Choose one leader per region of diameter `grain`, and heal when it vanishes" |
-| `descend` | "Which way is downhill on this potential field, in `toward` coordinates" |
-
-### 5. Simulation Layer
-
-Orchestrates multi-round executions with topology management, events, and recording.
-
-```mermaid
-classDiagram
-    class Scenario {
-        <<interface>>
-        +edge_index: Tensor
-        +edge_weight: Tensor
-        +num_nodes: int
-        +sync_context(round_ctx)
-        +zeros() Tensor
-        +full(value) Tensor
-        +marker(idx, value) Tensor
-    }
-
-    class GridScenario {
-        +rows: int
-        +cols: int
-        +connectivity: int
-        +pos_to_idx(row, col) int
-        +marker(row, col, value) Tensor
-        +mask_from_positions(positions) Tensor
-        +mask_from_predicate(predicate) Tensor
-    }
-
-    class SpatialScenario {
-        +positions: Tensor
-        +edge_radius: float?
-        +k_neighbors: int?
-        +edge_weight_mode: str
-        +update_positions(positions)
-        +step_positions(velocities, dt)
-        +refresh_topology()
-    }
-
-    class FullyConnectedScenario {
-        +num_nodes: int
-    }
-
-    class RelaxedRadiusScenario {
-        +positions: Tensor
-        +edge_radius: Tensor
-        +relaxation_tau: float
-        +penalty_strength: float
-    }
-
-    class SimulationEngine {
-        +ctx: AggregateContext
-        +num_nodes: int
-        +from_scenario(scenario) Engine
-        +run(rounds, program, signals) output, runtime
-        +step(runtime, program) output
-    }
-
-    class SimulationRuntime {
-        +scenario: Scenario?
-        +signals: dict
-        +metadata: dict
-        +round_idx: int
-    }
-
-    class EventSchedule {
-        +add(event)
-        +at(round_idx) list
-        +apply(round_idx, runtime)
-    }
-
-    class ScheduledEvent {
-        +round_idx: int
-        +callback(runtime)
-        +name: str
-    }
-
-    class SnapshotRecorder {
-        +state_fields: list
-        +capture_output: bool
-        +record_rounds: set?
-        +record(round_idx, ctx, output)
-        +snapshots: dict
-    }
-
-    Scenario <|.. GridScenario
-    Scenario <|.. SpatialScenario
-    Scenario <|.. FullyConnectedScenario
-    Scenario <|.. RelaxedRadiusScenario
-
-    SimulationEngine --> AggregateContext : owns
-    SimulationEngine --> Scenario : optional
-    SimulationEngine --> SimulationRuntime : creates
-    SimulationEngine --> EventSchedule : optional
-    SimulationEngine --> SnapshotRecorder : optional
-
-    EventSchedule *-- ScheduledEvent
-    SimulationRuntime --> Scenario : reference
-```
-
-**Concepts:**
-
-- **Scenario** — defines the graph topology (nodes, edges, weights) and provides helper methods for creating fields, markers, and masks. Different scenarios model different spatial abstractions.
-- **SimulationEngine** — the main execution loop. Runs a program for N rounds, optionally applying events and recording snapshots.
-- **SimulationRuntime** — mutable state shared between the engine, events, and the program. Carries signals, metadata, and the current round index.
-- **EventSchedule** — a registry of callbacks triggered at specific rounds. Enables dynamic behavior (moving nodes, changing sources, topology updates).
-- **SnapshotRecorder** — captures the state of fields, exports, and outputs at specified rounds for later analysis.
-
----
-
-## Execution Lifecycle
-
-How a simulation executes, round by round:
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Engine as SimulationEngine
-    participant Schedule as EventSchedule
-    participant Scenario
-    participant ACtx as AggregateContext
-    participant Program
-    participant Recorder as SnapshotRecorder
-
-    User->>Engine: run(rounds, program, signals, schedule, recorder)
-    Engine->>Engine: init_runtime(signals)
-
-    loop for each round
-        Engine->>Schedule: apply(round_idx, runtime)
-        Schedule-->>Engine: events mutate runtime.signals
-
-        Engine->>Scenario: sync_context(round_ctx)
-        Scenario-->>Engine: topology pushed to context
-
-        Engine->>ACtx: round()
-        ACtx->>Program: program(runtime)
-        Program->>Program: execute DSL primitives
-        Program-->>ACtx: output field
-        ACtx-->>Engine: round complete
-
-        Engine->>Recorder: record(round_idx, ctx, output)
-        Recorder-->>Engine: snapshot stored
-
-        Engine->>Engine: round_idx += 1
-    end
-
-    Engine-->>User: output, runtime
-```
-
-### Round Execution Detail
-
-Within a single round, the DSL primitives compose as follows:
-
-```mermaid
-sequenceDiagram
-    participant DSL as DSL Program
-    participant Iterate as IterateLayer
-    participant Gather as GatherLayer
-    participant Branch as BranchLayer
-    participant Func as Functional
-    participant State as StateManager
-    participant Align as Aligner
-
-    DSL->>Iterate: iterate(init, fn, name)
-    Iterate->>State: get_or_init(init, name)
-    State-->>Iterate: current_state
-
-    Iterate->>DSL: fn(current_state)
-
-    DSL->>Gather: gather_min(scatter(expr))
-    Gather->>Func: scatter_aggr(messages, aggr)
-    Func-->>Gather: aggregated values
-    Gather-->>DSL: neighbor contribution
-
-    DSL->>Branch: branch(cond, if_true, if_false)
-    Branch->>Align: frame("T") / frame("F")
-    Align-->>Branch: disjoint slots per partition
-
-    alt hard mode
-        Branch->>DSL: execute if_true or if_false per node
-    else soft mode
-        Branch->>Func: soft_where(cond, true_result, false_result)
-        Func-->>Branch: blended result
-    end
-
-    Branch->>State: restrict(partition slots, keep)
-    Branch-->>DSL: branch result
-    DSL-->>Iterate: new_state
-    Iterate->>State: update(name, new_state)
-```
-
----
-
-## Conceptual Model: Fields and Aggregate Computing
-
-### What is a Field?
-
-A **field** is a function from nodes to values. Every DSL expression produces a field — a tensor of shape `(num_nodes,)` or `(num_nodes, d)`.
-
-```mermaid
-graph TB
-    subgraph "Field Types"
-        Scalar["Scalar Field\nshape: (N,)"]
-        Vector["Vector Field\nshape: (N, d)"]
-        Bool["Boolean Field\nshape: (N,) dtype: bool"]
-    end
-
-    subgraph "Field Operations"
-        Local["Local Ops\npointwise arithmetic"]
-        Neighbor["Neighbor Ops\nscatter() + aggregation"]
-        Temporal["Temporal Ops\niterate() + state evolution"]
-        Conditional["Conditional Ops\nmux(), branch()"]
-    end
-
-    Scalar --> Local
-    Scalar --> Neighbor
-    Scalar --> Temporal
-    Scalar --> Conditional
-    Vector --> Local
-    Vector --> Neighbor
-    Bool --> Conditional
-```
-
-### Aggregate Computing Paradigm
-
-DifField implements the **aggregate computing** model:
-
-```mermaid
-graph LR
-    subgraph "Aggregate Computing Model"
-        Devices[Devices / Nodes]
-        Neighbors[Neighbor Relations]
-        LocalComp[Local Computation]
-        NeighborComm[Neighbor Communication]
-        State[State Evolution]
-    end
-
-    Devices --> Neighbors
-    Devices --> LocalComp
-    Neighbors --> NeighborComm
-    LocalComp --> State
-    NeighborComm --> State
-    State --> LocalComp
-```
-
-1. **Devices** are nodes in a graph
-2. **Neighbor relations** define who can communicate with whom
-3. **Local computation** happens independently on each device
-4. **Neighbor communication** exchanges messages along edges
-5. **State evolution** (`iterate`) carries information across rounds
-
-### Hard vs Soft Semantics
-
-Every operator supports two modes:
-
-| Mode | Behavior | Use Case |
-|------|----------|----------|
-| **Hard** | Discrete selection, exact aggregation | Classical aggregate computing, exact algorithms |
-| **Soft** | Differentiable blending, smooth aggregation | Gradient-based learning, optimization |
-
-```mermaid
-graph TB
-    subgraph "Hard Mode"
-        H1[branch: boolean split]
-        H2[scatter: exact min/sum/max]
-        H3[mux: exact selection]
-    end
-
-    subgraph "Soft Mode"
-        S1[branch: sigmoid-weighted blend]
-        S2[scatter: softmax-weighted aggregation]
-        S3[mux: soft_where with tau]
-    end
-
-    H1 -. tau .-> S1
-    H2 -. tau .-> S2
-    H3 -. tau .-> S3
-
-    N1["tau → 0 recovers hard semantics"]
-    N2["tau controls smoothness"]
-```
-
----
-
-## Scenario Hierarchy
-
-Scenarios model different spatial abstractions:
-
-```mermaid
-graph TB
-    subgraph "Topology Types"
-        Grid["GridScenario\nRegular grid, 4/8 connectivity"]
-        Spatial["SpatialScenario\n2D positions, radius/k-NN graph"]
-        Full["FullyConnectedScenario\nComplete graph"]
-        Relaxed["RelaxedRadiusScenario\nSmooth radius penalty"]
-    end
-
-    subgraph "Use Cases"
-        UC1["Fixed topology\n(Grid, Full)"]
-        UC2["Dynamic topology\n(Spatial)"]
-        UC3["Learnable topology\n(Relaxed)"]
-    end
-
-    Grid --> UC1
-    Full --> UC1
-    Spatial --> UC2
-    Relaxed --> UC3
-```
-
-| Scenario | Topology | Dynamic | Learnable | Best For |
-|----------|----------|---------|-----------|----------|
-| `GridScenario` | Fixed grid | No | No | Structured spatial domains |
-| `FullyConnectedScenario` | Complete graph | No | No | Small-scale, all-to-all |
-| `SpatialScenario` | Radius / k-NN | Yes | No | Moving nodes, dynamic graphs |
-| `RelaxedRadiusScenario` | Fully connected + penalty | Yes | Yes | Differentiable connectivity learning |
-
----
-
-## DSL Composition Patterns
-
-Complex behaviors emerge from composing primitives:
-
-### Gradient Pattern
-
-```
-gradient(source) = iterate(field.inf(), λd. mux(source, field.of(0), gather_min(scatter(d) + step)), name="dist")
-```
-
-```mermaid
-graph LR
-    Source[source field] --> Mux
-    Iterate[iterate state d] --> Add[d + step]
-    Add --> Gather[scatter aggr=min]
-    Gather --> Mux[mux]
-    Mux --> Iterate
-    Iterate --> Output[distance field]
-```
-
-### Collect-Cast Pattern
-
-```
-collect_cast(potential, local, null, acc) = iterate("collect", local, λc. acc(local, collect_from_children(c)))
-```
-
-```mermaid
-graph TB
-    Potential[potential field] --> Parent[find parent nodes]
-    Local[local payload] --> Acc
-    Parent --> Filter[filter children edges]
-    Filter --> Gather[gather child values]
-    Gather --> Acc[accumulate]
-    Acc --> Iterate[iterate state]
-    Iterate --> Output[collected field]
-```
-
-### Broadcast Pattern
-
-```
-broadcast(mask, value) = gradient_cast(source=mask, center=value, accumulation=identity)
-```
-
-```mermaid
-graph LR
-    Mask[root mask] --> GC[gradient_cast]
-    Value[source value] --> GC
-    GC --> Output[spread value from roots]
-```
-
----
-
-## Key Design Decisions
-
-1. **PyTorch-native** — All operations are differentiable; the entire simulation can be optimized end-to-end.
-2. **Hard/soft duality** — Every operator supports both discrete and smooth semantics, controlled by `mode` and `tau`.
-3. **Round-based execution** — Computation happens in discrete rounds, enabling stateful programs and dynamic topology.
-4. **Scenario abstraction** — Topology is decoupled from programs; the same program runs on any graph.
-5. **Event-driven dynamics** — `EventSchedule` enables complex temporal behaviors without modifying the program.
-6. **State isolation** — `branch` provides communication isolation between sub-domains, enabling spatial partitioning.
+| Package | What it holds |
+|---------|---------------|
+| `diffield.dsl` | The primitives and the building blocks a program is written with |
+| `diffield.layers` | Each primitive as a `torch.nn.Module` |
+| `diffield.functional` | The tensor operations under them: folds, masks, conditionals |
+| `diffield.core` | The contexts of a round, the state, the alignment, the hard and soft modes |
+| `diffield.sim` | Scenarios, the engine, events and recording |
+| `diffield.decentralized` | The same program on independent devices |
+
+## Inside a round
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/inside-round-dark.svg">
+    <img src="assets/inside-round.svg" alt="The program calls the primitives; each is a layer over a tensor operation, and all of them work on the round context" width="100%">
+  </picture>
+</p>
+
+The program is called once per round, for all the nodes at once. A node field is a
+tensor of shape `[N, ...]` and a link field one of shape `[E, ...]`. Every primitive
+works on the current `RoundContext`, which holds the links of the round, their lengths
+and the state:
+
+- **`iterate`** reads its slot of the `StateManager` and writes it back.
+- **`gather`** folds a link field into a node field with `scatter_aggr`.
+- **`branch`** masks the links between its two partitions, and gives each side a
+  frame of its own.
+- **`mux`** picks node by node with `field_where`.
+
+In hard mode the folds and the choices are exact; in soft mode the same calls relax
+them, with a temperature (see [Hard and soft](programs.md#hard-and-soft)).
+
+## Across rounds
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/across-rounds-dark.svg">
+    <img src="assets/across-rounds.svg" alt="The engine loops: events, topology, round, record, then the next round" width="100%">
+  </picture>
+</p>
+
+`AggregateContext` is what lives from one round to the next: the graph and the
+`StateManager`. `update_topology` swaps the links in place between rounds, while the
+nodes and their state stay, so on a moving network the stateful fields (`gradient`,
+`elect`, `iterate`) heal instead of starting over. Link lengths taken from positions
+are detached: a routing cost is structure, not a gradient path. `SimulationEngine`
+drives the loop; `step` runs a single round, for loops of your own.
+
+## Alignment
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/alignment-dark.svg">
+    <img src="assets/alignment.svg" alt="A program and its evaluation tree: each state slot is named by its path from the root" width="100%">
+  </picture>
+</p>
+
+The state of a program belongs to a place in its *evaluation tree*, not to a line of
+its source. A place is named by the path from the root, one token per construct:
+`kind#index`, or `kind:label` when it is named. `index` counts the occurrences of that
+kind in the current frame, so two calls to the same block never share their state:
+that is what lets blocks stack. A path holds no file name, line or object id, so it is
+the same in every process, in a checkpoint, and on the wire.
+
+- `iterate` and `gather` add a token; `iterate` also opens a frame, so what runs inside
+  its body nests below it.
+- `branch` opens a `T` and an `F` frame. Once both sides have run, the slots of each
+  side are kept only on its own nodes, so a node that changes side starts that side's
+  state from its initial value.
+- `mux` adds nothing: both of its arms run in the caller's frame.
+- `@aggregate` opens a frame for a function, as the building blocks do. Counters
+  already keep calls apart; the frame keeps the paths readable and stable when the
+  code around them changes.
+- `name=` labels a place. A labelled token has no index, so a new call beside it never
+  renames its slot. A lookup takes a full path or a bare label, and a label that
+  matches two slots (the same name on both sides of a `branch`) raises.
+
+## Local execution
+
+The same program also runs on a single device. `DeviceContext` holds one device and
+its neighbours; `DeviceRuntime`, in `diffield.decentralized`, gives each device its own
+context, which exchanges its state with the neighbours as messages. In synchronous mode,
+a program that respects the causality conditions of
+[Decentralized execution](decentralized.md) gives the same field as the batched engine.
+
+`DeviceContext` on its own is a view for debugging: its neighbours have no links of
+their own, so a program is reproducible there only if every `gather` reads a sensor, a
+constant, or the state of an `iterate` from the previous round. `mid()` numbers the
+local view unless `device_id` and `neighbor_ids` give the real ids.
+
+## Design decisions
+
+1. **PyTorch throughout.** Every operation is differentiable, so a whole run can be
+   optimized end to end.
+2. **Hard and soft.** Every primitive has an exact and a relaxed mode, chosen with
+   `with_mode` or `mode=` and `tau=`.
+3. **Rounds.** Computation advances in discrete rounds, which carry the state and let
+   the topology change between them.
+4. **Topology apart from programs.** A scenario owns the graph; the same program runs on
+   any of them, batched or device by device.
+5. **Events outside the program.** An `EventSchedule` changes the world between rounds,
+   without touching the program.
+6. **Isolation by `branch`.** The two sides of a `branch` do not talk to each other,
+   which partitions the network in space.

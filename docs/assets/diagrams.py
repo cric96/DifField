@@ -365,11 +365,138 @@ def execution(theme: Theme) -> Svg:
     return svg
 
 
+def inside_round(theme: Theme) -> Svg:
+    """Inside a round: each primitive is a layer over a tensor operation on the round's context."""
+    svg = Svg(960, 400, theme)
+    blue, green, orange = theme.blue, theme.green, theme.orange
+    headings = (
+        (95, "program"), (335, "primitive and layer"), (615, "what it runs on"), (865, "the round"),
+    )
+    for x, heading in headings:
+        svg.text(x, 32, heading, size=14, weight=700, color=theme.muted, anchor="middle")
+    rows = (
+        ("iterate(init, fn)", "IterateLayer", "StateManager", "a slot per place in the program"),
+        ("gather(scatter(x))", "GatherLayer", "scatter_aggr", "fold the messages of each node"),
+        ("branch(cond, …)", "BranchLayer", "mask_edges_for_partition",
+         "a frame per side, no link across"),
+        ("mux(cond, a, b)", "MuxLayer", "field_where", "pick, or blend when soft"),
+    )
+    tops = [50 + row * 78 for row in range(len(rows))]
+    for x, title, lines, color in (
+        (10, "program(runtime)", ("called once", "per round,", "for every node"), blue),
+        (780, "RoundContext", ("links, ranges,", "state, alignment", "of this round"), orange),
+    ):
+        svg.card(x, 50, 170, tops[-1] + 60 - 50)
+        svg.text(x + 85, 150, title, size=14, weight=700, mono=True, color=color, anchor="middle")
+        for index, line in enumerate(lines):
+            svg.text(x + 85, 178 + index * 20, line, size=13, color=theme.muted, anchor="middle")
+    for y, (primitive, layer, operation, role) in zip(tops, rows, strict=True):
+        svg.card(220, y, 230, 60)
+        svg.text(236, y + 26, primitive, size=14, weight=700, mono=True, color=blue)
+        svg.text(236, y + 47, layer, size=13, color=theme.muted, mono=True)
+        svg.card(490, y, 250, 60)
+        svg.text(506, y + 26, operation, size=14, weight=700, mono=True, color=green)
+        svg.text(506, y + 47, role, size=13, color=theme.muted)
+        for x1, x2 in ((180, 220), (450, 490), (740, 780)):
+            svg.line(x1 + 2, y + 30, x2 - 2, y + 30, color=theme.muted, width=1.8, arrow=True)
+    svg.text(480, 386, "hard mode: exact folds and choices · soft mode: the same calls, relaxed "
+             "by a temperature", size=13, color=theme.muted, anchor="middle")
+    return svg
+
+
+def across_rounds(theme: Theme) -> Svg:
+    """Across rounds: the engine applies the events, moves the links, runs a round and records."""
+    svg = Svg(960, 330, theme)
+    blue, green, orange = theme.blue, theme.green, theme.orange
+    steps = (
+        (10, 30, "1  events", "EventSchedule", green,
+         ("callbacks before given rounds: change", "the signals, move devices")),
+        (550, 30, "2  topology", "Scenario", green,
+         ("hands its links and ranges to", "AggregateContext.update_topology")),
+        (550, 200, "3  round", "AggregateContext.round()", blue,
+         ("runs program(runtime): the state of the", "last round in, the new state out")),
+        (10, 200, "4  record", "SnapshotRecorder", orange,
+         ("keeps states, exports and outputs", "at the rounds you ask for")),
+    )  # fmt: skip
+    for x, y, title, owner, color, lines in steps:
+        svg.card(x, y, 400, 100)
+        svg.text(x + 20, y + 30, title, size=15, weight=700, color=color)
+        svg.text(x + 380, y + 30, owner, size=13, mono=True, color=theme.muted, anchor="end")
+        for index, line in enumerate(lines):
+            svg.text(x + 20, y + 58 + index * 20, line, size=13, color=theme.muted)
+    svg.line(412, 80, 548, 80, color=theme.muted, width=1.8, arrow=True)
+    svg.line(750, 132, 750, 198, color=theme.muted, width=1.8, arrow=True)
+    svg.line(548, 250, 412, 250, color=theme.muted, width=1.8, arrow=True)
+    svg.line(210, 198, 210, 132, color=theme.muted, width=1.8, arrow=True)
+    svg.text(222, 170, "next round", size=13, color=theme.muted)
+    svg.text(480, 160, "SimulationEngine.run(rounds)", size=14, weight=700, mono=True,
+             anchor="middle")
+    svg.text(480, 182, "the state stays in the context", size=13, color=theme.muted,
+             anchor="middle")
+    svg.text(480, 320, "engine.ctx.reset() starts again from round zero", size=13,
+             color=theme.muted, anchor="middle")
+    return svg
+
+
+def alignment(theme: Theme) -> Svg:
+    """The state of a program lives at its places in the evaluation tree, named by paths."""
+    svg = Svg(960, 310, theme)
+    blue, orange = theme.blue, theme.orange
+    svg.card(10, 10, 370, 290)
+    lines = [
+        code(("def", theme.muted), (" program(runtime):", None)),
+        code(("    d = ", None), ("gradient", blue), ('(source, name="dist")', None)),
+        code(("    total = ", None), ("branch", blue), ("(", None)),
+        code(("        ~obstacle,", None)),
+        code(("        lambda", theme.muted), (": ", None), ("collect_cast", blue),
+             ("(d, …),", None)),
+        code(("        lambda", theme.muted), (": field.zeros(),", None)),
+        code(('        branch_name="obstacle")', None)),
+        code(("    hops = ", None), ("iterate", blue), ("(field.zeros(), step)", None)),
+    ]
+    for row, line in enumerate(lines):
+        svg.text(28, 52 + row * 24, line, size=13, mono=True)
+    svg.text(195, 284, "the program, as written", size=13, color=theme.muted, anchor="middle")
+    svg.line(382, 150, 418, 150, color=theme.muted, width=1.8, arrow=True)
+
+    def chip_width(label: str) -> float:
+        return 14 + 8.4 * len(label)
+
+    tree = {  # name: (x, y, label, parent, holds state)
+        "root": (440, 150, "/", None, False),
+        "gradient": (545, 60, "gradient:dist", "root", False),
+        "it-gradient": (690, 60, "it#0", "gradient", True),
+        "branch": (545, 150, "br:obstacle", "root", False),
+        "true": (690, 118, "T#0", "branch", False),
+        "collect": (805, 118, "collect_cast#0", "true", False),
+        "it-collect": (915, 118, "it#0", "collect", True),
+        "false": (690, 182, "F#0", "branch", False),
+        "it-hops": (545, 240, "it#0", "root", True),
+    }
+    for x, y, label, parent, _ in tree.values():
+        if parent is not None:
+            px, py, plabel, _, _ = tree[parent]
+            svg.line(px + chip_width(plabel) / 2, py, x - chip_width(label) / 2, y,
+                     color=theme.edge, width=1.5)
+    for x, y, label, _, state in tree.values():
+        svg.chip(x, y, label, orange if state else blue)
+    svg.text(915, 146, "state", size=12, color=orange, anchor="middle")
+    svg.text(690, 88, "state", size=12, color=orange, anchor="middle")
+    svg.text(545, 268, "state", size=12, color=orange, anchor="middle")
+    svg.text(690, 210, "no state", size=12, color=theme.muted, anchor="middle")
+    svg.text(680, 296, code(("/br:obstacle/T#0/collect_cast#0/it#0", orange)), size=13,
+             mono=True, anchor="middle")
+    return svg
+
+
 FIGURES = {
     "program": program,
     "round": round_anatomy,
     "architecture": architecture,
     "execution": execution,
+    "inside-round": inside_round,
+    "across-rounds": across_rounds,
+    "alignment": alignment,
 }
 
 
