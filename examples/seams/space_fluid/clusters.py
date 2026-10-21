@@ -221,6 +221,8 @@ def central_baseline(episode, kind, norm, seed):
     with threadpool_limits(limits=1):
         for t in range(episode.rounds):
             ids = episode.active[t].nonzero().flatten()
+            if not len(ids):
+                continue  # nothing to cluster: every device is down
             features = observed_features(episode, t, ids, norm).numpy()
             k = min(count, len(ids))
             if kind == "kmeans":

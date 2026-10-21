@@ -152,3 +152,13 @@ def test_summary_reads_the_clusters_study_where_the_comparison_script_writes_it(
     script = (PROJECT / "scripts/run_seams_comparison.sh").read_text()
 
     assert f'space-fluid-clusters --out "$OUT/{summary.CLUSTERS}"' in script
+
+
+@pytest.mark.parametrize("kind", ["kmeans", "ward"])
+def test_central_baselines_leave_a_round_without_active_devices_unlabelled(kind):
+    episode = clusters.cluster_episode(protocol("smoke"), "test", 0)
+    episode.active[3] = False
+
+    labels = clusters.central_baseline(episode, kind, NORM, seed=0)
+
+    assert (labels[3] == -1).all() and (labels[4] >= 0).all()
