@@ -7,7 +7,7 @@ import shutil
 import matplotlib.pyplot as plt
 import numpy as np
 
-from ..artifacts import read_json
+from ...shared.artifacts import read_json
 from ..metrics import interval
 from . import clusters, scenarios
 from .config import protocol

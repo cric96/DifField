@@ -6,7 +6,6 @@ import json
 import os
 import platform
 import subprocess
-import time
 from pathlib import Path
 
 import torch
@@ -40,7 +39,13 @@ def read_json(path: Path):
     return json.loads(path.read_text())
 
 
-def software():
+def software(directories):
+    """Provenance of a run: revision, machine, packages and the hash of every source file.
+
+    Args:
+        directories: Project-relative directories whose Python files the run depends on.
+    """
+
     def git(*args):
         return subprocess.run(  # noqa: S603 - fixed read-only git commands below
             ["git", *args],  # noqa: S607
@@ -50,8 +55,7 @@ def software():
             check=False,
         ).stdout.strip()
 
-    files = sorted((PROJECT / "src/diffield").rglob("*.py"))
-    files += sorted((PROJECT / "examples/seams").rglob("*.py"))
+    files = [p for directory in directories for p in sorted((PROJECT / directory).rglob("*.py"))]
     return {
         "revision": git("rev-parse", "HEAD"),
         "dirty": bool(git("status", "--porcelain")),
@@ -68,16 +72,3 @@ def software():
         },
     }
 
-
-class Budget:
-    """Soft deadline checked between atomic work units, never inside a recurrence."""
-
-    def __init__(self, seconds: float):
-        self.started = time.monotonic()
-        self.seconds = seconds
-
-    def check(self):
-        if time.monotonic() - self.started >= self.seconds:
-            raise TimeoutError(
-                "Budget exhausted; completed work is saved and the run is incomplete"
-            )

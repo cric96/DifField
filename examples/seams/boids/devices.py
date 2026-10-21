@@ -18,8 +18,9 @@ import torch
 from diffield.decentralized.runner import build_runtimes
 from diffield.decentralized.topology import all_in_edges
 
-from ..artifacts import json_write, read_json, software
-from ..randomness import seed_for
+from ...shared.artifacts import json_write, read_json, software
+from ...shared.randomness import seed_for
+from .. import SOURCES
 from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
 from .adaptation import configuration as adaptation_configuration
 from .dynamics import TEACHER, Boids, integrate, radius_edges
@@ -194,7 +195,7 @@ def campaign(run: Path, profile="paper-cpu", workers=None):
     source = read_json(run / "manifest.json")["config"]
     out = run / "devices"
     json_write(out / "manifest.json", {"config": config, "campaign": source,
-                                        "software": software()})  # fmt: skip
+                                        "software": software(SOURCES)})  # fmt: skip
     tasks = [(run, config, source, index) for index in range(config["episodes"])]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         rows = [row for result in pool.map(episode, tasks) for row in result]

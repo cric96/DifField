@@ -6,7 +6,6 @@ from pathlib import Path
 import pytest
 import torch
 
-from examples.seams.artifacts import Budget, json_write, read_json, tensor_write
 from examples.seams.boids.campaign import (
     CampaignBudget,
     configuration,
@@ -32,6 +31,8 @@ from examples.seams.boids.learning import (
 )
 from examples.seams.boids.report import METHODS, complete_panel, report
 from examples.seams.metrics import interval
+from examples.shared.artifacts import json_write, read_json, tensor_write
+from examples.shared.campaign import Budget
 
 
 @pytest.fixture(autouse=True)

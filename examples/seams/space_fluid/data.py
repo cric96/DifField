@@ -7,7 +7,7 @@ import torch
 from sklearn.neighbors import NearestNeighbors
 from torch import Tensor
 
-from ..randomness import rng, seed_for
+from ...shared.randomness import rng, seed_for
 from .config import CONDITIONS, TEST_FAMILIES, TRAIN_FAMILIES
 
 

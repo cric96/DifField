@@ -26,9 +26,10 @@ from sklearn.cluster import AgglomerativeClustering, KMeans
 from sklearn.metrics import adjusted_rand_score
 from threadpoolctl import threadpool_limits
 
-from ..artifacts import Budget, json_write, read_json
+from ...shared.artifacts import json_write, read_json
+from ...shared.campaign import Budget
+from ...shared.randomness import rng, seed_for
 from ..metrics import interval
-from ..randomness import rng, seed_for
 from . import cluster_gnn
 from .campaign import output_lock
 from .config import protocol

@@ -12,7 +12,7 @@ import torch
 from matplotlib.animation import FuncAnimation, PillowWriter
 from matplotlib.colors import Normalize
 
-from ..artifacts import checksum, json_write, read_json
+from ...shared.artifacts import checksum, json_write, read_json
 from ..metrics import interval
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
 from .program import ELECTED, LEADER, SAMPLE

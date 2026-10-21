@@ -10,7 +10,7 @@ import numpy as np
 import torch
 from matplotlib.animation import FFMpegWriter
 
-from ..artifacts import checksum, json_write, read_json
+from ...shared.artifacts import checksum, json_write, read_json
 from ..metrics import interval
 from .dynamics import TEACHER
 from .learning import REGIME, VARIANTS

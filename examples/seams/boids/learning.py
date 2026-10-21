@@ -7,8 +7,8 @@ import torch
 from torch import nn
 from torch_geometric.nn import MessagePassing
 
-from ..artifacts import json_write, read_json, tensor_write
-from ..randomness import rng, seed_for
+from ...shared.artifacts import json_write, read_json, tensor_write
+from ...shared.randomness import rng, seed_for
 from .dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.

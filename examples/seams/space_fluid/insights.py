@@ -14,8 +14,8 @@ import torch
 
 from diffield import with_mode
 
-from ..artifacts import json_write, read_json, tensor_write
-from ..randomness import rng
+from ...shared.artifacts import json_write, read_json, tensor_write
+from ...shared.randomness import rng
 from .data import make_episode
 from .execution import central
 from .program import ELECTED, LEADER, SAMPLE, make_program

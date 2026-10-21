@@ -7,8 +7,9 @@ import torch
 
 from diffield.sim import normalize_vectors
 
-from ..artifacts import checksum, json_write, read_json, software, tensor_write
-from ..randomness import rng
+from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
+from ...shared.randomness import rng
+from .. import SOURCES
 from .dynamics import (
     DAMPING,
     FIXED,
@@ -148,7 +149,7 @@ def initialize(out, config):
         "methods": ["oracle", "fixed", *VARIANTS],
         "physics": {**config["physics"], "teacher": list(TEACHER), "fixed": list(FIXED)},
     }
-    provenance = software()
+    provenance = software(SOURCES)
     manifest = {
         "config": config,
         "data_sha256": checksum(data_path),

@@ -17,7 +17,7 @@ from scipy.sparse import coo_matrix
 from scipy.sparse.csgraph import connected_components
 from torch import nn
 
-from ..artifacts import json_write, tensor_write
+from ...shared.artifacts import json_write, tensor_write
 from .program import mlp
 from .training import scheduled_rate
 

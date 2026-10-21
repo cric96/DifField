@@ -6,7 +6,6 @@ import pytest
 import torch
 
 from diffield import with_mode
-from examples.seams.artifacts import Budget, read_json
 from examples.seams.metrics import interval
 from examples.seams.space_fluid.campaign import (
     campaign,
@@ -48,6 +47,8 @@ from examples.seams.space_fluid.training import (
     surrogate_objective,
     train_job,
 )
+from examples.shared.artifacts import read_json
+from examples.shared.campaign import Budget
 
 
 @pytest.fixture(autouse=True)

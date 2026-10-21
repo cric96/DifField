@@ -15,7 +15,7 @@ def main():
     from examples.seams.__main__ import (
         main as campaign,
     )
-    from examples.seams.artifacts import (
+    from examples.shared.artifacts import (
         read_json,
     )
 

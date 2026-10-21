@@ -9,8 +9,10 @@ from pathlib import Path
 
 import torch
 
-from ..artifacts import Budget, checksum, json_write, read_json, software, tensor_write
-from ..randomness import seed_for
+from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
+from ...shared.campaign import Budget
+from ...shared.randomness import seed_for
+from .. import SOURCES
 from .config import CONDITIONS, FIXED, LEARNERS, TEST_FAMILIES, TRAIN_FAMILIES
 from .data import RegionEpisode, combine, make_episode, normalization, training_bank
 from .execution import central, decentralized, equivalence, kmeans
@@ -144,7 +146,7 @@ def evaluation_jobs(config):
 def initialization(out, config):
     path = out / "manifest.json"
     config_dict = json.loads(json.dumps(config.to_dict()))
-    provenance = software()
+    provenance = software(SOURCES)
     if path.exists():
         manifest = read_json(path)
         if manifest.get("experiment") != "space-fluid" or manifest["config"] != config_dict:

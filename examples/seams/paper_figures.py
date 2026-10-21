@@ -20,6 +20,7 @@ from sklearn.metrics import adjusted_rand_score
 
 from diffield import AggregateContext
 
+from ..shared.artifacts import PROJECT, json_write, read_json
 from ..shared.plotting.common import LineCollection, plt
 from ..shared.plotting.moving import _get_identity_colors
 from ..shared.plotting.style import (
@@ -35,13 +36,12 @@ from ..shared.plotting.style import (
     YELLOW,
     apply_paper_style,
 )
-from .artifacts import PROJECT, json_write, read_json
+from ..shared.randomness import seed_for
 from .boids.devices import initial_states, teacher_program
 from .boids.dynamics import FIXED, TEACHER, Boids, integrate, radius_edges
 from .boids.learning import combine, free_rollout, make_model, objective, transitions
 from .channel_adaptation import run_seed
 from .metrics import interval
-from .randomness import seed_for
 from .space_fluid import clusters
 from .space_fluid.execution import central
 from .space_fluid.metrics import recovery

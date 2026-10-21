@@ -12,14 +12,14 @@ sys.path.insert(0, str(ROOT))
 
 
 def main():
-    from examples.seams.artifacts import (
-        read_json,
-    )
     from examples.seams.space_fluid.campaign import (
         progress,
     )
     from examples.seams.space_fluid.config import (
         RegionConfig,
+    )
+    from examples.shared.artifacts import (
+        read_json,
     )
 
     parser = argparse.ArgumentParser(description=__doc__)

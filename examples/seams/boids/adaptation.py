@@ -16,8 +16,9 @@ from scipy.sparse.csgraph import connected_components
 
 from diffield.sim import normalize_vectors
 
-from ..artifacts import json_write, read_json, software, tensor_write
-from ..randomness import rng
+from ...shared.artifacts import json_write, read_json, software, tensor_write
+from ...shared.randomness import rng
+from .. import SOURCES
 from ..space_fluid.metrics import recovery
 from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
 from .learning import VARIANTS, make_model
@@ -247,7 +248,7 @@ def campaign(run: Path, profile="paper-cpu"):
     source = read_json(run / "manifest.json")["config"]
     out = run / "adaptation"
     json_write(out / "manifest.json", {"config": config, "campaign": source,
-                                        "software": software()})  # fmt: skip
+                                        "software": software(SOURCES)})  # fmt: skip
     rows = []
     for size in config["sizes"]:
         states = initial_states(run, source, size, config["episodes"])

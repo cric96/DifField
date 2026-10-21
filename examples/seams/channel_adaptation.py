@@ -27,8 +27,9 @@ from diffield.sim import (
 )
 
 from ..channel.core import CHANNEL_THRESHOLD, channel_body
-from .artifacts import json_write, software
-from .randomness import rng
+from ..shared.artifacts import json_write, software
+from ..shared.randomness import rng
+from . import SOURCES
 from .space_fluid.metrics import recovery
 
 EVENTS = ("obstacle", "clear", "relocate")
@@ -294,7 +295,7 @@ def campaign(out: Path, profile="paper-cpu"):
     torch.set_num_threads(1)
     config = configuration(profile)
     out.mkdir(parents=True, exist_ok=True)
-    json_write(out / "manifest.json", {"config": config, "software": software()})
+    json_write(out / "manifest.json", {"config": config, "software": software(SOURCES)})
     runs = []
     for seed in config["seeds"]:
         print(f"Channel adaptation seed={seed}", flush=True)
