@@ -83,8 +83,10 @@ Written with the primitives, in `diffield.dsl`:
 | `descend(potential, toward)` | A soft steepest-descent direction on a potential |
 | `nbr_count()`, `has_neighbors()` | Degree of each node, as a number or a flag |
 
-Each block takes an optional `weight`, a link field, when the cost of a link is not
-its range: `gradient(source, weight=scatter(cost) + scatter_range())`.
+`gradient`, `gradient_cast`, `broadcast`, `collect_cast` and `elect` take an optional
+`weight`, a link field, when the cost of a link is not its range:
+`gradient(source, weight=scatter(cost) + scatter_range())`; `converge_cast` and
+`bounded_election` take it as `metric`.
 
 ## Hard and soft
 
