@@ -22,7 +22,7 @@ from ...shared.campaign import Budget, deterministic, open_run, output_lock, res
 from ...shared.metrics import interval, interval_cell
 from ...shared.randomness import seed_for
 from .. import SOURCES
-from .config import TEST_FAMILIES, protocol
+from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank
 from .execution import central, decentralized, equivalence
 from .metrics import summarize
@@ -30,10 +30,7 @@ from .program import make_program
 from .report import export, method_color
 from .training import load_program, objective, train_job
 
-SCENARIOS = ("static", "moving")
-LEARNERS = ("parametric", "hybrid", "gnn")
 METHODS = ("fixed-combined", *LEARNERS)
-CONDITIONS = ("clean", "link_loss", "node_stop", "partition", "crash")
 FAULT_FAMILIES = ("gaussian", "ring")  # one training family, one held out
 FAULT_EPISODES = 2
 NAMES = {
@@ -78,10 +75,10 @@ def specs(config, scenario):
         yield {"panel": "cross", "test": test, "family": family, "index": index,
                "condition": "clean", "executor": "batched"}  # fmt: skip
     for condition, family, index in itertools.product(
-        CONDITIONS, FAULT_FAMILIES, range(FAULT_EPISODES)
+        RUNTIME_CONDITIONS, FAULT_FAMILIES, range(FAULT_EPISODES)
     ):
         yield {"panel": "faults", "test": scenario, "family": family, "index": index,
-               "condition": condition, "executor": "async-0.5"}  # fmt: skip
+               "condition": condition, "executor": ASYNC}  # fmt: skip
     yield {"panel": "equivalence", "test": scenario, "family": "gaussian", "index": 0,
            "condition": "partition", "executor": "sync"}  # fmt: skip
 
@@ -219,7 +216,7 @@ def report(out, config):
         "| Scenario | Condition | Method | Objective | NRMSE before | during | final | Recovery |",
         "|---|---|---|---:|---:|---:|---:|---:|",
     ]
-    for scenario, condition in itertools.product(SCENARIOS, CONDITIONS):
+    for scenario, condition in itertools.product(SCENARIOS, RUNTIME_CONDITIONS):
         rows = rows_of(out, scenario)
         for method in METHODS:
             selected = select(rows, method, panel="faults", condition=condition)
@@ -289,11 +286,15 @@ def figures(out, config):
 
     # NRMSE over rounds under each fault, in the training scenario.
     fig, axes = plt.subplots(
-        2, len(CONDITIONS), figsize=(3.2 * len(CONDITIONS), 6), layout="constrained", sharey=True
+        2,
+        len(RUNTIME_CONDITIONS),
+        figsize=(3.2 * len(RUNTIME_CONDITIONS), 6),
+        layout="constrained",
+        sharey=True,
     )
     for row, scenario in zip(axes, SCENARIOS, strict=True):
         rows = rows_of(out, scenario)
-        for ax, condition in zip(row, CONDITIONS, strict=True):
+        for ax, condition in zip(row, RUNTIME_CONDITIONS, strict=True):
             for method in METHODS:
                 curves = [
                     r["curves"]["nrmse"]
@@ -324,7 +325,7 @@ def stabilization(out, config):
     panels = [
         (scenario, panel, executor)
         for scenario in SCENARIOS
-        for panel, executor in (("cross", "batched"), ("faults", "async-0.5"))
+        for panel, executor in (("cross", "batched"), ("faults", ASYNC))
     ]
     fig, axes = plt.subplots(
         len(panels), len(columns), figsize=(3.3 * len(columns), 2.7 * len(panels)),

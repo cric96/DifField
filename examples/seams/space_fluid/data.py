@@ -8,7 +8,7 @@ from sklearn.neighbors import NearestNeighbors
 from torch import Tensor
 
 from ...shared.randomness import rng, seed_for
-from .config import CONDITIONS, TEST_FAMILIES, TRAIN_FAMILIES
+from .config import CONDITIONS, RUNTIME_CONDITIONS, TEST_FAMILIES, TRAIN_FAMILIES
 
 
 @dataclass
@@ -182,7 +182,7 @@ def make_episode(
 ):
     """``static`` freezes the phenomenon; ``crash`` removes the four devices on the
     highest readings at the fault time, for good."""
-    if condition not in (*CONDITIONS, "crash"):
+    if condition not in RUNTIME_CONDITIONS:
         raise ValueError(condition)
     nodes = config.nodes if nodes is None else nodes
     rounds = config.eval_rounds if split == "test" else config.train_rounds

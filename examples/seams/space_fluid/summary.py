@@ -10,7 +10,7 @@ import numpy as np
 from ...shared.artifacts import read_json
 from ...shared.metrics import interval, interval_cell
 from . import clusters, scenarios
-from .config import protocol
+from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .report import PANELS, export, method_color, pooled
 
 LEARNED = ("parametric", "hybrid")
@@ -89,7 +89,7 @@ def reconstruction(study, text):
 
 def phenomenon(study, text):
     methods = ("fixed-combined", *LEARNED)
-    cases = list(itertools.product(scenarios.SCENARIOS, scenarios.SCENARIOS))
+    cases = list(itertools.product(SCENARIOS, SCENARIOS))
     fig, (left, right) = plt.subplots(1, 2, figsize=(13, 4), layout="constrained")
     text += [
         "## 2. Static and moving phenomenon",
@@ -111,8 +111,8 @@ def phenomenon(study, text):
         text.append(f"| {label(method)} | " + " | ".join(f"{s['mean']:.3f}" for s in stats) + " |")
     left.set_xticks(range(len(cases)), [f"train {a}\ntest {b}" for a, b in cases])
     left.set(ylabel="objective", title="Objective (clean, batched)")
-    faults = [c for c in scenarios.CONDITIONS if c != "clean"]
-    columns = list(itertools.product(scenarios.SCENARIOS, faults))
+    faults = [c for c in RUNTIME_CONDITIONS if c != "clean"]
+    columns = list(itertools.product(SCENARIOS, faults))
     for method, delta in zip(methods, offsets(len(methods)), strict=True):
         shares = []
         for scenario, condition in columns:
@@ -148,9 +148,9 @@ def phenomenon(study, text):
 
 def clustering(study, text):
     panels = [("static", "batched", "clean"), ("moving", "batched", "clean")] + [
-        ("distributed", "async-0.5", c) for c in clusters.CONDITIONS
+        ("distributed", ASYNC, c) for c in RUNTIME_CONDITIONS
     ]
-    titles = ["test static", "test moving", *(f"async {c}" for c in clusters.CONDITIONS)]
+    titles = ["test static", "test moving", *(f"async {c}" for c in RUNTIME_CONDITIONS)]
     fig, axes = plt.subplots(2, 1, figsize=(13, 7), layout="constrained", sharex=True)
     text += [
         "## 3. Clustering of the phenomenon into contiguous zones (ARI, higher is better)",
@@ -160,7 +160,7 @@ def clustering(study, text):
         "device each round; K-means and Ward receive the true K.",
         "",
     ]
-    for ax, trained in zip(axes, clusters.SCENARIOS, strict=True):
+    for ax, trained in zip(axes, SCENARIOS, strict=True):
         rows = [read_json(p) for p in sorted((study / trained / "episodes").glob("*/seed*/*.json"))]
         methods = clusters.methods()
         text += [
@@ -213,15 +213,15 @@ def matching(selection, method, spec):
 def cluster_counts(study, text):
     """Final regions and leaders against the true number of zones, and their rounds."""
     panels = [("static", "batched", "clean"), ("moving", "batched", "clean")] + [
-        ("distributed", "async-0.5", c) for c in clusters.CONDITIONS
+        ("distributed", ASYNC, c) for c in RUNTIME_CONDITIONS
     ]
-    titles = ["test static", "test moving", *(f"async {c}" for c in clusters.CONDITIONS)]
+    titles = ["test static", "test moving", *(f"async {c}" for c in RUNTIME_CONDITIONS)]
     methods = ("fixed-combined", *LEARNED, "gnn-central")
     rows = {
         trained: [
             read_json(p) for p in sorted((study / trained / "episodes").glob("*/seed*/*.json"))
         ]
-        for trained in clusters.SCENARIOS
+        for trained in SCENARIOS
     }
     truth = rows["static"][0]["count"]
 
@@ -230,7 +230,7 @@ def cluster_counts(study, text):
         "",
     ]
     fig, axes = plt.subplots(2, 2, figsize=(14, 7), layout="constrained", sharex=True)
-    for row, trained in zip(axes, clusters.SCENARIOS, strict=True):
+    for row, trained in zip(axes, SCENARIOS, strict=True):
         text += [
             f"Trained on {trained} zones:",
             "",
@@ -286,8 +286,8 @@ def cluster_rounds(study, rows, methods, truth):
     cases = [
         ("static", ("static", "batched", "clean"), "test static, batched"),
         ("moving", ("moving", "batched", "clean"), "test moving, batched"),
-        ("static", ("distributed", "async-0.5", "clean"), "static zones, async devices"),
-        ("moving", ("distributed", "async-0.5", "clean"), "moving zones, async devices"),
+        ("static", ("distributed", ASYNC, "clean"), "static zones, async devices"),
+        ("moving", ("distributed", ASYNC, "clean"), "moving zones, async devices"),
     ]
     columns = (("ari", "ARI"), ("clusters", "regions"), ("leaders", "elected leaders"))
     fig, axes = plt.subplots(len(cases), len(columns), figsize=(13, 10), layout="constrained",

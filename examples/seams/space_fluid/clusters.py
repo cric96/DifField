@@ -32,7 +32,7 @@ from ...shared.metrics import interval, interval_cell, recovery
 from ...shared.randomness import rng, seed_for
 from .. import SOURCES
 from . import cluster_gnn
-from .config import protocol
+from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .data import RegionEpisode, faults, topology
 from .execution import central, decentralized, equivalence
 from .metrics import fragmentation
@@ -40,12 +40,9 @@ from .program import ELECTED, LEADER, make_program
 from .report import export, method_color
 from .training import load_program, train_job
 
-FIXED = ("combined",)  # the initial configuration of the learned program
 # The hybrid (GNN link metric) is not reported in the paper, and its training fails on sharp zones.
 LEARNERS = ("parametric",)
 CENTRAL = ("gnn-central", "kmeans", "ward")  # global view of every round
-SCENARIOS = ("static", "moving")  # zones fixed, or drifting during the episode
-CONDITIONS = ("clean", "link_loss", "node_stop", "partition", "crash")
 DRIFT = 0.08  # radius of each zone centre's circular drift in the moving scenario
 # Full-batch rate of the main study (0.1 diverges at high lambda there).
 RATE = 0.03
@@ -270,7 +267,7 @@ def specs(sizes, scenario):
             "executor": "batched",
         }
     for condition, index, executor in itertools.product(
-        CONDITIONS, range(distributed), ("sync", "async-0.5")
+        RUNTIME_CONDITIONS, range(distributed), ("sync", ASYNC)
     ):
         yield {
             "panel": "distributed",
@@ -284,7 +281,7 @@ def specs(sizes, scenario):
 
 
 def methods():
-    return [*(f"fixed-{m}" for m in FIXED), *LEARNERS, *CENTRAL]
+    return ["fixed-combined", *LEARNERS, *CENTRAL]
 
 
 def bank(config, sizes, scenario):
@@ -405,7 +402,7 @@ def evaluate_one(job):
     )
 
 
-PANELS = (("static", "batched"), ("moving", "batched"), ("distributed", "async-0.5"))
+PANELS = (("static", "batched"), ("moving", "batched"), ("distributed", ASYNC))
 
 
 def report(out, config, scenario):
@@ -463,7 +460,7 @@ def report(out, config, scenario):
         "| Method | Condition | ARI before | ARI during | ARI final | Recovered after fault |",
         "|---|---|---:|---:|---:|---:|",
     ]
-    for method, condition in itertools.product(methods(), CONDITIONS):
+    for method, condition in itertools.product(methods(), RUNTIME_CONDITIONS):
         selected = distributed(rows, method, condition)
         if not selected:
             continue
@@ -498,7 +495,7 @@ def distributed(rows, method, condition):
         for r in rows
         if r["method"] == method
         and r["panel"] == "distributed"
-        and r["executor"] == "async-0.5"
+        and r["executor"] == ASYNC
         and r["condition"] == condition
     ]
 
@@ -534,9 +531,13 @@ def figures(out, config, rows, scenario):
     export(fig, out, "clusters-snapshot")
 
     fig, axes = plt.subplots(
-        1, len(CONDITIONS), figsize=(3.2 * len(CONDITIONS), 3.2), layout="constrained", sharey=True
+        1,
+        len(RUNTIME_CONDITIONS),
+        figsize=(3.2 * len(RUNTIME_CONDITIONS), 3.2),
+        layout="constrained",
+        sharey=True,
     )
-    for ax, condition in zip(axes, CONDITIONS, strict=True):
+    for ax, condition in zip(axes, RUNTIME_CONDITIONS, strict=True):
         for method in shown:
             curves = [r["curves"]["ari"] for r in distributed(rows, method, condition)]
             if curves:
@@ -558,9 +559,9 @@ def overview(out):
         "intervals in `static/REPORT.md` and `moving/REPORT.md`.",
         "",
         "| Trained on | Method | static test | moving test | "
-        + " | ".join(f"async {c}" for c in CONDITIONS)
+        + " | ".join(f"async {c}" for c in RUNTIME_CONDITIONS)
         + " |",
-        "|---|---|" + "---:|" * (2 + len(CONDITIONS)),
+        "|---|---|" + "---:|" * (2 + len(RUNTIME_CONDITIONS)),
     ]
     for scenario in SCENARIOS:
         rows = [read_json(p) for p in sorted((out / scenario / "episodes").glob("*/seed*/*.json"))]
@@ -573,7 +574,7 @@ def overview(out):
                     if r["method"] == method and r["panel"] == panel
                 ]
                 cells.append(f"{np.mean(ari):.3f}" if ari else "—")
-            for condition in CONDITIONS:
+            for condition in RUNTIME_CONDITIONS:
                 ari = [r["metrics"]["ari_final"] for r in distributed(rows, method, condition)]
                 cells.append(f"{np.mean(ari):.3f}" if ari else "—")
             text.append(f"| {scenario} | {method} | " + " | ".join(cells) + " |")
@@ -638,7 +639,7 @@ def animate(out, config, condition, scenario, index=0):
     episode = cluster_episode(
         config, "test", index, condition=condition, moving=scenario == "moving"
     )
-    names = [*(f"fixed-{m}" for m in FIXED), *LEARNERS]
+    names = ["fixed-combined", *LEARNERS]
     traces = {}
     for name in names:
         model = (

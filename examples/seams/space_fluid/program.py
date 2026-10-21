@@ -38,7 +38,7 @@ OUTPUT_DIM = 9
 # nbr 1, election 6, region 2, distance 1, converge-cast 5, broadcast 3.
 WIRE_FLOATS = 18
 # (metric weights, strength weights over normalized value, neighbourhood mean, variance).
-FIXED = {
+WEIGHTS = {
     "spatial": ((4.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
     "combined": ((2.0, 1.0, 1.0), (0.0, 0.0, 0.0)),
     "value": ((2.0, 1.0, 1.0), (4.0, 0.0, 0.0)),
@@ -241,8 +241,8 @@ def make_program(method, seed=0, *, mean=0.0, scale=1.0, weights=(2.0, 1.0, 1.0)
         torch.manual_seed(seed)
         if method == "gnn":
             return GraphProgram(mean, scale)
-        metric_weights, strength_weights = FIXED.get(method, (weights, (0.0, 0.0, 0.0)))
-        kind = "fixed" if method in FIXED else method
+        metric_weights, strength_weights = WEIGHTS.get(method, (weights, (0.0, 0.0, 0.0)))
+        kind = "fixed" if method in WEIGHTS else method
         if method == "hybrid":
             return HybridProgram(
                 EdgeMetric(kind, metric_weights, mean, scale),

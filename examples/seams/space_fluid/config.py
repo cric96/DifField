@@ -5,9 +5,14 @@ from dataclasses import asdict, dataclass
 TRAIN_FAMILIES = ("constant", "gaussian", "mixture", "ellipse")
 TEST_FAMILIES = (*TRAIN_FAMILIES, "ring", "front")
 CONDITIONS = ("clean", "link_loss", "node_stop", "partition")
-LAYOUTS = ("jittered", "uniform", "uneven")
 LEARNERS = ("parametric", "hybrid", "gnn")
 FIXED = ("spatial", "combined", "value", "variance")
+# The scenarios and clusters studies: a phenomenon that stays still, or one that drifts.
+SCENARIOS = ("static", "moving")
+# Their conditions on devices, where a crash also removes devices for good.
+RUNTIME_CONDITIONS = (*CONDITIONS, "crash")
+# Their asynchronous executor: every device runs in a round with probability 0.5.
+ASYNC = "async-0.5"
 
 
 @dataclass(frozen=True)
