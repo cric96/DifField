@@ -360,8 +360,11 @@ uv run pytest examples/seams -q    # the campaigns: Space-Fluid, Boids, adaptati
 uv run pytest tests -q             # the library, including device-by-device equivalence
 ```
 
-The second command preserves the 38-test Boids/equivalence regression. Shared
-random streams, paired bootstrap, atomic artifacts and directory guards are
-independent utilities. Boids dynamics, learning, checkpoint tensors and command
-arguments are preserved; only imports were decoupled from the retired sensor
-suite.
+The second command preserves the Boids/equivalence regression. Boids lives in
+`boids/` and Space-Fluid in `space_fluid/`; what is not specific to SEAMS lives in
+`examples/shared`: atomic artifacts and provenance, named random streams, the campaign
+harness (output lock, time budget, stage status, exit code 2 on an early stop), the
+resumable training loop, the network that runs a program device by device, and the
+statistics (paired bootstrap, recovery after events). Boids dynamics, learning,
+checkpoint tensors and command arguments are preserved; only imports were decoupled
+from the retired sensor suite.

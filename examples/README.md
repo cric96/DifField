@@ -90,5 +90,7 @@ Artifacts land under `generated/vmas-<scenario>-{shac,imitation}/` and
 `generated/vmas-comparison/`. Training is checkpointed per `(policy, seed)`, so a
 re-run resumes rather than restarting.
 
-Shared plotting, metrics and training utilities live in `shared/`.
+Shared helpers live in `shared/`: artifacts and provenance, the harness of resumable
+campaigns, a resumable training loop, a network that runs a program device by device,
+metrics and plotting.
 Generated artifacts are saved under `generated/`.

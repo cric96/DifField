@@ -81,7 +81,8 @@ exact hard training forwards, numerical derivatives of the continuous surrogate,
 identical synchronous IDs, asynchronous message delivery, batch isolation,
 deterministic checkpoint resumption, data splits and honest incomplete reports.
 
-The Boids and adaptation regression tests sit next to it, in `test_boids.py` and
-`test_rq2_adaptation.py`. The tests of the experiments live in `examples/`, with the
-code they check, and nothing in `tests/` imports `examples/`: the experiments will
-move to a repository of their own.
+The scenarios and clusters studies are checked in `test_space_fluid_studies.py`, the
+Boids and adaptation regressions in `test_boids.py` and `test_rq2_adaptation.py`, and the
+helpers the experiments share in `examples/shared/test_*.py`. The tests of the
+experiments live in `examples/`, with the code they check, and nothing in `tests/`
+imports `examples/`: the experiments will move to a repository of their own.
