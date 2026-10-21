@@ -421,6 +421,17 @@ def test_budget_records_pending_work_without_reducing_protocol(tmp_path):
         initialization(tmp_path / "run", replace(c, updates=1))
 
 
+def test_interrupted_campaign_is_incomplete_and_resumable(tmp_path, monkeypatch):
+    def interrupt(*args):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("examples.seams.space_fluid.campaign.timing", interrupt)
+
+    assert campaign(tmp_path / "run", tiny()) == 2
+
+    assert read_json(tmp_path / "run/stages/train.json")["status"] == "incomplete"
+
+
 def test_cli_has_space_fluid_and_rejects_retired_commands(monkeypatch, tmp_path):
     from examples.seams.__main__ import main
 

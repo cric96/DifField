@@ -386,7 +386,7 @@ def campaign(out, profile, seconds, *, device="cpu"):
                 train(out, config, scenario, bank, norm, budget=budget)
             for scenario in SCENARIOS:
                 evaluate(out, config, scenario, norms, budget)
-        except TimeoutError:
+        except (TimeoutError, KeyboardInterrupt):
             print(f"Incomplete, resumable: {out}", flush=True)
             return 2
         report(out, config)

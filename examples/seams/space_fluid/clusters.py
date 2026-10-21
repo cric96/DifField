@@ -610,7 +610,7 @@ def campaign(out, profile="compact-cpu", seconds=14400, *, device="cpu"):
                 json_write(out / scenario / "manifest.json", {"normalization": norm})
                 train(out / scenario, config, sizes, norm, budget, scenario=scenario)
                 evaluate(out / scenario, config, sizes, norm, budget, scenario=scenario)
-        except TimeoutError:
+        except (TimeoutError, KeyboardInterrupt):
             print(f"Incomplete, resumable: {out}", flush=True)
             return 2
         for scenario in SCENARIOS:

@@ -341,7 +341,7 @@ def _campaign(out, config, stage, seconds):
                 out / "stages" / f"{current}.json",
                 {"status": "complete" if complete else "incomplete"},
             )
-    except TimeoutError as error:
+    except (TimeoutError, KeyboardInterrupt) as error:
         json_write(
             out / "stages" / f"{current}.json", {"status": "incomplete", "reason": str(error)}
         )
