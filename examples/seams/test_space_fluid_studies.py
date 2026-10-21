@@ -143,3 +143,12 @@ def test_scenarios_fault_panel_has_the_episodes_of_the_profile(profile):
     families = config.distributed_families
     assert {s["family"] for s in faults} == set(families)
     assert len(faults) == len(RUNTIME_CONDITIONS) * len(families) * config.distributed_episodes
+
+
+def test_summary_reads_the_clusters_study_where_the_comparison_script_writes_it():
+    from examples.seams.space_fluid import summary
+    from examples.shared.artifacts import PROJECT
+
+    script = (PROJECT / "scripts/run_seams_comparison.sh").read_text()
+
+    assert f'space-fluid-clusters --out "$OUT/{summary.CLUSTERS}"' in script

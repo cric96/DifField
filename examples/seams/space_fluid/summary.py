@@ -1,5 +1,5 @@
 """One comparison across the three studies: reconstruction, static/moving phenomenon,
-clustering. Reads ``<out>/main``, ``<out>/scenarios`` and ``<out>/clusters``."""
+clustering. Reads ``<out>/main``, ``<out>/scenarios`` and ``<out>/clusters-sharp``."""
 
 import itertools
 import shutil
@@ -14,6 +14,8 @@ from . import clusters, scenarios
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .report import PANELS, episode_rows, export, method_color, pooled
 
+# Where scripts/run_seams_comparison.sh writes the clustering study (sharp zone boundaries).
+CLUSTERS = "clusters-sharp"
 LEARNED = ("parametric", "hybrid")
 LABELS = {
     "fixed-combined": "initial configuration",
@@ -315,8 +317,8 @@ def training(out, text):
         ("reconstruction", out / "main" / "checkpoints", lambda n: n.endswith("-l0.3")),
         ("static phenomenon", out / "scenarios" / "static" / "checkpoints", None),
         ("moving phenomenon", out / "scenarios" / "moving" / "checkpoints", None),
-        ("clustering, static", out / "clusters" / "static" / "checkpoints", None),
-        ("clustering, moving", out / "clusters" / "moving" / "checkpoints", None),
+        ("clustering, static", out / CLUSTERS / "static" / "checkpoints", None),
+        ("clustering, moving", out / CLUSTERS / "moving" / "checkpoints", None),
     ]
     fig, axes = plt.subplots(1, len(sources), figsize=(4 * len(sources), 3.4),
                              layout="constrained")  # fmt: skip
@@ -354,15 +356,15 @@ def summary(out):
         "",
         "Three campaigns on the same code: [reconstruction](main/REPORT.md), "
         "[static and moving phenomenon](scenarios/REPORT.md), "
-        "[clustering](clusters/REPORT.md). Intervals: two-way bootstrap over seeds "
+        f"[clustering]({CLUSTERS}/REPORT.md). Intervals: two-way bootstrap over seeds "
         "and episodes. With full-batch training the parametric program is deterministic, "
         "so its seeds coincide and its intervals reflect episodes only.",
         "",
     ]
     reconstruction(out / "main", text)
     phenomenon(out / "scenarios", text)
-    clustering(out / "clusters", text)
-    cluster_counts(out / "clusters", text)
+    clustering(out / CLUSTERS, text)
+    cluster_counts(out / CLUSTERS, text)
     training(out, text)
     (out / "SUMMARY.md").write_text("\n".join(text))
     print(f"Summary: {out / 'SUMMARY.md'}", flush=True)

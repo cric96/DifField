@@ -24,7 +24,7 @@ python -m examples.seams space-fluid --profile compact-cpu --device cuda --stage
 python -m examples.seams space-fluid-scenarios --profile compact-cpu --device cuda \
   --out generated/seams/comparison/scenarios
 python -m examples.seams space-fluid-clusters --profile compact-cpu --device cuda \
-  --out generated/seams/comparison/clusters
+  --out generated/seams/comparison/clusters-sharp
 python -m examples.seams space-fluid-summary --out generated/seams/comparison
 
 # Existing standalone Boids command and checkpoints remain supported.
