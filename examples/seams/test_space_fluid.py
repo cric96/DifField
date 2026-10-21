@@ -6,13 +6,7 @@ import pytest
 import torch
 
 from diffield import with_mode
-from examples.seams.space_fluid.campaign import (
-    campaign,
-    evaluation_jobs,
-    initialization,
-    methods,
-    output_lock,
-)
+from examples.seams.space_fluid.campaign import campaign, initialization, output_lock
 from examples.seams.space_fluid.config import CONDITIONS, protocol
 from examples.seams.space_fluid.data import (
     RegionEpisode,
@@ -24,6 +18,7 @@ from examples.seams.space_fluid.data import (
 )
 from examples.seams.space_fluid.execution import central, decentralized, equivalence, kmeans
 from examples.seams.space_fluid.metrics import fragmentation, summarize
+from examples.seams.space_fluid.plan import evaluation_jobs, methods
 from examples.seams.space_fluid.program import (
     COUNT,
     DISTANCE,

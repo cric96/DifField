@@ -14,6 +14,7 @@ from matplotlib.colors import Normalize
 from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
 from .config import FIXED, LEARNERS, TRAIN_FAMILIES
+from .plan import evaluation_jobs, progress, result_path
 from .program import ELECTED, LEADER, SAMPLE
 
 GROUP = ("panel", "executor", "family", "nodes", "layout", "condition")
@@ -285,12 +286,6 @@ def animate(out, family, budget, names):
 
 
 def report(out, config, *, render=True, budget=None):
-    from .campaign import (
-        evaluation_jobs,
-        progress,
-        result_path,
-    )
-
     state = progress(out, config)
     groups, rows = defaultdict(list), []
     for spec, method, seed in evaluation_jobs(config):
