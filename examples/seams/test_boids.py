@@ -139,8 +139,7 @@ def test_training_uses_only_observed_states(monkeypatch, tmp_path):
 
     monkeypatch.setattr("examples.seams.boids_learning.dense_step", forbidden)
     model = Boids()
-    observed, _ = objective(model, batch)
-    observed.backward()
+    objective(model, batch).backward()
     assert torch.isfinite(model.log_weights.grad).all()
     config = configuration("smoke")
     assert config["regimes"] == ["observed"]
@@ -153,7 +152,7 @@ def test_parameter_recovery_with_observations_only():
     optimizer = torch.optim.Adam(model.parameters(), lr=0.03)
     for _ in range(500):
         optimizer.zero_grad()
-        loss = objective(model, batch)[0]
+        loss = objective(model, batch)
         loss.backward()
         optimizer.step()
     torch.testing.assert_close(model.log_weights.exp(), torch.tensor(TEACHER), rtol=0.02, atol=0)
@@ -239,7 +238,7 @@ def test_evaluation_repairs_missing_replay_and_records_nonfinite_failure(tmp_pat
     config = {"rounds": 3}
     out = tmp_path / "out"
     json_write(out / "manifest.json", {"data_sha256": "fixture"})
-    args = (out, data, config, "observed", "fixed", 0)
+    args = (out, data, config, "fixed", 0)
     evaluate_job(*args, Boids(), {}, Budget(60))
     replay = out / "replays/observed/fixed/episode-0.pt"
     replay.unlink()
@@ -249,7 +248,7 @@ def test_evaluation_repairs_missing_replay_and_records_nonfinite_failure(tmp_pat
     with torch.no_grad():
         next(model.parameters()).fill_(float("nan"))
     with pytest.raises(FloatingPointError, match="Nonfinite Boids rollout"):
-        evaluate_job(out, data, config, "observed", "gnn32", 0, model, {}, Budget(60))
+        evaluate_job(out, data, config, "gnn32", 0, model, {}, Budget(60))
     failed = read_json(out / "episodes/observed/gnn32/seed0/episode-0.json")
     assert failed["status"] == "failed" and not failed["metrics"]
 

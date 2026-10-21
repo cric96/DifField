@@ -414,7 +414,7 @@ def boids_validation(boids, variant, validation):
     for path in sorted((boids / "jobs/observed" / variant).glob("seed*/training.json")):
         job = read_json(path)
         with torch.no_grad():  # update 0 is evaluated for selection but not kept in the history
-            start = float(objective(make_model(variant, job["seed"]), validation)[1])
+            start = float(objective(make_model(variant, job["seed"]), validation))
         points = [(0, start)] + [
             (h["update"], h["validation_loss"])
             for h in job["history"]

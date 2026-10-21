@@ -21,7 +21,7 @@ from .boids_dynamics import (
 )
 from .boids_learning import (
     RATES,
-    REGIMES,
+    REGIME,
     TUNING_SEED,
     VARIANTS,
     combine,
@@ -84,7 +84,7 @@ def configuration(profile):
         "rounds": 24,
         "diagnostic_updates": 2 if smoke else 100,
         "variants": list(VARIANTS),
-        "regimes": list(REGIMES),
+        "regimes": [REGIME],
         "tuning_seed": TUNING_SEED,
         "rates": {k: list(v[:1] if smoke else v) for k, v in RATES.items()},
         "physics": {
@@ -188,10 +188,10 @@ def initialize(out, config):
     return selected
 
 
-def job_path(out, regime, variant, seed, rate=None):
+def job_path(out, variant, seed, rate=None):
     if rate is not None:
-        return out / "tuning" / regime / variant / f"lr{rate}"
-    return out / "jobs" / regime / variant / f"seed{seed}"
+        return out / "tuning" / REGIME / variant / f"lr{rate}"
+    return out / "jobs" / REGIME / variant / f"seed{seed}"
 
 
 def diagnose(out, data, config, budget):
@@ -277,7 +277,7 @@ def diagnose(out, data, config, budget):
             idx = idx[: config["batch_size"]].tolist()
             optimizer.zero_grad()
             if horizon == 1:
-                loss = objective(model, combine([train[i] for i in idx]))[0]
+                loss = objective(model, combine([train[i] for i in idx]))
             else:
                 losses = []
                 for i in idx:
@@ -317,7 +317,7 @@ def diagnose(out, data, config, budget):
             )
         with torch.no_grad():
             validation = float(
-                objective(model, combine([transitions(e) for e in data["validation"]]))[1]
+                objective(model, combine([transitions(e) for e in data["validation"]]))
             )
         ablations.append(
             {
@@ -340,14 +340,14 @@ def diagnose(out, data, config, budget):
 
 
 @torch.no_grad()
-def evaluate_job(out, data, config, regime, variant, seed, model, training, budget):
-    directory = out / "episodes" / regime / variant / f"seed{seed}"
-    checkpoint = job_path(out, regime, variant, seed) / "best.pt"
+def evaluate_job(out, data, config, variant, seed, model, training, budget):
+    directory = out / "episodes" / REGIME / variant / f"seed{seed}"
+    checkpoint = job_path(out, variant, seed) / "best.pt"
     checkpoint_hash = checksum(checkpoint) if checkpoint.exists() else None
     for episode in data["test"]:
         budget.check()
         path = directory / f"{episode['key']}.json"
-        replay_path = out / "replays" / regime / variant / f"{episode['key']}.pt"
+        replay_path = out / "replays" / REGIME / variant / f"{episode['key']}.pt"
         needs_replay = seed == 0 and episode["key"] in {e["key"] for e in data["test"][:3]}
         if (
             path.exists()
@@ -363,7 +363,7 @@ def evaluate_job(out, data, config, regime, variant, seed, model, training, budg
             json_write(
                 path,
                 {
-                    "regime": regime,
+                    "regime": REGIME,
                     "method": variant,
                     "seed": seed,
                     "episode": episode["key"],
@@ -372,7 +372,7 @@ def evaluate_job(out, data, config, regime, variant, seed, model, training, budg
                     "reason": "nonfinite rollout",
                 },
             )
-            raise FloatingPointError(f"Nonfinite Boids rollout: {regime}/{variant}/{seed}")
+            raise FloatingPointError(f"Nonfinite Boids rollout: {REGIME}/{variant}/{seed}")
         metrics = {
             "position_rmse": float((p - episode["target_pos"]).square().mean().sqrt())
             if finite
@@ -380,7 +380,7 @@ def evaluate_job(out, data, config, regime, variant, seed, model, training, budg
             "velocity_rmse": float((v - episode["target_vel"]).square().mean().sqrt())
             if finite
             else None,
-            "one_step_loss": float(objective(model, transitions(episode))[1])
+            "one_step_loss": float(objective(model, transitions(episode)))
             if model is not None
             else None,
             "inference_seconds": seconds,
@@ -395,7 +395,7 @@ def evaluate_job(out, data, config, regime, variant, seed, model, training, budg
         )
         parameters = sum(x.numel() for x in model.parameters()) if model is not None else 0
         row = {
-            "regime": regime,
+            "regime": REGIME,
             "method": variant,
             "seed": seed,
             "episode": episode["key"],
@@ -430,8 +430,7 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
     stage = "diagnostics"
     progress = out / "progress.json"
     expected = [
-        str(job_path(out, regime, variant, seed).relative_to(out))
-        for regime in REGIMES
+        str(job_path(out, variant, seed).relative_to(out))
         for variant in VARIANTS
         for seed in config["seeds"]
     ]
@@ -441,7 +440,7 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
             "training_jobs": expected,
             "test_episodes": config["test_episodes"],
             "methods": config["methods"],
-            "regimes": list(REGIMES),
+            "regimes": [REGIME],
             "config": config,
         },
     )
@@ -455,59 +454,54 @@ def campaign(out: Path, profile="paper-cpu", seconds=14400):
         frozen_path = out / "tuning-frozen.json"
         if not frozen_path.exists():
             frozen = {}
-            for regime in REGIMES:
-                frozen[regime] = {}
-                for variant in VARIANTS:
-                    scores = []
-                    for rate in config["rates"]["parametric" if variant == "parametric" else "gnn"]:
-                        print(f"Boids tuning {regime} {variant} lr={rate}", flush=True)
-                        _, result = train_job(
-                            job_path(out, regime, variant, TUNING_SEED, rate),
-                            config,
-                            train,
-                            validation,
-                            variant,
-                            TUNING_SEED,
-                            rate,
-                            budget,
-                        )
-                        scores.append({"rate": rate, "validation_loss": result["best_validation"]})
-                    frozen[regime][variant] = {
-                        "rate": min(scores, key=lambda r: (r["validation_loss"], r["rate"]))[
-                            "rate"
-                        ],
-                        "candidates": scores,
-                    }
-            json_write(frozen_path, frozen)
-        frozen = read_json(frozen_path)
-        stage = "training_and_evaluation"
-        for regime in REGIMES:
-            for seed in config["seeds"]:
-                for variant in VARIANTS:
-                    json_write(
-                        progress,
-                        {
-                            "status": "running",
-                            "stage": stage,
-                            "regime": regime,
-                            "seed": seed,
-                            "variant": variant,
-                        },
-                    )
-                    print(f"Boids {regime} {variant} seed={seed}", flush=True)
-                    model, result = train_job(
-                        job_path(out, regime, variant, seed),
+            for variant in VARIANTS:
+                scores = []
+                for rate in config["rates"]["parametric" if variant == "parametric" else "gnn"]:
+                    print(f"Boids tuning {REGIME} {variant} lr={rate}", flush=True)
+                    _, result = train_job(
+                        job_path(out, variant, TUNING_SEED, rate),
                         config,
                         train,
                         validation,
                         variant,
-                        seed,
-                        frozen[regime][variant]["rate"],
+                        TUNING_SEED,
+                        rate,
                         budget,
                     )
-                    evaluate_job(out, data, config, regime, variant, seed, model, result, budget)
-                for variant, model in (("fixed", Boids()), ("oracle", None)):
-                    evaluate_job(out, data, config, regime, variant, seed, model, {}, budget)
+                    scores.append({"rate": rate, "validation_loss": result["best_validation"]})
+                frozen[variant] = {
+                    "rate": min(scores, key=lambda r: (r["validation_loss"], r["rate"]))["rate"],
+                    "candidates": scores,
+                }
+            json_write(frozen_path, {REGIME: frozen})
+        frozen = read_json(frozen_path)[REGIME]
+        stage = "training_and_evaluation"
+        for seed in config["seeds"]:
+            for variant in VARIANTS:
+                json_write(
+                    progress,
+                    {
+                        "status": "running",
+                        "stage": stage,
+                        "regime": REGIME,
+                        "seed": seed,
+                        "variant": variant,
+                    },
+                )
+                print(f"Boids {REGIME} {variant} seed={seed}", flush=True)
+                model, result = train_job(
+                    job_path(out, variant, seed),
+                    config,
+                    train,
+                    validation,
+                    variant,
+                    seed,
+                    frozen[variant]["rate"],
+                    budget,
+                )
+                evaluate_job(out, data, config, variant, seed, model, result, budget)
+            for variant, model in (("fixed", Boids()), ("oracle", None)):
+                evaluate_job(out, data, config, variant, seed, model, {}, budget)
         stage = "report"
         json_write(progress, {"status": "running", "stage": stage})
         from .boids_report import report

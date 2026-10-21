@@ -13,7 +13,8 @@ from .randomness import rng, seed_for
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.
 VARIANTS = ("parametric", "gnn32", "gnn64")
-REGIMES = ("observed",)
+# Every model learns from observed trajectories, under this name in paths and rows.
+REGIME = "observed"
 TUNING_SEED = 10001
 RATES = {"parametric": (0.01, 0.03, 0.1), "gnn": (0.0003, 0.001, 0.003)}
 
@@ -109,8 +110,7 @@ def objective(model, batch):
     prediction = model.step(batch.positions, batch.velocities, batch.edge_index)
     position = (prediction.positions - batch.target_pos).square().mean() / SPEED**2
     velocity = (prediction.velocities - batch.target_vel).square().mean() / SPEED**2
-    observed = position + velocity
-    return observed, observed
+    return position + velocity
 
 
 def free_rollout(model, positions, velocities, rounds):
@@ -136,7 +136,7 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
     """Resume exactly at an update boundary; checkpoint selection uses observed validation."""
     identity = {
         "variant": variant,
-        "regime": "observed",
+        "regime": REGIME,
         "seed": seed,
         "rate": rate,
         "updates": config["updates"],
@@ -152,7 +152,7 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
     last, best_path = directory / "last.pt", directory / "best.pt"
     completed, history, elapsed = 0, [], 0.0
     with torch.no_grad():
-        best = float(objective(model, validation)[1])
+        best = float(objective(model, validation))
     if not torch.isfinite(torch.tensor(best)):
         raise FloatingPointError("Nonfinite initial validation")
     if last.exists():
@@ -174,7 +174,7 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
         selected = indices[: config["batch_size"]].tolist()
         batch = combine([train[i] for i in selected])
         optimizer.zero_grad()
-        total, observed = objective(model, batch)
+        total = objective(model, batch)
         total.backward()
         gradients = [p.grad for p in model.parameters()]
         if not torch.isfinite(total) or any(
@@ -187,7 +187,7 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
         validation_loss = None
         if (update + 1) % config["validate_every"] == 0 or update + 1 == config["updates"]:
             with torch.no_grad():
-                validation_loss = float(objective(model, validation)[1])
+                validation_loss = float(objective(model, validation))
             if not torch.isfinite(torch.tensor(validation_loss)):
                 raise FloatingPointError(f"Nonfinite validation: {directory}")
             if validation_loss < best:
@@ -202,7 +202,7 @@ def train_job(directory, config, train, validation, variant, seed, rate, budget)
             {
                 "update": update + 1,
                 "train_loss": float(total.detach()),
-                "observed_train_loss": float(observed.detach()),
+                "observed_train_loss": float(total.detach()),
                 "validation_loss": validation_loss,
                 "gradient_norm": norm,
                 "weights": weights(model),
