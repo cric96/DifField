@@ -108,3 +108,20 @@ def test_asynchronous_devices_are_reproducible_and_skip_rounds():
     assert torch.equal(p_end, p_again)
     assert curves["activated"][0] == 1.0
     assert 0.2 < sum(curves["activated"][1:]) / 19 < 0.8
+
+
+def test_asynchronous_devices_repeat_their_activations_through_events_for_a_seed():
+    config = boids_configuration("smoke")
+    p, v = swarm(16)
+    perturb = events(config, {"data_seed": 7, "nodes": 16}, 16, 0)
+    schedule = {config["events"][name]: perturb[name] for name in ("split", "crash", "join")}
+
+    status, curves, (p_end, _) = device_rollout(
+        teacher_program(), p, v, config["rounds"], schedule, activation=0.5, seed=3
+    )
+
+    # Recorded values: the seed fixes every activation, before and after the population changes.
+    assert status == "complete"
+    assert curves["nodes"][19:21] == [16, 12]
+    assert sum(curves["activated"]) == pytest.approx(21.16666668653488, abs=1e-12)
+    assert float(p_end.sum()) == pytest.approx(15.441049575805664, abs=1e-6)
