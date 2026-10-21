@@ -9,9 +9,8 @@ from sklearn.cluster import KMeans
 from threadpoolctl import threadpool_limits
 
 from diffield import AggregateContext
-from diffield.decentralized.runner import build_runtimes
-from diffield.decentralized.topology import all_in_edges, require_symmetric
 
+from ...shared.devices import DeviceNetwork
 from .program import DISTANCE, ELECTED, LEADER, OUTPUT_DIM, SAMPLE, TIMESTAMP
 
 
@@ -88,73 +87,45 @@ def decentralized(episode, program, *, activation_probability=1.0, seed=0):
     if not 0 < activation_probability <= 1:
         raise ValueError("Activation probability must be in (0, 1]")
     started = time.perf_counter()
-    devices = build_runtimes(
-        edge_index=episode.edges[0],
-        num_nodes=episode.nodes,
-        program=program,
-        signals={},
-        edge_weight=ranges(episode, 0),
-    )
-    bundles = {node: {} for node in devices}
-    mailboxes = {node: {} for node in devices}
     output = torch.zeros(episode.nodes, OUTPUT_DIM)
+    network = DeviceNetwork(
+        program, episode.edges[0], episode.nodes, output, positions=episode.positions
+    )
     generator = torch.Generator().manual_seed(seed)
     fields, traffic, activations = [], [], []
     synchronous = activation_probability == 1.0
     for t in range(episode.rounds):
-        require_symmetric(episode.edges[t])
-        neighbors = all_in_edges(episode.edges[t], episode.nodes, ranges(episode, t))
-        for node, device in devices.items():
-            device.sync_topology(*neighbors[node])
+        network.move(episode.edges[t], positions=episode.positions)
+        for node, device in network.devices.items():
             device.signals = local_signals(episode, t, node, len(device.neighbor_ids))
-            # Removed links cannot keep delivering buffered advertisements.
-            mailboxes[node] = {j: v for j, v in mailboxes[node].items() if j in device.neighbor_ids}
         # A common initial execution makes cold-start outputs defined. Thereafter
         # asynchronous nodes receive messages only when their neighbours actually send.
         barrier = synchronous or t == 0
-        order = (
-            range(episode.nodes)
-            if barrier
-            else torch.randperm(episode.nodes, generator=generator).tolist()
-        )
-        pending, bytes_round, activated = {}, 0, 0
-        for node in order:
-            if not episode.active[t, node]:
-                continue
-            if not barrier and float(torch.rand((), generator=generator)) >= activation_probability:
-                continue
-            device = devices[node]
-            received = bundles if barrier else mailboxes[node]
-            keys = {key for other in device.neighbor_ids for key in received.get(other, {})}
-            inbox = {
-                key: [received.get(other, {}).get(key) for other in device.neighbor_ids]
-                for key in keys
-            }
-            output[node], bundle = device.step(inbox)
-            pending[node] = bundle
-            size = sum(v.numel() * v.element_size() for v in bundle.values())
-            bytes_round += size * len(device.neighbor_ids)
-            activated += 1
-            if not barrier:
-                for other in device.neighbor_ids:
-                    mailboxes[other][node] = bundle
-        bundles.update(pending)
-        if barrier:
-            for node, bundle in pending.items():
-                for other in devices[node].neighbor_ids:
-                    mailboxes[other][node] = bundle
+        nodes = activated(episode, t, barrier, activation_probability, generator)
+        traffic.append(network.run(nodes, barrier=barrier))
         fields.append(output.clone())
-        traffic.append(bytes_round)
-        activations.append(activated)
-    state_bytes = sum(v.numel() * v.element_size() for b in bundles.values() for v in b.values())
+        activations.append(len(nodes))
     return RegionTrace(
         torch.stack(fields),
         traffic,
         activations,
         time.perf_counter() - started,
-        state_bytes,
+        network.state_bytes,
         "sync" if synchronous else f"async-{activation_probability:g}",
     )
+
+
+def activated(episode, t, barrier, probability, generator):
+    """The active devices that run in round ``t``, in their order: all of them in ID order
+    under a barrier, otherwise each with ``probability`` in a random order."""
+    if barrier:
+        return [node for node in range(episode.nodes) if episode.active[t, node]]
+    order = torch.randperm(episode.nodes, generator=generator).tolist()
+    return [
+        node
+        for node in order
+        if episode.active[t, node] and float(torch.rand((), generator=generator)) < probability
+    ]
 
 
 def equivalence(expected, actual, tolerance=2e-6):
