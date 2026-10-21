@@ -81,7 +81,7 @@ exact hard training forwards, numerical derivatives of the continuous surrogate,
 identical synchronous IDs, asynchronous message delivery, batch isolation,
 deterministic checkpoint resumption, data splits and honest incomplete reports.
 
-The Boids and adaptation regression tests sit next to it, in `test_boids.py`,
-`test_boids_flocking.py` and `test_rq2_adaptation.py`. The tests of the experiments
-live in `examples/`, with the code they check, and nothing in `tests/` imports
-`examples/`: the experiments will move to a repository of their own.
+The Boids and adaptation regression tests sit next to it, in `test_boids.py` and
+`test_rq2_adaptation.py`. The tests of the experiments live in `examples/`, with the
+code they check, and nothing in `tests/` imports `examples/`: the experiments will
+move to a repository of their own.
