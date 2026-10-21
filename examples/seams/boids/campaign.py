@@ -8,7 +8,15 @@ import torch
 from diffield.sim import normalize_vectors
 
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
-from ...shared.campaign import Budget, check_resume, deterministic, resumable, status_file
+from ...shared.campaign import (
+    Budget,
+    check_resume,
+    deterministic,
+    output_lock,
+    require_new,
+    resumable,
+    status_file,
+)
 from ...shared.randomness import rng
 from .. import SOURCES
 from .dynamics import (
@@ -106,6 +114,8 @@ def initialize(out, config):
         ("validation", "validation_episodes"),
         ("test", "test_episodes"),
     )
+    if not path.exists():
+        require_new(out)
     out.mkdir(parents=True, exist_ok=True)
     data_path = out / "data/traces.pt"
     if not data_path.exists():
@@ -415,6 +425,11 @@ def tune(out, config, train, validation, budget):
 
 
 def campaign(out: Path, profile="paper-cpu", seconds=14400):
+    with output_lock(out):
+        return _campaign(out, profile, seconds)
+
+
+def _campaign(out, profile, seconds):
     started = time.monotonic()
     deterministic()
     config = configuration(profile)

@@ -7,6 +7,7 @@ import pytest
 import torch
 
 from examples.seams.boids.campaign import (
+    campaign,
     configuration,
     evaluate_job,
     initialize,
@@ -30,7 +31,7 @@ from examples.seams.boids.learning import (
 )
 from examples.seams.boids.report import METHODS, complete_panel, report
 from examples.shared.artifacts import json_write, read_json, tensor_write
-from examples.shared.campaign import Budget
+from examples.shared.campaign import Budget, output_lock
 from examples.shared.metrics import interval
 
 
@@ -300,6 +301,16 @@ def test_standalone_dataset_is_deterministic_and_resume_checks_hashes(tmp_path):
     tensor_write(out / "data/traces.pt", data)
     with pytest.raises(ValueError, match="Resume mismatch: data_sha256"):
         initialize(out, config)
+
+
+def test_campaign_takes_the_output_lock_and_starts_only_in_a_new_directory(tmp_path):
+    with output_lock(tmp_path / "busy"), pytest.raises(RuntimeError, match="Another process"):
+        campaign(tmp_path / "busy", "smoke")
+    (tmp_path / "used").mkdir()
+    (tmp_path / "used/notes.txt").write_text("unrelated")
+
+    with pytest.raises(ValueError, match="empty"):
+        initialize(tmp_path / "used", configuration("smoke"))
 
 
 def test_cli_runs_boids_in_its_output_directory(monkeypatch, tmp_path, capsys):
