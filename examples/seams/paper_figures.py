@@ -51,6 +51,7 @@ from .boids.learning import (
     load_model,
     make_model,
     objective,
+    rmse,
     transitions,
 )
 from .channel_adaptation import run_seed
@@ -432,9 +433,9 @@ def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
             positions, _ = free_rollout(model, test["positions"], test["velocities"], rounds)
         traj = torch.cat((test["positions"][None], positions)).numpy()
         trajectories_panel(axes[2 + k], traj, colours, panel("cd"[k], label))
-        err = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
+        err = rmse(positions, test["target_pos"])
         errors[label] = err
-        badge = f"RMSE {err:.2f}" if err >= 1e-3 else r"RMSE $<10^{-4}$"
+        badge = f"RMSE {err:.2f}" if err >= 1e-3 else r"RMSE $<10^{-3}$"
         box_style = {"facecolor": "white", "alpha": 0.78, "edgecolor": "none", "pad": 0.8}
         axes[2 + k].text(0.96, 0.04, badge, transform=axes[2 + k].transAxes,
                          fontsize=FONT - 1.5, color=INK, ha="right", va="bottom", bbox=box_style)
@@ -443,7 +444,7 @@ def boids_row(axes, boids, *, episode=0, seed=0, gnn="gnn64", zoom=200):
         positions, _ = free_rollout(model, test["positions"], test["velocities"], rounds)
     traj = torch.cat((test["positions"][None], positions)).numpy()
     trajectories_panel(axes[4], traj, colours, panel("e", STYLE[gnn][2]))
-    err_gnn = float((positions - test["target_pos"]).norm(dim=-1).pow(2).mean().sqrt())
+    err_gnn = rmse(positions, test["target_pos"])
     axes[4].text(0.96, 0.04, f"RMSE {err_gnn:.2f}", transform=axes[4].transAxes,
                  fontsize=FONT - 1.5, color=INK, ha="right", va="bottom", bbox=box_style)
     if len(axes) > 5:

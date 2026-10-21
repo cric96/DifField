@@ -12,7 +12,7 @@ from ...shared.artifacts import checksum, csv_write, json_write, read_json
 from ...shared.metrics import interval
 from ...shared.plotting.common import save_figure
 from .dynamics import TEACHER
-from .learning import REGIME, VARIANTS, job_path, replay_path
+from .learning import REGIME, VARIANTS, job_path, replay_path, rmse
 
 COLORS = {
     "oracle": "#222222",
@@ -486,7 +486,7 @@ def report(out, data, config, budget, render=True):
                     ("positions", "target_pos", "position_rmse"),
                     ("velocities", "target_vel", "velocity_rmse"),
                 ):
-                    value = float((replay[state] - ep[target]).square().mean().sqrt())
+                    value = rmse(replay[state], ep[target])
                     if abs(value - row["metrics"][metric]) > 1e-7:
                         raise ValueError("Replay metric differs from reported metric")
                 verification.append(

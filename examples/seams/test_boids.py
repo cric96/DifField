@@ -27,6 +27,7 @@ from examples.seams.boids.learning import (
     free_rollout,
     make_model,
     objective,
+    rmse,
     train_job,
     transitions,
 )
@@ -329,3 +330,12 @@ def test_cli_runs_boids_in_its_output_directory(monkeypatch, tmp_path, capsys):
         main(["boids-v2"])
     assert error.value.code == 2
     assert "invalid choice: 'boids-v2'" in capsys.readouterr().err
+
+
+def test_rmse_averages_over_rounds_agents_and_coordinates():
+    target = torch.zeros(3, 4, 2)
+    offset = torch.tensor([0.3, 0.4]).expand(3, 4, 2)
+
+    error = rmse(target + offset, target)
+
+    assert error == pytest.approx(((0.09 + 0.16) / 2) ** 0.5)

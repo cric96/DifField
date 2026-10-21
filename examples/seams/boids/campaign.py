@@ -43,6 +43,7 @@ from .learning import (
     minibatch,
     objective,
     replay_path,
+    rmse,
     train_job,
     transitions,
     weights,
@@ -347,12 +348,8 @@ def evaluate_job(out, data, config, variant, seed, model, training, budget):
             )
             raise FloatingPointError(f"Nonfinite Boids rollout: {REGIME}/{variant}/{seed}")
         metrics = {
-            "position_rmse": float((p - episode["target_pos"]).square().mean().sqrt())
-            if finite
-            else None,
-            "velocity_rmse": float((v - episode["target_vel"]).square().mean().sqrt())
-            if finite
-            else None,
+            "position_rmse": rmse(p, episode["target_pos"]) if finite else None,
+            "velocity_rmse": rmse(v, episode["target_vel"]) if finite else None,
             "one_step_loss": float(objective(model, transitions(episode)))
             if model is not None
             else None,

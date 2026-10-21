@@ -114,6 +114,11 @@ def objective(model, batch):
     return position + velocity
 
 
+def rmse(prediction, target):
+    """Root mean square error over every round, agent and coordinate: the error Boids reports."""
+    return float((prediction - target).square().mean().sqrt())
+
+
 def free_rollout(model, positions, velocities, rounds):
     """Differentiable rollout. Topology always follows the predicted positions."""
     ps, vs = [], []
