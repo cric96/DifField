@@ -9,7 +9,6 @@ every reported number use the hard program.
 
 import copy
 import math
-import time
 
 import torch
 
@@ -17,7 +16,7 @@ from diffield import with_mode
 
 from ...shared.artifacts import json_write, tensor_write
 from ...shared.randomness import rng
-from ...shared.training import frozen
+from ...shared.training import fit, frozen
 from .data import combine
 from .execution import central
 from .program import ELECTED, SAMPLE, HybridProgram, make_program
@@ -86,10 +85,6 @@ def component_norms(model):
     }
 
 
-def cpu_state(model):
-    return {k: v.detach().cpu().clone() for k, v in model.state_dict().items()}
-
-
 def scheduled_rate(rate, config, step, total):
     """Cosine decay from ``rate`` to ``final_rate_fraction * rate``."""
     final = rate * config.final_rate_fraction
@@ -123,33 +118,11 @@ def _train_job(directory, config, bank, norm, method, seed, penalty, budget, dev
     validation = [e.to(device) for e in bank["validation"]]
     full_batch = config.batch_size >= len(training)
     batch = combine(training) if full_batch else None
-    last_path = directory / "last.pt"
     rate = config.gnn_learning_rate if method == "gnn" else config.learning_rate
     optimizer = torch.optim.Adam(parameter_groups(model, rate, config))
-    if last_path.exists():
-        state = torch.load(last_path, weights_only=True, map_location="cpu")
-        model.load_state_dict(state["model"])
-        optimizer.load_state_dict(state["optimizer"])
-    else:
-        budget.check()
-        scores = validate(model, validation, norm, penalty, config.batch_size)
-        score = scores["objective"]
-        state = {
-            "step": 0,
-            "model": cpu_state(model),
-            "best_model": cpu_state(model),
-            "best_score": score,
-            "selected_update": 0,
-            "history": [{"step": 0, **history_row(scores)}],
-            "seconds": 0.0,
-            "complete": False,
-            "optimizer": optimizer.state_dict(),
-        }
-        tensor_write(last_path, state)
     total = config.updates
-    for step in range(state["step"] + 1, total + 1):
-        budget.check()
-        started = time.perf_counter()
+
+    def update(step):
         if full_batch:
             indices, episode = None, batch
         else:
@@ -182,45 +155,47 @@ def _train_job(directory, config, bank, norm, method, seed, penalty, budget, dev
             with torch.no_grad():
                 model.metric.log_weights.clamp_(-8, 8)
                 model.strength.weights.clamp_(-8, 8)
-        if step % config.validate_every == 0 or step == total:
-            scores = validate(model, validation, norm, penalty, config.batch_size)
-            score = scores["objective"]
-            if not torch.isfinite(torch.tensor(score)):
-                raise FloatingPointError("Nonfinite hard validation loss")
-            row.update(history_row(scores))
-            if score < state["best_score"]:
-                state.update(
-                    best_score=score,
-                    best_model=cpu_state(model),
-                    selected_update=step,
-                )
-        state.update(step=step, model=cpu_state(model), complete=False)
-        state["optimizer"] = optimizer.state_dict()
-        state["history"].append(row)
-        state["seconds"] += time.perf_counter() - started
-        tensor_write(last_path, state)
-    state["complete"] = True
-    tensor_write(last_path, state)
+        return row
+
+    def scored():
+        scores = validate(model, validation, norm, penalty, config.batch_size)
+        return scores["objective"], history_row(scores)
+
+    state = fit(
+        model,
+        optimizer,
+        update,
+        scored,
+        updates=total,
+        validate_every=config.validate_every,
+        last=directory / "last.pt",
+        budget=budget,
+    )
     checkpoint = {
         "method": method,
         "seed": seed,
         "lambda": penalty,
         "normalization": norm,
-        "model": state["best_model"],
-        "selected_update": state["selected_update"],
-        "validation_hard": state["best_score"],
+        "model": state.best_model,
+        "selected_update": state.selected_update,
+        "validation_hard": state.best_score,
         "completed_updates": total,
     }
     tensor_write(directory / "best.pt", checkpoint)
-    json_write(
-        directory / "training.json",
-        {
-            k: state[k]
-            for k in ("step", "best_score", "selected_update", "history", "seconds", "complete")
-        },
-    )
-    model.load_state_dict(state["best_model"])
+    json_write(directory / "training.json", training_record(state))
     return model
+
+
+def training_record(state):
+    """The training.json of a job: its history starts with the untrained model, as step 0."""
+    return {
+        "step": state.step,
+        "best_score": state.best_score,
+        "selected_update": state.selected_update,
+        "history": [{"step": 0, **state.initial}, *state.history],
+        "seconds": state.seconds,
+        "complete": state.complete,
+    }
 
 
 def sensitivity(model, episode, norm, penalty, config, *, step=0.15):
