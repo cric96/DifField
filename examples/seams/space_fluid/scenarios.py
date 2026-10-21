@@ -29,8 +29,6 @@ from .report import episode_rows, export, fault_windows, method_color
 from .training import checkpoint_directory, load_method, objective, train_job
 
 METHODS = ("fixed-combined", *LEARNERS)
-FAULT_FAMILIES = ("gaussian", "ring")  # one training family, one held out
-FAULT_EPISODES = 2
 NAMES = {
     "fixed-combined": "initial configuration",
     "parametric": "parametric",
@@ -73,7 +71,7 @@ def specs(config, scenario):
         yield {"panel": "cross", "test": test, "family": family, "index": index,
                "condition": "clean", "executor": "batched"}  # fmt: skip
     for condition, family, index in itertools.product(
-        RUNTIME_CONDITIONS, FAULT_FAMILIES, range(FAULT_EPISODES)
+        RUNTIME_CONDITIONS, config.distributed_families, range(config.distributed_episodes)
     ):
         yield {"panel": "faults", "test": scenario, "family": family, "index": index,
                "condition": condition, "executor": ASYNC}  # fmt: skip

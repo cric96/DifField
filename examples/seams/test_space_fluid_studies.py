@@ -4,7 +4,7 @@ import pytest
 import torch
 
 from examples.seams.space_fluid import cluster_gnn, clusters, scenarios
-from examples.seams.space_fluid.config import protocol
+from examples.seams.space_fluid.config import RUNTIME_CONDITIONS, protocol
 from examples.shared.artifacts import json_write, read_json
 from examples.shared.campaign import Budget
 
@@ -132,3 +132,14 @@ def test_clusters_refuse_a_synchronous_run_whose_messages_differ_from_batched(
 
     with pytest.raises(AssertionError, match="Synchronous mismatch"):
         clusters.evaluate_one(job)
+
+
+@pytest.mark.parametrize("profile", ["smoke", "compact-cpu"])
+def test_scenarios_fault_panel_has_the_episodes_of_the_profile(profile):
+    config = protocol(profile)
+
+    faults = [s for s in scenarios.specs(config, "static") if s["panel"] == "faults"]
+
+    families = config.distributed_families
+    assert {s["family"] for s in faults} == set(families)
+    assert len(faults) == len(RUNTIME_CONDITIONS) * len(families) * config.distributed_episodes
