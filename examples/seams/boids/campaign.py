@@ -5,8 +5,6 @@ from pathlib import Path
 
 import torch
 
-from diffield.sim import normalize_vectors
-
 from ...shared.artifacts import checksum, json_write, read_json, software, tensor_write
 from ...shared.campaign import (
     Budget,
@@ -29,8 +27,11 @@ from .dynamics import (
     Boids,
     dense_step,
     radius_edges,
+    swarm,
+    teacher,
 )
 from .learning import (
+    METHODS,
     RATES,
     REGIME,
     TUNING_SEED,
@@ -55,7 +56,7 @@ def configuration(profile):
         "version": 2,
         "profile": profile,
         "data_seed": 20260912,
-        "methods": ["oracle", "fixed", *VARIANTS],
+        "methods": list(METHODS),
         "seeds": [0] if smoke else list(range(5)),
         "updates": 2 if smoke else 500,
         "batch_size": 4,
@@ -94,8 +95,7 @@ def traces(config, split, count):
     result = []
     for i in range(count):
         generator = rng(config["data_seed"], "boids", split, i)
-        positions = torch.rand(config["nodes"], 2, generator=generator)
-        velocities = normalize_vectors(torch.randn(positions.shape, generator=generator)) * SPEED
+        positions, velocities = swarm(config["nodes"], generator)
         target_pos, target_vel = free_rollout(None, positions, velocities, config["rounds"])
         result.append(
             {
@@ -130,7 +130,7 @@ def initialize(out, config):
         )
     config = {
         **config,
-        "methods": ["oracle", "fixed", *VARIANTS],
+        "methods": list(METHODS),
         "physics": {**config["physics"], "teacher": list(TEACHER), "fixed": list(FIXED)},
     }
     provenance = software(SOURCES)
@@ -173,9 +173,7 @@ def diagnose(out, data, config, budget):
     path = out / "diagnostics.json"
     if path.exists():
         return read_json(path)
-    oracle = Boids()
-    with torch.no_grad():
-        oracle.log_weights.copy_(torch.tensor(TEACHER).log())
+    oracle = teacher()
     saturated, total, errors, curves = 0, 0, [], []
     for split in ("train", "validation"):
         for episode in data[split]:

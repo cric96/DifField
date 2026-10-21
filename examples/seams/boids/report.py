@@ -13,7 +13,6 @@ from ...shared.metrics import interval
 from .dynamics import TEACHER
 from .learning import REGIME, VARIANTS
 
-METHODS = ("oracle", "fixed", *VARIANTS)
 COLORS = {
     "oracle": "#222222",
     "fixed": "#888888",

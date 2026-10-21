@@ -72,3 +72,17 @@ class Boids(nn.Module):
         with context.round():
             acceleration = self.acceleration(positions, velocities)
         return integrate(positions, velocities, acceleration)
+
+
+def teacher():
+    """The DifField program with the weights of the teacher."""
+    model = Boids()
+    with torch.no_grad():
+        model.log_weights.copy_(torch.tensor(TEACHER).log())
+    return model.eval()
+
+
+def swarm(size, generator):
+    """``size`` agents placed uniformly in the unit square, heading anywhere at full speed."""
+    positions = torch.rand(size, 2, generator=generator)
+    return positions, normalize_vectors(torch.randn(positions.shape, generator=generator)) * SPEED

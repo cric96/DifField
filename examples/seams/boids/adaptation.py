@@ -19,11 +19,10 @@ from ...shared.artifacts import csv_write, json_write, read_json, software, tens
 from ...shared.metrics import recovery
 from ...shared.randomness import rng
 from .. import SOURCES
-from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges
-from .learning import VARIANTS, load_model
+from .dynamics import RADIUS, SEPARATION, SPEED, Boids, dense_step, radius_edges, swarm
+from .learning import METHODS, VARIANTS, load_model
 
 EVENTS = ("split", "crash", "join")
-METHODS = ("oracle", "fixed", *VARIANTS)
 CURVES = ("spread", "lcc", "speed", "polarization", "crowding", "nodes")
 
 
@@ -54,9 +53,7 @@ def initial_states(run, campaign, size, count):
         return [(e["key"], e["positions"], e["velocities"]) for e in test]
     states = []
     for i in range(count):
-        generator = rng(campaign["data_seed"], "boids-adapt", size, i)
-        positions = torch.rand(size, 2, generator=generator)
-        velocities = normalize_vectors(torch.randn(positions.shape, generator=generator)) * SPEED
+        positions, velocities = swarm(size, rng(campaign["data_seed"], "boids-adapt", size, i))
         states.append((f"boids-adapt-{size}-{i}", positions, velocities))
     return states
 

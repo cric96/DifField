@@ -13,6 +13,7 @@ from .dynamics import RADIUS, SPEED, Boids, dense_step, integrate, radius_edges
 
 # Historical RNG namespaces remain fixed to preserve initialization and minibatches.
 VARIANTS = ("parametric", "gnn32", "gnn64")
+METHODS = ("oracle", "fixed", *VARIANTS)  # the teacher replay, its untrained program, models
 # Every model learns from observed trajectories, under this name in paths and rows.
 REGIME = "observed"
 TUNING_SEED = 10001

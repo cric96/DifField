@@ -20,6 +20,7 @@ from examples.seams.boids.dynamics import (
     radius_edges,
 )
 from examples.seams.boids.learning import (
+    METHODS,
     GraphBoids,
     ObservedBatch,
     combine,
@@ -29,7 +30,7 @@ from examples.seams.boids.learning import (
     train_job,
     transitions,
 )
-from examples.seams.boids.report import METHODS, complete_panel, report
+from examples.seams.boids.report import complete_panel, report
 from examples.shared.artifacts import json_write, read_json, tensor_write
 from examples.shared.campaign import Budget, output_lock
 from examples.shared.metrics import interval

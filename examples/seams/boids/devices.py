@@ -23,7 +23,7 @@ from ...shared.randomness import seed_for
 from .. import SOURCES
 from .adaptation import CURVES, EVENTS, episode_metrics, events, initial_states, macrostate
 from .adaptation import configuration as adaptation_configuration
-from .dynamics import TEACHER, Boids, integrate, radius_edges
+from .dynamics import Boids, integrate, radius_edges, teacher
 from .learning import load_model
 
 RUNS = (("parametric", "sync"), ("parametric", "async"), ("oracle", "async"))
@@ -32,14 +32,6 @@ RUNS = (("parametric", "sync"), ("parametric", "async"), ("oracle", "async"))
 def configuration(profile):
     config = adaptation_configuration(profile)
     return {**config, "size": 64, "activation": 0.5, "seed": 0}
-
-
-def teacher_program():
-    """The teacher as a field program: the DifField model with the teacher's weights."""
-    model = Boids()
-    with torch.no_grad():
-        model.log_weights.copy_(torch.tensor(TEACHER).log())
-    return model.eval()
 
 
 def active_agents(generator, count, t, probability):
@@ -115,7 +107,7 @@ def sync_async_rmse(run):
     source = read_json(run / "manifest.json")["config"]
     states = initial_states(run, source, source["nodes"], source["test_episodes"])
     rounds = source["rounds"]
-    teacher = teacher_program()
+    reference = teacher()
 
     def rmse(a, b):
         return (a - b).square().mean((-2, -1)).sqrt().numpy()
@@ -124,8 +116,8 @@ def sync_async_rmse(run):
     for key, pos, vel in states:
         seed = seed_for(source["data_seed"], "boids-devices", key)
         references[key] = (
-            batched_rollout(teacher, pos, vel, rounds, 1.0, seed),
-            batched_rollout(teacher, pos, vel, rounds, 0.5, seed),
+            batched_rollout(reference, pos, vel, rounds, 1.0, seed),
+            batched_rollout(reference, pos, vel, rounds, 0.5, seed),
             seed,
         )
     curves = {
@@ -161,7 +153,7 @@ def episode(task):
     schedule = {config["events"][name]: perturb[name] for name in EVENTS}
     models = {
         "parametric": load_model(run, "parametric", config["seed"]),
-        "oracle": teacher_program(),
+        "oracle": teacher(),
     }
     seed = seed_for(source["data_seed"], "boids-devices", key)
     rows = []

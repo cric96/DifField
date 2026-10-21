@@ -3,11 +3,10 @@
 import pytest
 import torch
 
-from diffield.sim import normalize_vectors
 from examples.seams.boids.adaptation import configuration as boids_configuration
 from examples.seams.boids.adaptation import events, perturbed_rollout
-from examples.seams.boids.devices import batched_rollout, device_rollout, teacher_program
-from examples.seams.boids.dynamics import SPEED, Boids
+from examples.seams.boids.devices import batched_rollout, device_rollout
+from examples.seams.boids.dynamics import Boids, swarm, teacher
 from examples.seams.boids.learning import GraphBoids
 from examples.seams.channel_adaptation import campaign, configuration, run_seed
 from examples.shared.artifacts import read_json
@@ -60,9 +59,7 @@ def test_boids_events_are_deterministic_change_size_and_rollouts_stay_finite():
     config = boids_configuration("smoke")
     campaign = {"data_seed": 7, "nodes": 8}
     for size in (8, 16):
-        generator = torch.Generator().manual_seed(size)
-        p = torch.rand(size, 2, generator=generator)
-        v = normalize_vectors(torch.randn(p.shape, generator=generator)) * SPEED
+        p, v = swarm(size, torch.Generator().manual_seed(size))
         first, second = events(config, campaign, size, 0), events(config, campaign, size, 0)
         crashed = first["crash"](p, v)
         assert torch.equal(crashed[0], second["crash"](p, v)[0])
@@ -81,18 +78,12 @@ def test_boids_events_are_deterministic_change_size_and_rollouts_stay_finite():
             assert torch.isfinite(p_end).all() and torch.isfinite(v_end).all()
 
 
-def swarm(size, seed=0):
-    generator = torch.Generator().manual_seed(seed)
-    p = torch.rand(size, 2, generator=generator)
-    return p, normalize_vectors(torch.randn(p.shape, generator=generator)) * SPEED
-
-
 def test_boids_on_synchronous_devices_reproduce_the_batched_rollout_through_events():
     config = boids_configuration("smoke")
-    p, v = swarm(16)
+    p, v = swarm(16, torch.Generator().manual_seed(0))
     perturb = events(config, {"data_seed": 7, "nodes": 16}, 16, 0)
     schedule = {config["events"][name]: perturb[name] for name in ("split", "crash", "join")}
-    model = teacher_program()
+    model = teacher()
     _, batched, (p_batched, _) = perturbed_rollout(model, p, v, config["rounds"], schedule)
     status, devices, (p_devices, _) = device_rollout(model, p, v, config["rounds"], schedule)
     assert status == "complete"
@@ -101,7 +92,7 @@ def test_boids_on_synchronous_devices_reproduce_the_batched_rollout_through_even
 
 
 def test_asynchronous_devices_are_reproducible_and_skip_rounds():
-    p, v = swarm(12, seed=1)
+    p, v = swarm(12, torch.Generator().manual_seed(1))
     runs = [device_rollout(Boids(), p, v, 20, {}, activation=0.5, seed=3) for _ in range(2)]
     (status, curves, (p_end, _)), (_, _, (p_again, _)) = runs
     assert status == "complete"
@@ -112,12 +103,12 @@ def test_asynchronous_devices_are_reproducible_and_skip_rounds():
 
 def test_asynchronous_devices_repeat_their_activations_through_events_for_a_seed():
     config = boids_configuration("smoke")
-    p, v = swarm(16)
+    p, v = swarm(16, torch.Generator().manual_seed(0))
     perturb = events(config, {"data_seed": 7, "nodes": 16}, 16, 0)
     schedule = {config["events"][name]: perturb[name] for name in ("split", "crash", "join")}
 
     status, curves, (p_end, _) = device_rollout(
-        teacher_program(), p, v, config["rounds"], schedule, activation=0.5, seed=3
+        teacher(), p, v, config["rounds"], schedule, activation=0.5, seed=3
     )
 
     # Recorded values: the seed fixes every activation, before and after the population changes.
@@ -128,9 +119,9 @@ def test_asynchronous_devices_repeat_their_activations_through_events_for_a_seed
 
 
 def test_batched_asynchronous_rollout_matches_the_one_on_devices():
-    p, v = swarm(12, seed=1)
+    p, v = swarm(12, torch.Generator().manual_seed(1))
 
-    _, _, (p_devices, _) = device_rollout(teacher_program(), p, v, 20, {}, activation=0.5, seed=3)
-    batched = batched_rollout(teacher_program(), p, v, 20, 0.5, seed=3)
+    _, _, (p_devices, _) = device_rollout(teacher(), p, v, 20, {}, activation=0.5, seed=3)
+    batched = batched_rollout(teacher(), p, v, 20, 0.5, seed=3)
 
     torch.testing.assert_close(batched[-1], p_devices)
