@@ -47,8 +47,8 @@ from .boids.learning import (
 )
 from .channel_adaptation import run_seed
 from .space_fluid import clusters
-from .space_fluid.config import protocol
-from .space_fluid.execution import central
+from .space_fluid.config import ASYNC, protocol
+from .space_fluid.execution import central, on_devices
 from .space_fluid.program import ELECTED
 from .space_fluid.training import load_method
 
@@ -660,8 +660,8 @@ def regions_snapshots(axes, root, scenario, index):
     its regions have re-elected their leaders."""
     config = protocol(read_json(root / "manifest.json")["profile"])
     model = scr_program(root, scenario, "parametric")
-    episode = clusters.leader_crash(config, index, model, 0.5, moving=scenario == "moving")
-    trace = clusters.run(episode, model, 0.5, config)
+    episode = clusters.leader_crash(config, index, model, ASYNC, moving=scenario == "moving")
+    trace = on_devices(episode, model, ASYNC, config.data_seed)
     name = f"distributed-async-0.5-crash-4-0.3-{index}.json"
     ari = read_json(root / scenario / "episodes/parametric/seed0" / name)["curves"]["ari"]
     truth, fault = clusters.truth_labels(episode), episode.fault_at

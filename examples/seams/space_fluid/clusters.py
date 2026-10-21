@@ -34,7 +34,7 @@ from .. import SOURCES
 from . import cluster_gnn
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
 from .data import RegionEpisode, faults, topology
-from .execution import central, decentralized, equivalence
+from .execution import SAME_REGIONS, execute, on_devices
 from .metrics import fragmentation
 from .program import ELECTED, LEADER
 from .report import export, method_color
@@ -145,25 +145,16 @@ def cluster_episode(
 
 
 @torch.no_grad()
-def leader_crash(config, index, model, probability, *, moving=False):
+def leader_crash(config, index, model, executor, *, moving=False):
     """The crash episode in which the leaders elected just before the fault crash for good.
 
     Rounds before the fault do not depend on which devices crash, so a first run of the
     same episode and schedule tells the leaders, and the episode is rebuilt around them.
     """
     episode = cluster_episode(config, "test", index, condition="crash", moving=moving)
-    trace = run(episode, model, probability, config)
+    trace = on_devices(episode, model, executor, config.data_seed)
     leaders = (trace.fields[episode.fault_at - 1, :, ELECTED] > 0.5).nonzero().flatten()
     return cluster_episode(config, "test", index, condition="crash", moving=moving, crashed=leaders)
-
-
-def run(episode, model, probability, config):
-    return decentralized(
-        episode,
-        model,
-        activation_probability=probability,
-        seed=seed_for(config.data_seed, episode.key, "schedule"),
-    )
 
 
 def truth_labels(episode):
@@ -367,18 +358,13 @@ def evaluate_one(job):
             _MODELS[key] = load_method(out, method, seed, norm)
         model = _MODELS[key]
         with torch.no_grad():
-            if spec["executor"] == "batched":
-                trace = central(episode, model)
-            else:
-                probability = 1.0 if spec["executor"] == "sync" else 0.5
-                if spec["condition"] == "crash":
-                    episode = leader_crash(config, spec["index"], model, probability,
-                                           moving=spec["moving"])  # fmt: skip
-                trace = run(episode, model, probability, config)
-                if probability == 1.0:
-                    check = equivalence(central(episode, model), trace)
-                    if not (check["identifiers_equal"] and check["values_close"]):
-                        raise AssertionError(f"Synchronous mismatch: {check}")
+            executor = spec["executor"]
+            if executor != "batched" and spec["condition"] == "crash":
+                episode = leader_crash(config, spec["index"], model, executor,
+                                       moving=spec["moving"])  # fmt: skip
+            trace, check = execute(
+                episode, model, executor, config.data_seed, required=SAME_REGIONS
+            )
         labels, elected = trace.leaders, trace.fields[..., ELECTED]
     metrics, curves = cluster_metrics(episode, labels, elected)
     json_write(
@@ -628,12 +614,7 @@ def animate(out, config, condition, scenario, index=0):
     traces = {}
     for name in names:
         model = load_method(out, name, 0, norm)
-        traces[name] = decentralized(
-            episode,
-            model,
-            activation_probability=0.5,
-            seed=seed_for(config.data_seed, episode.key, "schedule"),
-        )
+        traces[name] = on_devices(episode, model, ASYNC, config.data_seed)
     truth = truth_labels(episode)
     x, y = episode.positions.T.numpy()
     fig, axes = plt.subplots(1, 1 + len(names), figsize=(2.6 * (1 + len(names)), 3.1))

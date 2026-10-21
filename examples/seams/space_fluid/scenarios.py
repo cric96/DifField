@@ -20,11 +20,10 @@ import torch
 from ...shared.artifacts import json_write, read_json, software
 from ...shared.campaign import Budget, deterministic, open_run, output_lock, resumable
 from ...shared.metrics import interval, interval_cell
-from ...shared.randomness import seed_for
 from .. import SOURCES
 from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIES, protocol
 from .data import make_episode, normalization, training_bank
-from .execution import central, decentralized, equivalence
+from .execution import SAME_REGIONS, execute
 from .metrics import summarize
 from .report import export, method_color
 from .training import checkpoint_directory, load_method, objective, train_job
@@ -108,20 +107,8 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
             config, "test", spec["family"], spec["index"], condition=spec["condition"],
             static=spec["test"] == "static",
         )  # fmt: skip
-        check = None
-        if spec["executor"] == "batched":
-            trace = central(episode, model)
-        else:
-            trace = decentralized(
-                episode,
-                model,
-                activation_probability=1.0 if spec["executor"] == "sync" else 0.5,
-                seed=seed_for(config.data_seed, episode.key, "schedule"),
-            )
-            if spec["executor"] == "sync":
-                check = equivalence(central(episode, model), trace)
-                if not (check["identifiers_equal"] and check["values_close"]):
-                    raise AssertionError(f"Synchronous mismatch: {check}")
+        executor = spec["executor"]
+        trace, check = execute(episode, model, executor, config.data_seed, required=SAME_REGIONS)
         scale = norms[spec["test"]]["scale"]
         metrics, curves = summarize(episode, trace, scale, config)
         metrics["objective"] = float(objective(episode, trace, scale, config.main_lambda))

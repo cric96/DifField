@@ -20,7 +20,7 @@ from ...shared.randomness import seed_for
 from .. import SOURCES
 from .config import LEARNERS, TEST_FAMILIES, TRAIN_FAMILIES
 from .data import RegionEpisode, combine, make_episode, normalization, training_bank
-from .execution import central, decentralized, equivalence, kmeans
+from .execution import SAME_RUN, central, decentralized, equivalence, execute, kmeans
 from .insights import insights
 from .metrics import summarize
 from .plan import (
@@ -129,9 +129,7 @@ def timing(out, config, bank, norm, budget):
         budget.check()
         distributed = decentralized(pilot, model)
     check = equivalence(batched, distributed)
-    if not all(
-        check[k] for k in ("identifiers_equal", "values_close", "elections_equal", "traffic_equal")
-    ):
+    if not all(check[k] for k in SAME_RUN):
         raise AssertionError(f"Timing pilot failed equivalence: {check}")
     training_jobs = (2 * len(config.lambdas) + 1) * len(config.seeds)
     json_write(
@@ -239,31 +237,8 @@ def evaluate(out, config, norm, budget):
                 check = None
                 if model is None:
                     trace = kmeans(episode, method["k"], norm, seed_for(config.data_seed, "kmeans"))
-                elif spec["executor"] == "batched":
-                    trace = central(episode, model)
                 else:
-                    probability = (
-                        1.0 if spec["executor"] == "sync" else float(spec["executor"].split("-")[1])
-                    )
-                    trace = decentralized(
-                        episode,
-                        model,
-                        activation_probability=probability,
-                        seed=seed_for(config.data_seed, episode.key, "schedule"),
-                    )
-                    if probability == 1.0:
-                        expected = central(episode, model)
-                        check = equivalence(expected, trace)
-                        if not all(
-                            check[k]
-                            for k in (
-                                "identifiers_equal",
-                                "values_close",
-                                "elections_equal",
-                                "traffic_equal",
-                            )
-                        ):
-                            raise AssertionError(f"Synchronous mismatch: {check}")  # noqa: TRY301 -- record the failed job below
+                    trace, check = execute(episode, model, spec["executor"], config.data_seed)
                 metrics, curves = summarize(episode, trace, norm["scale"], config)
             if save_replay(spec, seed):
                 tensor_write(

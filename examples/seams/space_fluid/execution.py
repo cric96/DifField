@@ -11,7 +11,13 @@ from threadpoolctl import threadpool_limits
 from diffield import AggregateContext
 
 from ...shared.devices import DeviceNetwork, nbytes
+from ...shared.randomness import seed_for
 from .program import DISTANCE, ELECTED, LEADER, OUTPUT_DIM, SAMPLE, TIMESTAMP
+
+# What a synchronous run on devices must share with the batched run: the regions, or also the
+# elections and every message.
+SAME_REGIONS = ("identifiers_equal", "values_close")
+SAME_RUN = (*SAME_REGIONS, "elections_equal", "traffic_equal")
 
 
 @dataclass
@@ -120,6 +126,37 @@ def activated(episode, t, barrier, probability, generator):
         for node in order
         if episode.active[t, node] and float(torch.rand((), generator=generator)) < probability
     ]
+
+
+def on_devices(episode, model, executor, data_seed):
+    """Run ``episode`` on devices, ``sync`` or ``async-<p>``, under the episode's own schedule."""
+    probability = 1.0 if executor == "sync" else float(executor.split("-")[1])
+    return decentralized(
+        episode,
+        model,
+        activation_probability=probability,
+        seed=seed_for(data_seed, episode.key, "schedule"),
+    )
+
+
+def execute(episode, model, executor, data_seed, *, required=SAME_RUN):
+    """The trace of ``episode`` under ``executor``, ``batched`` or on devices.
+
+    A synchronous run on devices also returns its comparison with the batched run, which
+    must pass every check in ``required``; otherwise the comparison is ``None``.
+
+    Raises:
+        AssertionError: The synchronous run differs from the batched one.
+    """
+    if executor == "batched":
+        return central(episode, model), None
+    trace = on_devices(episode, model, executor, data_seed)
+    if trace.executor != "sync":
+        return trace, None
+    check = equivalence(central(episode, model), trace)
+    if not all(check[k] for k in required):
+        raise AssertionError(f"Synchronous mismatch: {check}")
+    return trace, check
 
 
 def equivalence(expected, actual, tolerance=2e-6):
