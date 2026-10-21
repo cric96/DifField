@@ -9,3 +9,6 @@ wheels/
 # Virtual environments
 .venv
 generated/
+
+# pytest/hypothesis cache
+.hypothesis/

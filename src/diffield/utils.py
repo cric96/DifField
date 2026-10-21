@@ -13,7 +13,7 @@ def make_grid_graph(
     cols: int,
     *,
     connectivity: int = 4,
-    include_self_loops: bool = True,
+    include_self_loops: bool = False,
 ) -> tuple[Tensor, int]:
     """Build a 4-connected or 8-connected grid graph.
 
@@ -24,7 +24,11 @@ def make_grid_graph(
     connectivity : int
         Grid connectivity (4 for Manhattan, 8 for Chebyshev/chessboard).
     include_self_loops : bool
-        If ``True`` (default), every node has an edge to itself.
+        If ``True``, every node has an edge to itself.  Off by default: a
+        graph self-loop would carry the default edge weight of 1.0, which
+        misreports a device as being at range 1 from itself.  To fold a node's
+        own value into a reduction, pass ``include_self=True`` to
+        :func:`~diffield.dsl.primitives.gather`, which uses range 0 for it.
 
     Returns
     -------

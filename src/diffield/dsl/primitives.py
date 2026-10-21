@@ -2,22 +2,22 @@
 
 from __future__ import annotations
 
-import hashlib
-import inspect
+from contextlib import contextmanager
 from typing import TYPE_CHECKING
 
 import torch
 from torch import Tensor, nn
 
-if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
-
-    from .scattering import LinkField
-
 from ..constants import DEFAULT_TAU_BRANCH, DEFAULT_TAU_SOFT_AGGR
-from ..core import RoundContext, current_context, with_context
-from ..core.mode import get_default_mode
+from ..core import RoundContext, current_context, sub_context, with_context
+from ..core.alignment import SEP
+from ..core.mode import get_default_mode, get_default_tau
 from ..functional import field_where
+from .helpers import ensure_field
+from .scattering import LinkField, scatter
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Generator, Iterable
 
 
 class _LambdaModule(nn.Module):
@@ -34,40 +34,9 @@ class _LambdaModule(nn.Module):
         return self._fn()
 
 
-def _auto_name(kind: str, **kwargs: object) -> str:
-    """Generate a deterministic name from the caller's source location.
-
-    Walks up the stack skipping frames that belong to diffield internals
-    (e.g. ``_LambdaModule.forward`` when ``iterate`` is called inside a branch
-    lambda) so the name always reflects the user's source position.
-
-    Additional keyword arguments (e.g. ``aggr``) are folded into the hash so
-    that two calls on the same line with different parameters get distinct
-    names.
-
-    The identity of the calling code object is also included so that two
-    different lambdas on the same source line (as is common inside
-    ``branch``) produce distinct names.
-    """
-    frame = inspect.currentframe()
-    while frame is not None:
-        code = frame.f_code
-        if not code.co_filename.endswith("diffield/dsl/primitives.py"):
-            param_key = tuple(sorted(kwargs.items()))
-            code_id = id(code)
-            key = (
-                f"{code.co_filename}:{frame.f_lineno}:"
-                f"{code.co_name}:{code_id}:{param_key}"
-            )
-            short_hash = hashlib.sha256(key.encode()).hexdigest()[:8]
-            return f"{kind}_{short_hash}"
-        frame = frame.f_back
-    return f"{kind}_fallback"
-
-
 def iterate(
     init: Tensor,
-    fn: Callable[[Tensor, Tensor, RoundContext], Tensor] | Callable[[Tensor], Tensor],
+    fn: Callable[[Tensor], Tensor],
     *,
     name: str | None = None,
 ) -> Tensor:
@@ -77,14 +46,14 @@ def iterate(
     ``field.inf()``, scenario helpers, or any tensor with first dimension equal
     to the number of nodes.
 
-    Can be called as ``iterate(init, fn)`` for auto-naming or
-    ``iterate(init, fn, name="my_name")`` for explicit naming.
+    Each occurrence is identified by its position in the evaluation tree (see
+    :mod:`diffield.core.alignment`), so two calls never share state.  ``name``
+    is optional and labels the occurrence, which keeps its store key stable and
+    readable — ``iterate(..., name="dist")`` becomes ``/it:dist``.
     """
-    from ..layers import IterateLayer  # noqa: PLC0415
+    from ..layers import IterateLayer  # noqa: PLC0415 - dsl and layers import each other
 
-    resolved_name = name if name is not None else _auto_name("r")
-
-    return IterateLayer(init, fn, name=resolved_name)(torch.empty(0))
+    return IterateLayer(init, fn, name=name)(torch.empty(0))
 
 
 def gather(
@@ -101,21 +70,18 @@ def gather(
     The input must be a :class:`LinkField`, typically built with :func:`scatter`
     and optionally combined with arithmetic or :func:`scatter_range`.
 
-    When a tag is present, the source field is exported in the context and can
-    be overridden by runtime message overrides.
+    The gathered source field is exported in the context under this
+    occurrence's alignment path, where it can be overridden by runtime message
+    overrides.  ``tag`` is optional and labels the occurrence.
     """
-    from ..core import current_context  # noqa: PLC0415
-    from ..layers import GatherLayer  # noqa: PLC0415
+    from ..layers import GatherLayer  # noqa: PLC0415 - dsl and layers import each other
 
     ctx = current_context()
     effective_mode = mode if mode is not None else get_default_mode()
-    effective_tau = tau if tau is not None else DEFAULT_TAU_SOFT_AGGR
+    effective_tau = tau if tau is not None else get_default_tau(DEFAULT_TAU_SOFT_AGGR)
 
-    # Use provided tag or auto-generate one
-    if tag is not None:
-        expr.tag = tag
-    elif expr.tag is None:
-        expr.tag = _auto_name("h", aggr=aggr)
+    label = tag if tag is not None else expr.tag
+    expr.tag = ctx.align.key("gt", label)
 
     return GatherLayer(
         aggr=aggr,
@@ -126,23 +92,89 @@ def gather(
     )(expr, ctx=ctx, tag=expr.tag)
 
 
+def nbr(value: Tensor, *, default: float = 0.0, name: str | None = None) -> LinkField:
+    r"""Neighbours' value of *value* from their previous round (field-calculus ``nbr``).
+
+    The value travels as a state slot, so it is exchanged between independent
+    devices like any ``iterate`` state.  A neighbour that has not published yet
+    reads ``default``; a self link (``include_self``) reads the current value.
+    Each call is one exchanged field: bind it once and reuse it.
+    """
+    ctx = current_context()
+    value = ensure_field(value, ctx)
+    key = ctx.align.key("nbr", name)
+    published = ctx.state.get_or_init(torch.full_like(value, default), name=key)
+    ctx.state.update(value, name=key)
+
+    def evaluate(_ctx: RoundContext, edge_index: Tensor, _weight: Tensor | None) -> Tensor:
+        source, target = edge_index
+        own = (source == target).view(-1, *[1] * (value.dim() - 1))
+        return torch.where(own, value[source], published[source])
+
+    return LinkField(evaluate, _repr=f"nbr({name or 'field'})")
+
+
+@contextmanager
+def aligned_on(
+    key: Tensor,
+    *,
+    weight: Tensor | None = None,
+    name: str | None = None,
+    mode: str | None = None,
+) -> Generator[None, None, None]:
+    r"""Partition the enclosed computation by *key* (ScaFi ``align``, FCPP ``split``,
+    Collektive ``alignedOn``).
+
+    Devices publish their key; inside the block a link ``j -> i`` exists only
+    when ``j``'s published key equals ``i``'s current key, so each partition
+    computes independently, centrally or on devices.  A device whose key
+    changed restarts the enclosed blocks.  In soft mode a ``weight`` (e.g.
+    membership confidence) makes :func:`~diffield.dsl.scattering.membership`
+    equal ``w_j * w_i`` for additive blocks; the partition itself stays hard.
+    """
+    ctx = current_context()
+    key = ensure_field(key, ctx).detach().float()
+    soft = weight is not None and (mode or get_default_mode()) == "soft"
+    own = ensure_field(weight, ctx) if soft and weight is not None else torch.ones_like(key)
+    with ctx.align.scope("aligned_on", name) as slot:
+        published = ctx.state.get_or_init(key.new_full((ctx.num_nodes, 2), float("nan")), name=slot)
+        ctx.state.update(torch.stack((key, own), -1), name=slot)
+        source, target = ctx.edge_index
+        same = published[source, 0] == key[target]
+        region = sub_context(
+            ctx,
+            ctx.edge_index[:, same],
+            ctx.edge_weight[same],
+            None if ctx.message_weight is None else ctx.message_weight[same],
+        )
+        if soft:
+            link = scatter(published[:, 1]) * own
+            region.membership = link if ctx.membership is None else ctx.membership * link
+        with with_context(region):
+            yield
+    changed = (key != published[:, 0]) & ~published[:, 0].isnan()
+    inner = [k for k in ctx.state.keys() if k.startswith(slot + SEP)]  # noqa: SIM118
+    ctx.state.restrict(inner, keep=~changed, mode="hard")
+
+
 def branch(
     cond: Tensor,
     if_true: Callable[[], Tensor],
     if_false: Callable[[], Tensor],
-    branch_name: str = "branch",
+    branch_name: str | None = None,
     reset_states: dict[str, Tensor] | None = None,
     mode: str | None = None,
     tau: float | None = None,
 ) -> Tensor:
-    r"""Domain restriction with edge partitioning and optional state reset.
+    r"""Domain restriction with edge partitioning.
 
-    Communication is restricted by masking edges per branch. Branch evaluations
-    share the same underlying state manager and are coordinated via
-    snapshot/restore semantics before merging. ``reset_states`` values must be
-    node field tensors.
+    Communication is restricted by masking edges per branch, and each partition
+    gets its own alignment frame so their persistent state is disjoint.  A node
+    that leaves a partition reads that partition's initializers when it returns,
+    matching field-calculus alignment, so ``reset_states`` is no longer needed
+    and is ignored.  ``branch_name`` optionally labels the occurrence.
     """
-    from ..layers import BranchLayer  # noqa: PLC0415
+    from ..layers import BranchLayer  # noqa: PLC0415 - dsl and layers import each other
 
     effective_mode = mode if mode is not None else get_default_mode()
     effective_tau = tau if tau is not None else DEFAULT_TAU_BRANCH
@@ -183,14 +215,17 @@ def const(value: float) -> Tensor:
 
 
 def mid() -> Tensor:
-    """Return tensor of node IDs [0, 1, ..., N-1] as float."""
+    """Return the device-identity field.
+
+    Normally ``[0, 1, ..., N-1]``.  A :class:`~diffield.core.device.DeviceContext`
+    holds only one device and its neighbours, so it reports the real network
+    ids it was given rather than its local slot numbering.
+    """
     ctx = current_context()
-    return torch.arange(
-        ctx.num_nodes, dtype=torch.float32, device=ctx.edge_index.device
-    )
+    return ctx.node_ids
 
 
-class field:  # noqa: N801
+class field:  # noqa: N801 - a namespace, read as field.of(...) in programs
     """Context-aware constructors for node field tensors."""
 
     @staticmethod
@@ -209,12 +244,13 @@ class field:  # noqa: N801
     def inf() -> Tensor:
         return const(float("inf"))
 
-    # TODO add description here
-
     @staticmethod
-    def with_overrides(
-        field: Tensor, overrides: Iterable[tuple[int, float]]
-    ) -> Tensor:
+    def with_overrides(field: Tensor, overrides: Iterable[tuple[int, float]]) -> Tensor:
+        """Set ``field[node] = value`` for each ``(node, value)`` pair, in place.
+
+        Returns:
+            The same tensor, for use in expressions.
+        """
         for node_id, value in overrides:
             field[node_id] = value
         return field

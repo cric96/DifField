@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Generator
 from contextlib import contextmanager
 from typing import TYPE_CHECKING
 

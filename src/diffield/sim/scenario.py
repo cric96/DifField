@@ -3,10 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, cast
-
-if TYPE_CHECKING:
-    from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING
 
 import torch
 
@@ -16,6 +13,9 @@ from ..pyg_backend import (
     maybe_make_data,
 )
 from ..utils import make_grid_graph
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Iterable
 
 
 def _resolve_static_edge_weight(
@@ -146,10 +146,12 @@ class GridScenario:
 
     def sync_context(self, round_ctx) -> None:
         """Push current topology into a round context before a DSL round."""
+        edge_weight = self.edge_weight
+        if not isinstance(edge_weight, torch.Tensor):  # assigned after construction
+            edge_weight = self.set_edge_weight(edge_weight)
         round_ctx.edge_index = self.edge_index
-        round_ctx.edge_weight = self.edge_weight
-        ew = cast("torch.Tensor | None", self.edge_weight)
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
+        round_ctx.edge_weight = edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, edge_weight)
 
 
 @dataclass
@@ -201,10 +203,12 @@ class FullyConnectedScenario:
 
     def sync_context(self, round_ctx) -> None:
         """Push current topology into a round context before a DSL round."""
+        edge_weight = self.edge_weight
+        if not isinstance(edge_weight, torch.Tensor):  # assigned after construction
+            edge_weight = self.set_edge_weight(edge_weight)
         round_ctx.edge_index = self.edge_index
-        round_ctx.edge_weight = self.edge_weight
-        ew = cast("torch.Tensor | None", self.edge_weight)
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
+        round_ctx.edge_weight = edge_weight
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, edge_weight)
 
 
 @dataclass
@@ -266,10 +270,7 @@ class SpatialScenario:
             self.refresh_topology()
 
     def step_positions(
-        self,
-        velocities: torch.Tensor,
-        dt: float = 1.0,
-        refresh_topology: bool = True,
+        self, velocities: torch.Tensor, dt: float = 1.0, refresh_topology: bool = True
     ) -> None:
         if velocities.shape != self.positions.shape:
             raise ValueError("velocities shape mismatch")
@@ -308,8 +309,7 @@ class SpatialScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        ew = cast("torch.Tensor | None", self.edge_weight)
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
 
 
 def build_spatial_graph(
@@ -476,10 +476,7 @@ class RelaxedRadiusScenario:
             self.refresh_topology()
 
     def step_positions(
-        self,
-        velocities: torch.Tensor,
-        dt: float = 1.0,
-        refresh_topology: bool = True,
+        self, velocities: torch.Tensor, dt: float = 1.0, refresh_topology: bool = True
     ) -> None:
         if velocities.shape != self.positions.shape:
             raise ValueError("velocities shape mismatch")
@@ -501,8 +498,7 @@ class RelaxedRadiusScenario:
         """Push current topology into a round context before a DSL round."""
         round_ctx.edge_index = self.edge_index
         round_ctx.edge_weight = self.edge_weight
-        ew = cast("torch.Tensor | None", self.edge_weight)
-        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, ew)
+        round_ctx.data = maybe_make_data(self.edge_index, self.num_nodes, self.edge_weight)
 
 
 def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:
@@ -512,7 +508,7 @@ def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:
     src = edge_index[0]
     tgt = edge_index[1]
     neighbors = [set() for _ in range(num_nodes)]
-    for s, t in zip(src.tolist(), tgt.tolist(), strict=False):
+    for s, t in zip(src.tolist(), tgt.tolist(), strict=True):
         neighbors[s].add(t)
         neighbors[t].add(s)
 
@@ -540,10 +536,7 @@ def _graph_stats(edge_index: torch.Tensor, num_nodes: int) -> dict[str, float]:
 
 
 def _merge_edge_sets(
-    radius_edges: torch.Tensor,
-    knn_edges: torch.Tensor,
-    num_nodes: int,
-    device: torch.device,
+    radius_edges: torch.Tensor, knn_edges: torch.Tensor, num_nodes: int, device: torch.device
 ) -> torch.Tensor:
     if radius_edges.numel() == 0 and knn_edges.numel() == 0:
         return torch.zeros((2, 0), dtype=torch.long, device=device)
@@ -581,11 +574,8 @@ def build_well_connected_init_graph(
     if num_nodes == 0:
         empty_edges = torch.zeros((2, 0), dtype=torch.long, device=positions.device)
         empty_weights = torch.zeros((0,), dtype=torch.float32, device=positions.device)
-        return empty_edges, empty_weights, {
-            "num_edges": 0.0,
-            "min_degree": 0.0,
-            "num_components": 0.0,
-        }
+        empty_stats = {"num_edges": 0.0, "min_degree": 0.0, "num_components": 0.0}
+        return empty_edges, empty_weights, empty_stats
 
     radius_edges, _ = build_spatial_graph(
         positions,

@@ -20,12 +20,25 @@ def set_default_mode(mode: str) -> None:
     _thread_local.default_mode = mode
 
 
+def get_default_tau(fallback: float) -> float:
+    """Return the temperature set by :func:`with_mode`, or *fallback*.
+
+    Used by aggregation-style relaxations (lower is sharper); conditional
+    selections (``mux``, ``branch``) keep their own opposite convention.
+    """
+    tau = getattr(_thread_local, "default_tau", None)
+    return fallback if tau is None else tau
+
+
 @contextmanager
-def with_mode(mode: str):
-    """Temporarily override the default mode inside a context block."""
-    prev = get_default_mode()
+def with_mode(mode: str, tau: float | None = None):
+    """Temporarily override the default mode (and relaxation temperature)."""
+    prev_mode = get_default_mode()
+    prev_tau = getattr(_thread_local, "default_tau", None)
     set_default_mode(mode)
+    _thread_local.default_tau = tau
     try:
         yield
     finally:
-        _thread_local.default_mode = prev
+        _thread_local.default_mode = prev_mode
+        _thread_local.default_tau = prev_tau

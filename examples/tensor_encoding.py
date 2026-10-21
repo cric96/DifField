@@ -17,11 +17,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-import torch  # noqa: E402
+import torch
 
-from diffield import AggregateContext  # noqa: E402
-from diffield.core import current_context  # noqa: E402
-from diffield.dsl import (  # noqa: E402
+from diffield import AggregateContext
+from diffield.core import current_context
+from diffield.dsl import (
     gather_avg,
     gather_max,
     gather_min,

@@ -4,18 +4,20 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from .primitives import field, gather
+
 if TYPE_CHECKING:
     from torch import Tensor
 
     from .scattering import LinkField
-
-from .primitives import gather
 
 __all__ = [
     "gather_avg",
     "gather_max",
     "gather_min",
     "gather_sum",
+    "has_neighbors",
+    "nbr_count",
 ]
 
 
@@ -97,3 +99,15 @@ def gather_avg(
         fill_value=fill_value,
         tag=tag,
     )
+
+
+def nbr_count() -> Tensor:
+    """Count each node's neighbours (the in-degree, as a float field)."""
+    from .scattering import scatter  # noqa: PLC0415  (circular import)
+
+    return gather_sum(scatter(field.ones()), fill_value=0.0)
+
+
+def has_neighbors() -> Tensor:
+    """Boolean field: ``True`` where a node has at least one neighbour."""
+    return nbr_count() > 0

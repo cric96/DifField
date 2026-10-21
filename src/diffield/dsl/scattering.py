@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 import torch
 from torch import Tensor
 
+from ..core import RoundContext, context_stack, current_context
+from .helpers import edge_sources_targets, ensure_field
+
 if TYPE_CHECKING:
     from collections.abc import Callable
-
-from ..core import RoundContext, current_context
-from .helpers import edge_sources_targets, ensure_field
 
 
 class LinkField:
@@ -51,9 +51,7 @@ class LinkField:
         return f"<{base}>"
 
     def full_repr(self, max_nodes: int = 8) -> str:
-        """Evaluate in current context and return a visual grid representation."""
-        from ..core import context_stack  # noqa: PLC0415
-
+        """Evaluate in the current context and return a grid of the messages."""
         if not context_stack():
             return f"<{self.__str__()} (no active context for evaluation)>"
 
@@ -291,6 +289,21 @@ class LinkField:
             _repr=f"unsqueeze({self}, {dim})",
         )
 
+    def map(self, fn: Callable[[Tensor], Tensor], label: str = "map") -> LinkField:
+        """Apply *fn* pointwise to this expression, staying in the link domain.
+
+        The function sees the edge-wise tensor, so a transform of a neighbour's
+        value is applied per message rather than per node.
+        """
+        return LinkField(
+            lambda ctx, edge_index, edge_weight: fn(
+                self.evaluate(
+                    ctx=ctx, edge_index=edge_index, edge_weight=edge_weight
+                )
+            ),
+            _repr=f"{label}({self})",
+        )
+
     def norm(self, dim: int = -1, keepdim: bool = False) -> LinkField:
         return LinkField(
             lambda ctx, edge_index, edge_weight: self.evaluate(
@@ -298,6 +311,15 @@ class LinkField:
             ).norm(dim=dim, keepdim=keepdim),
             _repr=f"norm({self})",
         )
+
+    def sum(self, dim: int = -1, keepdim: bool = False) -> LinkField:
+        return self.map(lambda t: t.sum(dim=dim, keepdim=keepdim), "sum")
+
+    def relu(self) -> LinkField:
+        return self.map(torch.relu, "relu")
+
+    def exp(self) -> LinkField:
+        return self.map(torch.exp, "exp")
 
 
 def as_scatter_expr(value: float | Tensor | LinkField) -> LinkField:
@@ -403,3 +425,57 @@ def scatter_range() -> LinkField:
         )
 
     return LinkField(evaluate, _repr="scatter_range()")
+
+
+def link_cat(exprs: list[LinkField | Tensor | float], dim: int = -1) -> LinkField:
+    """Concatenate link expressions along their feature dimension.
+
+    Scalar (per-edge) operands are promoted to a trailing feature axis, so a
+    cost and a payload can be packed into one message and reduced by a single
+    :func:`~diffield.dsl.primitives.gather`.
+    """
+    if not exprs:
+        raise ValueError("link_cat requires at least one expression")
+    parts = [as_scatter_expr(expr) for expr in exprs]
+
+    def evaluate(
+        ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor | None
+    ) -> Tensor:
+        values = [
+            part.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight)
+            for part in parts
+        ]
+        if dim == -1:
+            values = [
+                value.unsqueeze(-1) if value.dim() == 1 else value for value in values
+            ]
+        return torch.cat(values, dim=dim)
+
+    return LinkField(
+        evaluate, _repr="link_cat(" + ", ".join(str(part) for part in parts) + ")"
+    )
+
+
+def link_map(fn: Callable[..., Tensor], *operands: LinkField | Tensor | float) -> LinkField:
+    """Apply *fn* edge-wise to evaluated operands: ``fn(op_1[e], ..., op_n[e])``.
+
+    Lets an ordinary tensor function (e.g. a learned metric module) define a
+    link field from several neighbour expressions.
+    """
+    parts = [as_scatter_expr(operand) for operand in operands]
+
+    def evaluate(ctx: RoundContext, edge_index: Tensor, edge_weight: Tensor | None) -> Tensor:
+        return fn(
+            *(
+                part.evaluate(ctx=ctx, edge_index=edge_index, edge_weight=edge_weight)
+                for part in parts
+            )
+        )
+
+    return LinkField(evaluate, _repr=f"{getattr(fn, '__name__', type(fn).__name__)}(...)")
+
+
+def membership() -> LinkField:
+    """Soft region membership of each link: 1 outside a soft ``aligned_on``."""
+    ctx = current_context()
+    return ctx.membership if ctx.membership is not None else as_scatter_expr(1.0)

@@ -21,7 +21,6 @@ from diffield.dsl import (
 from .support import (
     ABS_TOL,
     GLOBAL_SYNC_ROUNDS,
-    GRADIENT_EXPORT,
     GRADIENT_STATE,
     ONE_NEIGHBOR,
     TWO_NEIGHBORS,
@@ -85,11 +84,11 @@ class TestDeviceContextBasic:
         )
 
         for round_index in range(GLOBAL_SYNC_ROUNDS):
-            neighbor_exports: dict[str, list[float] | torch.Tensor] | None = None
+            neighbor_exports = None
             if round_index > 0:
                 neighbor_exports = {
                     GRADIENT_STATE: [
-                        float(global_states[round_index - 1][upstream_neighbor_id].item())
+                        global_states[round_index - 1][upstream_neighbor_id].item()
                     ]
                 }
             with device.round(neighbor_exports=neighbor_exports):
@@ -153,11 +152,11 @@ class TestDeviceContextBasic:
         upstream_neighbor_id = 1
 
         for round_index in range(GLOBAL_SYNC_ROUNDS):
-            neighbor_exports: dict[str, list[float] | torch.Tensor] | None = None
+            neighbor_exports = None
             if round_index > 0:
                 neighbor_exports = {
-                    GRADIENT_EXPORT: [
-                        float(global_states[round_index - 1][upstream_neighbor_id].item())
+                    GRADIENT_STATE: [
+                        global_states[round_index - 1][upstream_neighbor_id].item()
                     ]
                 }
             with device.round(

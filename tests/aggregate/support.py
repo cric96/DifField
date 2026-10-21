@@ -5,10 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import torch
+from torch import Tensor, nn
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-from torch import Tensor, nn
 
 # ---------------------------------------------------------------------------
 # Tensor helpers

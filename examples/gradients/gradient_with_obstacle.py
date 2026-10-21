@@ -11,26 +11,30 @@ ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "examples"))
 
-import numpy as np  # noqa: E402
-import torch  # noqa: E402
+import numpy as np
+import torch
 
 try:
     import matplotlib.patches as mpatches
     import matplotlib.pyplot as plt
+    from shared.plotting import apply_paper_style
+
+    apply_paper_style()
 except ImportError:
     mpatches = None
     plt = None
 
-from shared.plotting import (  # noqa: E402
+from shared.plotting import (
     draw_markers,
     draw_obstacles,
     save_grid_simulation_gif,
     to_grid,
 )
+from shared.plotting.style import MUTED
 
-from diffield.dsl import field, gather_min, iterate, mux, scatter  # noqa: E402
-from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder  # noqa: E402
-from diffield.utils import get_device  # noqa: E402
+from diffield.dsl import field, gather_min, iterate, mux, scatter
+from diffield.sim import GridScenario, SimulationEngine, SnapshotRecorder
+from diffield.utils import get_device
 
 
 def parse_args():
@@ -126,7 +130,6 @@ def plot_setup(
     for col in range(cols + 1):
         ax.axvline(col - 0.5, color="white", lw=0.4)
 
-    ax.set_title("Grid Layout - Source ▲  Wall ■", fontsize=12)
     ax.set_xlabel("Column")
     ax.set_ylabel("Row")
     ax.legend(
@@ -164,7 +167,6 @@ def plot_final_field(
     draw_obstacles(ax, obstacle, rows, cols)
     draw_markers(ax, src_pos, ms=14)
 
-    ax.set_title("Distance Field", fontsize=13)
     plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
     # Annotate finite cells with distance values
@@ -204,7 +206,7 @@ def plot_evolution(
     snapshot_steps = sorted(records.keys())
     field_key = "dist"
 
-    fig, axes = plt.subplots(1, len(snapshot_steps), figsize=(3.5 * len(snapshot_steps), 3.5))
+    _fig, axes = plt.subplots(1, len(snapshot_steps), figsize=(3.5 * len(snapshot_steps), 3.5))
     if len(snapshot_steps) == 1:
         axes = [axes]
 
@@ -214,13 +216,15 @@ def plot_evolution(
         im = ax.imshow(grid, cmap="viridis", interpolation="nearest")
         draw_obstacles(ax, obstacle, rows, cols)
         draw_markers(ax, src_pos, ms=10)
-        ax.set_title("Gradient Evolution", fontsize=10)
+        ax.text(
+            0.03, 0.96, f"t={step}",
+            transform=ax.transAxes, fontsize=9, color=MUTED, ha="left", va="top",
+        )
         ax.set_xticks([])
         ax.set_yticks([])
         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
 
-    fig.suptitle("Gradient Evolution with Obstacles", fontsize=13, y=0.98)
-    plt.tight_layout(rect=(0, 0, 1, 0.95))
+    plt.tight_layout()
     output_path = f"{viz_prefix}_evolution.png"
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     plt.savefig(output_path, dpi=150)

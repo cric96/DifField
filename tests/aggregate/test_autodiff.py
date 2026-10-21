@@ -44,7 +44,6 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([w])
-        assert w.grad is not None
         assert w.grad.item() > 0
 
     def test_soft_gradient_differentiability(self, triangle_topology):
@@ -61,7 +60,6 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([w])
-        assert w.grad is not None
         assert w.grad.item() != 0.0
 
     def test_gradient_cast_differentiability(self, line_ctx):
@@ -119,7 +117,6 @@ class TestDifferentiability:
         loss.backward()
 
         assert_finite_gradients([value])
-        assert value.grad is not None
         assert value.grad.item() > 0.0
 
 

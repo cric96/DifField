@@ -6,9 +6,6 @@ from typing import TYPE_CHECKING
 
 from diffield.dsl import DeviceContext, branch, gather_max, gather_sum, iterate, scatter
 
-if TYPE_CHECKING:
-    import torch
-
 from .support import (
     FALSE_BRANCH_VALUE,
     ONE_NEIGHBOR,
@@ -23,12 +20,15 @@ from .support import (
     run_branched_iterate,
 )
 
+if TYPE_CHECKING:
+    import torch
+
 
 class TestDeviceContextBranching:
     def test_decentralized_branching(self):
-        dev_a = DeviceContext(num_neighbors=ONE_NEIGHBOR)
-        dev_b = DeviceContext(num_neighbors=TWO_NEIGHBORS)
-        dev_c = DeviceContext(num_neighbors=ONE_NEIGHBOR)
+        dev_a = DeviceContext(num_neighbors=ONE_NEIGHBOR, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=TWO_NEIGHBORS, self_loop=True)
+        dev_c = DeviceContext(num_neighbors=ONE_NEIGHBOR, self_loop=True)
 
         cond_a = dev_a.local_field(own=1.0, scatter=1.0)
         cond_b = dev_b.local_field(own=1.0, scatter=[1.0, 0.0])
@@ -80,7 +80,7 @@ class TestDeviceContextBranching:
         assert round_3 == (7.0, 7.0, 30.0)
 
     def test_decentralized_branch_with_auto_named_inner_iterate(self):
-        device = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        device = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
         condition = device.local_field(own=1.0, scatter=1.0)
 
         def run_with_inner_branch(neighbor_values):
@@ -118,8 +118,8 @@ class TestDeviceContextBranching:
         assert inner_3 > inner_2
 
     def test_decentralized_branch_incompatible_fields_exposes_errors(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         cond_a = dev_a.local_field(own=1.0, scatter=1.0)
         cond_b = dev_b.local_field(own=0.0, scatter=1.0)
@@ -151,8 +151,8 @@ class TestDeviceContextBranching:
         assert round_2[1] > POLLUTED_INIT
 
     def test_decentralized_branch_with_different_scatter_aggregations(self):
-        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS)
-        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS)
+        dev_a = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
+        dev_b = DeviceContext(num_neighbors=THREE_NEIGHBORS, self_loop=True)
 
         cond_a = dev_a.local_field(own=1.0, scatter=1.0)
         cond_b = dev_b.local_field(own=0.0, scatter=1.0)

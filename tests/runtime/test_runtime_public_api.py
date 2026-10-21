@@ -4,16 +4,10 @@ from __future__ import annotations
 
 import pytest
 import torch
+from torch_geometric.data import Data
 
-from diffield.dsl import (
-    field,
-    gather_min,
-    gather_sum,
-    gradient,
-    iterate,
-    mux,
-    scatter,
-)
+from diffield import AggregateContext
+from diffield.dsl import field, gather_min, gather_sum, gradient, iterate, mux, scatter
 from diffield.sim import (
     EventSchedule,
     FullyConnectedScenario,
@@ -214,3 +208,22 @@ class TestSpatialGraphHelpers:
 
     def test_get_device_respects_explicit_cpu_choice(self):
         assert str(get_device("cpu")) == "cpu"
+
+
+class TestAggregateContextFromData:
+    def test_aggregate_context_rejects_data_without_edges(self):
+        data = Data(num_nodes=3)
+
+        with pytest.raises(ValueError, match="edge_index"):
+            AggregateContext(data)
+
+
+class TestScenarioEdgeWeight:
+    def test_grid_scenario_sync_context_resolves_a_weight_assigned_later(self):
+        scenario = GridScenario(2, 2, connectivity=4)
+        ctx = AggregateContext(scenario.edge_index, scenario.num_nodes)
+        scenario.edge_weight = 2.0
+
+        scenario.sync_context(ctx._ctx)
+
+        assert torch.equal(ctx._ctx.edge_weight, torch.full_like(ctx._ctx.edge_weight, 2.0))

@@ -58,7 +58,7 @@ def build_grid_edge_index(
     cols: int,
     *,
     connectivity: int = 4,
-    include_self_loops: bool = True,
+    include_self_loops: bool = False,
     device: torch.device | None = None,
 ) -> Tensor:
     """Build grid edges using PyG utilities and connectivity filtering."""

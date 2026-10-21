@@ -14,7 +14,7 @@ def run_experiment(nodes, rounds=2000, seed=30):
     ]
 
     print(f"Running: {' '.join(command)}")
-    result = subprocess.run(command, check=False)  # noqa: S603
+    result = subprocess.run(command, check=False)
     if result.returncode != 0:
         print(f"Error running for {nodes} nodes")
 

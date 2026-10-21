@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING
 
 import torch
 
-if TYPE_CHECKING:
-    from .recording import SnapshotRecorder
-
 from ..core import AggregateContext
 from ..pyg_backend import maybe_make_data
 from .events import EventSchedule, SimulationRuntime
+
+if TYPE_CHECKING:
+    from .recording import SnapshotRecorder
 
 ProgramStep = Callable[[SimulationRuntime], torch.Tensor]
 

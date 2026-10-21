@@ -2,14 +2,7 @@
 
 import torch
 
-from diffield.dsl import (
-    field,
-    gather_min,
-    gradient,
-    iterate,
-    mux,
-    scatter,
-)
+from diffield.dsl import field, gather_min, gradient, iterate, mux, scatter
 from diffield.sim import (
     EventSchedule,
     RelaxedRadiusScenario,

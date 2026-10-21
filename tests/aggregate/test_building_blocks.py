@@ -1,4 +1,4 @@
-"""Tests for higher-order aggregate building blocks: gradient, gradient_cast, broadcast, collect_cast."""  # noqa: E501
+"""Tests for the building blocks: gradient, gradient_cast, broadcast, collect_cast."""
 
 import torch
 
@@ -131,7 +131,6 @@ class TestGradientCast:
         loss.backward()
 
         assert_finite_gradients([step])
-        assert step.grad is not None
         assert step.grad.item() != 0.0
 
     def test_soft_matches_hard_on_line(self, line_topology):
@@ -271,7 +270,6 @@ class TestCollectCast:
         output[0].backward()
 
         assert_finite_gradients([potential])
-        assert potential.grad is not None
         assert potential.grad.abs().sum().item() > 0.0
 
     def test_weighted_collect_uses_shortest_path_parents(

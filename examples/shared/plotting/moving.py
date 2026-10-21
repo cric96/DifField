@@ -8,6 +8,7 @@ import numpy as np
 import torch
 
 from .common import Axes, FuncAnimation, LineCollection, PillowWriter, plt
+from .style import MUTED, panel_label
 
 
 def _to_color_values(values: torch.Tensor) -> np.ndarray:
@@ -164,7 +165,10 @@ def _setup_snapshot_ax(
     )
     if show_source:
         _draw_source_marker(ax, pos, source_idx)
-    ax.set_title(f"round {round_idx + 1}", fontsize=16, fontweight="bold")
+    ax.text(
+        0.03, 0.96, f"t={round_idx + 1}",
+        transform=ax.transAxes, fontsize=9, color=MUTED, ha="left", va="top",
+    )
     ax.set_xlim(0.0, 1.0)
     ax.set_ylim(0.0, 1.0)
     ax.set_aspect("equal")
@@ -180,7 +184,6 @@ def plot_moving_snapshots(
     values_by_round: dict[int, torch.Tensor],
     source_idx: int,
     output_path: str,
-    title: str = "Moving Nodes Distance Snapshots",
     edge_index_by_round: dict[int, torch.Tensor] | None = None,
     show_links: bool = True,
     links_alpha: float = 0.15,
@@ -231,7 +234,6 @@ def plot_moving_snapshots(
     fig.subplots_adjust(
         left=0.07, right=0.88, bottom=0.08, top=0.88, wspace=0.30, hspace=0.35
     )
-    fig.suptitle(title, fontsize=20, fontweight="bold")
     if mappable is not None:
         cax = fig.add_axes((0.90, 0.14, 0.018, 0.70))
         fig.colorbar(mappable, cax=cax)  # type: ignore[arg-type]
@@ -312,7 +314,6 @@ def plot_node_trajectories(
     positions_over_time: list[torch.Tensor],
     source_idx: int,
     output_path: str,
-    title: str = "Node Trajectories",
     color_by_id: bool = True,
     show_source: bool = True,
     phantom_pos_seq: torch.Tensor | None = None,
@@ -337,16 +338,15 @@ def plot_node_trajectories(
             axes[0], phantom, num_rounds, num_nodes,
             id_colors, color_by_id, show_source, source_idx,
         )
-        axes[0].set_title("Teacher Ground Truth", fontsize=20, fontweight="bold")
+        panel_label(axes[0], "a")
 
         # Plot Prediction
         _draw_trajectory_on_ax(
             axes[1], traj, num_rounds, num_nodes,
             id_colors, color_by_id, show_source, source_idx,
         )
-        axes[1].set_title("Learned Model", fontsize=20, fontweight="bold")
+        panel_label(axes[1], "b")
 
-        fig.suptitle(title, fontsize=24, fontweight="bold")
         axes[1].legend(loc="upper right")
     else:
         fig, ax = plt.subplots(figsize=(8.0, 7.5))
@@ -354,7 +354,6 @@ def plot_node_trajectories(
             ax, traj, num_rounds, num_nodes,
             id_colors, color_by_id, show_source, source_idx,
         )
-        ax.set_title(title, fontsize=22, fontweight="bold")
         ax.legend(loc="upper right")
 
     plt.tight_layout()

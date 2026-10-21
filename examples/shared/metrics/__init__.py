@@ -1,6 +1,28 @@
-"""Shared metrics layer: statistics and nested access."""
+"""Shared metrics layer: statistics and recovery after events."""
 
-from .nested import nested_get
-from .stats import is_finite_number, mean, std
+from .recovery import event_windows, recovery, recovery_summary, relative_deviation
+from .stats import (
+    aggregate,
+    aggregate_curve,
+    bootstrap_band,
+    ci95,
+    interval,
+    interval_cell,
+    mean,
+    std,
+)
 
-__all__ = ["is_finite_number", "mean", "nested_get", "std"]
+__all__ = [
+    "aggregate",
+    "aggregate_curve",
+    "bootstrap_band",
+    "ci95",
+    "event_windows",
+    "interval",
+    "interval_cell",
+    "mean",
+    "recovery",
+    "recovery_summary",
+    "relative_deviation",
+    "std",
+]

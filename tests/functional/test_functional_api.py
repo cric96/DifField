@@ -116,7 +116,7 @@ class TestScatterAggr:
         out = scatter_aggr(src, idx, num_nodes, aggr="sum")
 
         expected = torch.zeros(num_nodes)
-        for i, val in zip(idx.tolist(), src.tolist(), strict=False):
+        for i, val in zip(idx.tolist(), src.tolist(), strict=True):
             expected[i] += val
 
         assert torch.allclose(out, expected, atol=1e-4)
@@ -208,8 +208,9 @@ class TestMaskEdges:
             mode="hard",
         )
 
-        assert ew_out is not None and mw_out is not None
         assert torch.equal(ei_out, torch.tensor([[0, 1], [1, 0]], dtype=torch.long))
+        assert ew_out is not None
+        assert mw_out is not None
         assert torch.allclose(ew_out, torch.tensor([1.0, 1.0]))
         assert torch.allclose(mw_out, torch.tensor([10.0, 11.0]))
 

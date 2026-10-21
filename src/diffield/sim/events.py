@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 class SimulationRuntime:
     """Mutable runtime object shared across events and program steps."""
 
-    scenario: object
+    scenario: Any
     signals: dict[str, Any]
     metadata: dict[str, Any]
     round_idx: int = 0

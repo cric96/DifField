@@ -1,6 +1,6 @@
-"""Shared training layer: history tracking and utilities."""
+"""Shared training layer: resumable training, checkpoints and utilities."""
 
-from .history import MetricHistory
-from .utils import grad_norm, parse_int_csv
+from .loop import TrainingState, fit, frozen
+from .utils import parse_int_csv
 
-__all__ = ["MetricHistory", "grad_norm", "parse_int_csv"]
+__all__ = ["TrainingState", "fit", "frozen", "parse_int_csv"]

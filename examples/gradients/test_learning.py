@@ -26,14 +26,14 @@ def test_gradient_model_training_decreases_loss_and_recovers_unit_weight():
         mask = pred.isfinite()
         loss = F.mse_loss(pred[mask], target[mask])
         loss.backward()
-        assert model.w.grad is not None  # noqa: S101
-        assert torch.isfinite(model.w.grad)  # noqa: S101
+        assert model.w.grad is not None
+        assert torch.isfinite(model.w.grad)
         optimizer.step()
         losses.append(float(loss.item()))
 
     with torch.no_grad():
         pred = model(source)
 
-    assert losses[-1] < losses[0] * 0.05  # noqa: S101
-    assert abs(float(model.w.item()) - 1.0) < 0.1  # noqa: S101
-    assert torch.max((pred - target).abs()).item() < 0.3  # noqa: S101
+    assert losses[-1] < losses[0] * 0.05
+    assert abs(float(model.w.item()) - 1.0) < 0.1
+    assert torch.max((pred - target).abs()).item() < 0.3

@@ -8,11 +8,6 @@ import torch
 from torch import Tensor, nn
 from torch_geometric.nn import MessagePassing
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
-    from ..dsl.scattering import LinkField
-
 from ..constants import (
     DEFAULT_TAU_SOFT_AGGR,
     FILL_VALUE_DEFAULT,
@@ -23,18 +18,23 @@ from ..core import RoundContext, resolve_context
 from ..dsl.helpers import edge_sources_targets
 from ..functional import scatter_aggr
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from ..dsl.scattering import LinkField
+
 
 class _PyGMessagePassing(MessagePassing):
     """PyG MessagePassing wrapper with built-in and custom aggregation paths."""
 
     def __init__(self, owner: GatherLayer) -> None:
-        use_builtin = (
-            isinstance(owner.aggr, str)
-            and owner.mode == "hard"
-            and owner.aggr in {"sum", "mean"}
-        )
+        aggr = owner.aggr
+        builtin = aggr if isinstance(aggr, str) and owner.mode == "hard" else None
+        if builtin not in {"sum", "mean"}:
+            builtin = None
+        use_builtin = builtin is not None
         super().__init__(
-            aggr=owner.aggr if use_builtin else None,  # type: ignore[arg-type]
+            aggr=builtin,
             flow="source_to_target",
             node_dim=0,
         )
@@ -133,7 +133,7 @@ class GatherLayer(nn.Module):
         ctx = resolve_context(ctx)
         effective_tag = tag if tag is not None else getattr(x, "tag", None)
 
-        from ..dsl.scattering import LinkField  # noqa: PLC0415
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         if effective_tag is not None:
             # We can only export if we have a source field (i.e. not a complex expression)
@@ -176,8 +176,8 @@ class GatherLayer(nn.Module):
         ctx: RoundContext,
         edge_idx: Tensor,
     ) -> tuple[Tensor, Tensor]:
-        from ..dsl.helpers import scale_messages  # noqa: PLC0415
-        from ..dsl.scattering import LinkField  # noqa: PLC0415
+        from ..dsl.helpers import scale_messages  # noqa: PLC0415 - dsl and layers import each other
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         source_index, target_index = edge_sources_targets(edge_idx)
         include_self = self.include_self
@@ -228,7 +228,7 @@ class GatherLayer(nn.Module):
         return messages, kept_target_index
 
     def _self_messages(self, src: Tensor | LinkField, ctx: RoundContext) -> Tensor:
-        from ..dsl.scattering import LinkField  # noqa: PLC0415
+        from ..dsl.scattering import LinkField  # noqa: PLC0415 - dsl and layers import each other
 
         if isinstance(src, LinkField):
             self_index = torch.arange(

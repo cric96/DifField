@@ -60,7 +60,7 @@ def build_snapshot_payloads(
         default_inf = inf_field(num_nodes, device=default_device)
         dist_src = payload.get("dist_src", default_inf)
         dist_dst = payload.get("dist_dst", default_inf)
-        dist_sd_state = payload.get("_gc_dist_channel")
+        dist_sd_state = payload.get("dist_channel")
         if dist_sd_state is None:
             dist_sd = default_inf
         elif dist_sd_state.dim() > 1:

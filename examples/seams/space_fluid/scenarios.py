@@ -1,0 +1,362 @@
+"""Does learning improve the program's initial configuration, wherever it was learned?
+
+Two training scenarios: a frozen phenomenon and a moving one. In each, Adam tunes the
+six weights of the SCR program (metric and candidacy strength) and the hybrid (the same
+plus a neighbourhood GNN in the metric), both starting from the fixed-combined
+configuration, and a recurrent GNN is trained as the all-neural reference. Every
+model is tested on both scenarios (batched, clean) and, in its own scenario, on
+independent devices (asynchronous DeviceRuntime) under link loss, node stops, a
+partition and permanent crashes. Objective: reconstruction error + lambda x leader
+fraction.
+"""
+
+import itertools
+from dataclasses import replace
+
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+
+from ...shared.artifacts import json_write, read_json, software
+from ...shared.campaign import Budget, deterministic, open_run, output_lock, resumable
+from ...shared.metrics import interval, interval_cell
+from .. import SOURCES
+from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIES, protocol
+from .data import make_episode, normalization, training_bank
+from .execution import SAME_RUN, execute
+from .metrics import summarize
+from .report import counted, episode_rows, export, fault_windows, method_color, with_every_seed
+from .training import checkpoint_directory, load_method, objective, train_job
+
+METHODS = ("fixed-combined", *LEARNERS)
+NAMES = {
+    "fixed-combined": "initial configuration",
+    "parametric": "parametric",
+    "hybrid": "hybrid",
+    "gnn": "GNN",
+}
+
+
+def banks(config):
+    """Training bank and its normalization per scenario."""
+    result = {}
+    for scenario in SCENARIOS:
+        bank = training_bank(config, static=scenario == "static")
+        result[scenario] = (bank, normalization(bank["train"]))
+    return result
+
+
+def train(out, config, scenario, bank, norm, *, budget, methods=LEARNERS, seeds=None):
+    for method, seed in itertools.product(methods, seeds or config.seeds):
+        directory = checkpoint_directory(out / scenario, method, seed)
+        if not (directory / "best.pt").exists():
+            print(f"train {scenario} {method} seed={seed}", flush=True)
+            train_job(
+                directory,
+                config,
+                bank,
+                norm,
+                method,
+                seed,
+                config.main_lambda,
+                budget,
+            )
+
+
+def specs(config, scenario):
+    """Both test scenarios (batched, clean), faults in the training scenario, one sync check."""
+    for test, family, index in itertools.product(
+        SCENARIOS, TEST_FAMILIES, range(config.test_episodes)
+    ):
+        yield {"panel": "cross", "test": test, "family": family, "index": index,
+               "condition": "clean", "executor": "batched"}  # fmt: skip
+    for condition, family, index in itertools.product(
+        RUNTIME_CONDITIONS, config.distributed_families, range(config.distributed_episodes)
+    ):
+        yield {"panel": "faults", "test": scenario, "family": family, "index": index,
+               "condition": condition, "executor": ASYNC}  # fmt: skip
+    yield {"panel": "equivalence", "test": scenario, "family": "gaussian", "index": 0,
+           "condition": "partition", "executor": "sync"}  # fmt: skip
+
+
+def spec_name(spec):
+    return "-".join(str(spec[k]) for k in ("panel", "test", "family", "index", "condition"))
+
+
+@torch.no_grad()
+def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=None):
+    """``norms`` per scenario: errors use the test scenario's scale, so a column compares."""
+    models = {}
+    for spec, method, seed in itertools.product(
+        specs(config, scenario), methods, seeds or config.seeds
+    ):
+        deterministic = method == "fixed-combined" or spec["executor"] == "sync"
+        if deterministic and seed != config.seeds[0]:
+            continue
+        path = out / scenario / "episodes" / method / f"seed{seed}" / f"{spec_name(spec)}.json"
+        if path.exists():
+            continue
+        budget.check()
+        print(f"evaluate {scenario} {spec_name(spec)} {method} seed={seed}", flush=True)
+        if (method, seed) not in models:
+            models[method, seed] = load_method(out / scenario, method, seed, norms[scenario])
+        model = models[method, seed]
+        episode = make_episode(
+            config, "test", spec["family"], spec["index"], condition=spec["condition"],
+            static=spec["test"] == "static",
+        )  # fmt: skip
+        trace, check = execute(episode, model, spec["executor"], config.data_seed)
+        scale = norms[spec["test"]]["scale"]
+        metrics, curves = summarize(episode, trace, scale, config)
+        metrics["objective"] = float(objective(episode, trace, scale, config.main_lambda))
+        json_write(
+            path,
+            {
+                **spec,
+                "method": method,
+                "seed": seed,
+                "episode": spec_name(spec),
+                "metrics": metrics,
+                "curves": {
+                    k: curves[k]
+                    for k in ("nrmse", "leader_fraction", "regions", "assignment_stability")
+                },
+                "equivalence": check,
+            },
+        )
+
+
+def rows_of(out, scenario):
+    """The episodes of a scenario, the initial configuration paired with every learned seed."""
+    return with_every_seed(episode_rows(out / scenario))
+
+
+def select(rows, method, **keys):
+    return [r for r in rows if r["method"] == method and all(r[k] == v for k, v in keys.items())]
+
+
+def report(out, config):
+    text = [
+        "# Space-Fluid learned in a static and in a moving world",
+        "",
+        f"Profile **{config.profile}**. Objective: reconstruction error / sigma^2 + "
+        f"{config.main_lambda:g} x leader fraction. Full-batch Adam (rate "
+        f"{config.learning_rate:g}, hybrid network {config.network_learning_rate:g}, cosine "
+        "decay) tunes the parametric and hybrid programs from the initial configuration "
+        "(fixed-combined); the GNN (rate "
+        f"{config.gnn_learning_rate:g}) is the all-neural reference: every device is its own "
+        f"sampler, so its leader term is the constant {config.main_lambda:g}. Seeds "
+        f"{len(config.seeds)}; test families {', '.join(TEST_FAMILIES)} (ring and front held "
+        "out), errors on the test scenario's training scale. Intervals: two-way bootstrap over "
+        "seeds and episodes, paired on the same episodes.",
+        "",
+        "## Clean, batched: trained on one scenario, tested on both",
+        "",
+        "| Trained on | Method | Objective static | Objective moving | NRMSE static | "
+        "NRMSE moving | Leaders static | Leaders moving |",
+        "|---|---|---:|---:|---:|---:|---:|---:|",
+    ]
+    paired_rows = []
+    for scenario in SCENARIOS:
+        rows = rows_of(out, scenario)
+        for method in METHODS:
+            cells = []
+            for metric in ("objective", "nrmse", "leader_fraction"):
+                for test in SCENARIOS:
+                    selected = select(rows, method, panel="cross", test=test)
+                    cells.append(interval_cell(interval(selected, metric)))
+            text.append(f"| {scenario} | {NAMES[method]} | " + " | ".join(cells) + " |")
+        for test in SCENARIOS:
+            reference = select(rows, "fixed-combined", panel="cross", test=test)
+            learned = select(rows, "parametric", panel="cross", test=test)
+            stats = interval(learned, "objective", reference=reference)
+            paired_rows.append(f"| {scenario} | {test} | {interval_cell(stats, 4)} |")
+    text += [
+        "",
+        "## Improvement over the initial configuration (Adam - initial, objective)",
+        "",
+        "| Trained on | Tested on | Paired difference |",
+        "|---|---|---:|",
+        *paired_rows,
+        "",
+        "## Decentralized (async DeviceRuntime, p=0.5), trained and tested on the same scenario",
+        "",
+        "NRMSE before the fault (5 rounds), during it, over the last 10 rounds; recovery = "
+        f"rounds until NRMSE <= {config.recovery_threshold:g} for {config.recovery_rounds} rounds "
+        "after the fault (after restoration for temporary faults).",
+        "",
+        "| Scenario | Condition | Method | Objective | NRMSE before | during | final | Recovery |",
+        "|---|---|---|---:|---:|---:|---:|---:|",
+    ]
+    for scenario, condition in itertools.product(SCENARIOS, RUNTIME_CONDITIONS):
+        rows = rows_of(out, scenario)
+        for method in METHODS:
+            selected = select(rows, method, panel="faults", condition=condition)
+            if not selected:
+                continue
+            curves = np.array([r["curves"]["nrmse"] for r in selected])
+            before, during, final = fault_windows(curves)
+            event = (
+                "restoration_recovery"
+                if condition in ("node_stop", "partition", "link_loss")
+                else "fault_recovery"
+            )
+            rounds = [r["metrics"][event]["rounds"] for r in counted(selected)]
+            done = [x for x in rounds if x is not None]
+            recovery = (
+                "—"
+                if condition == "clean"
+                else f"{len(done)}/{len(rounds)}"
+                + (f", median {np.median(done):.0f}" if done else "")
+            )
+            text.append(
+                f"| {scenario} | {condition} | {NAMES[method]} | "
+                f"{interval_cell(interval(selected, 'objective'))} | {before:.3f} | {during:.3f} | "
+                f"{final:.3f} | {recovery} |"
+            )
+    checks = [
+        read_json(path)["equivalence"]
+        for path in sorted(out.glob("*/episodes/*/seed*/equivalence-*.json"))
+    ]
+    passed = sum(all(c[k] for k in SAME_RUN) for c in checks)
+    text += [
+        "",
+        f"Synchronous DeviceRuntime equals batched execution (partition episode, every method, "
+        f"both scenarios): {passed}/{len(checks)}.",
+        "",
+    ]
+    (out / "REPORT.md").write_text("\n".join(text))
+    figures(out, config)
+
+
+def figures(out, config):
+    # Loss over time: hard validation objective, error and leaders, both learners.
+    fig, axes = plt.subplots(2, 3, figsize=(13, 6.5), layout="constrained", sharex=True)
+    for row, scenario in zip(axes, SCENARIOS, strict=True):
+        for method, seed in itertools.product(LEARNERS, config.seeds):
+            path = checkpoint_directory(out / scenario, method, seed) / "training.json"
+            if not path.exists():
+                continue
+            history = [h for h in read_json(path)["history"] if "validation_hard" in h]
+            steps = [h["step"] for h in history]
+            for ax, key in zip(
+                row, ("validation_hard", "validation_error", "validation_leaders"), strict=True
+            ):
+                ax.plot(steps, [h[key] for h in history], color=method_color(method), alpha=0.75,
+                        label=NAMES[method] if seed == config.seeds[0] else None)  # fmt: skip
+        for ax, title in zip(row, ("objective", "error / sigma^2", "leader fraction"), strict=True):
+            ax.set(title=f"{scenario}: {title}", yscale="log")
+            ax.grid(alpha=0.15)
+        row[0].legend(fontsize=8)
+    for ax in axes[-1]:
+        ax.set(xlabel="Adam update (hard validation every 20)")
+    export(fig, out, "scenarios-loss")
+
+    # NRMSE over rounds under each fault, in the training scenario.
+    fig, axes = plt.subplots(
+        2,
+        len(RUNTIME_CONDITIONS),
+        figsize=(3.2 * len(RUNTIME_CONDITIONS), 6),
+        layout="constrained",
+        sharey=True,
+    )
+    for row, scenario in zip(axes, SCENARIOS, strict=True):
+        rows = rows_of(out, scenario)
+        for ax, condition in zip(row, RUNTIME_CONDITIONS, strict=True):
+            for method in METHODS:
+                curves = [
+                    r["curves"]["nrmse"]
+                    for r in select(rows, method, panel="faults", condition=condition)
+                ]
+                if curves:
+                    ax.plot(np.mean(curves, 0), color=method_color(method), label=NAMES[method])
+            rounds = config.eval_rounds
+            end = rounds if condition == "crash" else 2 * rounds // 3
+            if condition != "clean":
+                ax.axvspan(rounds // 3, end, alpha=0.06, color="black")
+            ax.set(title=f"{scenario}: {condition}", xlabel="Round", ylabel="NRMSE", yscale="log")
+            ax.grid(alpha=0.15)
+        row[0].legend(fontsize=7)
+    export(fig, out, "scenarios-faults")
+    stabilization(out, config)
+
+
+def stabilization(out, config):
+    """Per-round state of each program, trained and tested in the same scenario."""
+    columns = (
+        ("nrmse", "NRMSE"),
+        ("regions", "regions"),
+        ("leaders", "elected leaders"),
+        ("orphans", "regions - leaders"),
+        ("assignment_stability", "share keeping its leader"),
+    )
+    panels = [
+        (scenario, panel, executor)
+        for scenario in SCENARIOS
+        for panel, executor in (("cross", "batched"), ("faults", ASYNC))
+    ]
+    fig, axes = plt.subplots(
+        len(panels), len(columns), figsize=(3.3 * len(columns), 2.7 * len(panels)),
+        layout="constrained", sharex=True,
+    )  # fmt: skip
+    for index, (row, (scenario, panel, executor)) in enumerate(zip(axes, panels, strict=True)):
+        rows = [
+            r
+            for r in rows_of(out, scenario)
+            if r["panel"] == panel and r["test"] == scenario and r["condition"] == "clean"
+        ]
+        for method in METHODS:
+            selected = [r for r in rows if r["method"] == method]
+            if not selected:
+                continue
+            for ax, (key, _) in zip(row, columns, strict=True):
+                if method == "gnn" and key != "nrmse":
+                    continue  # every device is its own region
+                ax.plot(
+                    np.mean([per_round(r, key, config.nodes) for r in selected], 0),
+                    color=method_color(method),
+                    label=NAMES[method],
+                )
+        for ax, (_, title) in zip(row, columns, strict=True):
+            ax.set(title=title if index == 0 else None)
+            ax.grid(alpha=0.15)
+        row[0].set(ylabel=f"{scenario}, {executor}")
+        row[0].legend(fontsize=7)
+    for ax in axes[-1]:
+        ax.set(xlabel="Round")
+    export(fig, out, "scenarios-stabilization")
+
+
+def per_round(row, key, nodes):
+    """Clean episodes only: every device is active, so leaders = fraction * nodes."""
+    curves = row["curves"]
+    regions = np.array(curves["regions"], dtype=float)
+    leaders = np.array(curves["leader_fraction"]) * nodes
+    if key == "leaders":
+        return leaders
+    if key == "orphans":
+        return regions - leaders
+    values = np.array(curves[key], dtype=float)
+    return values if key != "assignment_stability" else np.r_[np.nan, values[1:]]
+
+
+def campaign(out, profile, seconds, *, device="cpu"):
+    config = replace(protocol(profile), device=device)
+    with output_lock(out):
+        deterministic(config.threads)
+        budget = Budget(seconds)
+        prepared = banks(config)
+        norms = {s: norm for s, (_, norm) in prepared.items()}
+        manifest = {"profile": profile, "normalization": norms, "config": config.to_dict()}
+        open_run(out, {**manifest, "software": software(SOURCES)})
+
+        def run():
+            for scenario, (bank, norm) in prepared.items():
+                train(out, config, scenario, bank, norm, budget=budget)
+            for scenario in SCENARIOS:
+                evaluate(out, config, scenario, norms, budget)
+            report(out, config)
+            print(f"Artifacts: {out}", flush=True)
+            return 0
+
+        return resumable(out, run)

@@ -8,12 +8,12 @@ from typing import TYPE_CHECKING
 import torch
 from torch import Tensor
 
-if TYPE_CHECKING:
-    from collections.abc import Callable
-
 from ..constants import FILL_VALUE_MIN, LOG_EPSILON
 from ..pyg_backend import scatter_hard
 from .aggregation import scatter_aggr
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 def scatter_min_by_first(
