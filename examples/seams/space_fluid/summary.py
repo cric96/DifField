@@ -11,7 +11,7 @@ from ...shared.artifacts import read_json
 from ...shared.metrics import interval, interval_cell
 from . import clusters, scenarios
 from .config import ASYNC, RUNTIME_CONDITIONS, SCENARIOS, protocol
-from .report import PANELS, export, method_color, pooled
+from .report import PANELS, episode_rows, export, method_color, pooled
 
 LEARNED = ("parametric", "hybrid")
 LABELS = {
@@ -161,7 +161,7 @@ def clustering(study, text):
         "",
     ]
     for ax, trained in zip(axes, SCENARIOS, strict=True):
-        rows = [read_json(p) for p in sorted((study / trained / "episodes").glob("*/seed*/*.json"))]
+        rows = episode_rows(study / trained)
         methods = clusters.methods()
         text += [
             f"Trained on {trained} zones:",
@@ -217,12 +217,7 @@ def cluster_counts(study, text):
     ]
     titles = ["test static", "test moving", *(f"async {c}" for c in RUNTIME_CONDITIONS)]
     methods = ("fixed-combined", *LEARNED, "gnn-central")
-    rows = {
-        trained: [
-            read_json(p) for p in sorted((study / trained / "episodes").glob("*/seed*/*.json"))
-        ]
-        for trained in SCENARIOS
-    }
+    rows = {trained: episode_rows(study / trained) for trained in SCENARIOS}
     truth = rows["static"][0]["count"]
 
     text += [

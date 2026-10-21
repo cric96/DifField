@@ -501,6 +501,22 @@ def report(out, config, *, render=True, budget=None):
     return state
 
 
+def episode_rows(directory):
+    """The evaluated episodes of a study, from ``directory/episodes/<method>/seed*/``."""
+    return [read_json(p) for p in sorted((directory / "episodes").glob("*/seed*/*.json"))]
+
+
+def fault_windows(curves):
+    """Means of the curves (runs x rounds) before a fault at a third of the rounds, during it
+    (the middle third) and over the last ten rounds."""
+    third = curves.shape[1] // 3
+    return (
+        curves[:, third - 5 : third].mean(),
+        curves[:, third : 2 * third].mean(),
+        curves[:, -10:].mean(),
+    )
+
+
 def pooled(rows, name, keep, metric):
     return [
         {"seed": r["seed"], "episode": r["episode"], "metrics": {metric: r["metrics"].get(metric)}}

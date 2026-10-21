@@ -25,7 +25,7 @@ from .config import ASYNC, LEARNERS, RUNTIME_CONDITIONS, SCENARIOS, TEST_FAMILIE
 from .data import make_episode, normalization, training_bank
 from .execution import SAME_REGIONS, execute
 from .metrics import summarize
-from .report import export, method_color
+from .report import episode_rows, export, fault_windows, method_color
 from .training import checkpoint_directory, load_method, objective, train_job
 
 METHODS = ("fixed-combined", *LEARNERS)
@@ -130,7 +130,7 @@ def evaluate(out, config, scenario, norms, budget, *, methods=METHODS, seeds=Non
 
 
 def rows_of(out, scenario):
-    rows = [read_json(p) for p in sorted((out / scenario / "episodes").glob("*/seed*/*.json"))]
+    rows = episode_rows(out / scenario)
     seeds = sorted({r["seed"] for r in rows if r["method"] in LEARNERS})
     # The initial configuration is deterministic: pair it with every learned seed.
     fixed = [r for r in rows if r["method"] == "fixed-combined"]
@@ -203,7 +203,7 @@ def report(out, config):
             if not selected:
                 continue
             curves = np.array([r["curves"]["nrmse"] for r in selected])
-            third = curves.shape[1] // 3
+            before, during, final = fault_windows(curves)
             event = (
                 "restoration_recovery"
                 if condition in ("node_stop", "partition", "link_loss")
@@ -217,14 +217,10 @@ def report(out, config):
                 else f"{len(done)}/{len(rounds)}"
                 + (f", median {np.median(done):.0f}" if done else "")
             )
-            before, during = (
-                curves[:, third - 5 : third].mean(),
-                curves[:, third : 2 * third].mean(),
-            )
             text.append(
                 f"| {scenario} | {condition} | {NAMES[method]} | "
                 f"{interval_cell(interval(selected, 'objective'))} | {before:.3f} | {during:.3f} | "
-                f"{curves[:, -10:].mean():.3f} | {recovery} |"
+                f"{final:.3f} | {recovery} |"
             )
     checks = [
         read_json(path)["equivalence"]

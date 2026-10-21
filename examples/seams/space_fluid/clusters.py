@@ -37,7 +37,7 @@ from .data import RegionEpisode, faults, topology
 from .execution import SAME_REGIONS, execute, observed_features, on_devices
 from .metrics import fragmentation
 from .program import ELECTED, LEADER
-from .report import export, method_color
+from .report import episode_rows, export, fault_windows, method_color
 from .training import checkpoint_directory, load_method, train_job
 
 # The hybrid (GNN link metric) is not reported in the paper, and its training fails on sharp zones.
@@ -384,7 +384,7 @@ PANELS = (("static", "batched"), ("moving", "batched"), ("distributed", ASYNC))
 
 
 def report(out, config, scenario):
-    rows = [read_json(p) for p in sorted((out / "episodes").glob("*/seed*/*.json"))]
+    rows = episode_rows(out)
     text = [
         f"# Space-Fluid clustering, trained on {scenario} zones",
         "",
@@ -442,16 +442,14 @@ def report(out, config, scenario):
         selected = distributed(rows, method, condition)
         if not selected:
             continue
-        curves = np.array([r["curves"]["ari"] for r in selected])
-        third = curves.shape[1] // 3
+        before, during, final = fault_windows(np.array([r["curves"]["ari"] for r in selected]))
         events = [r["metrics"]["fault_recovery"] for r in selected]
         recovered = [e["rounds"] for e in events if e["rounds"] is not None]
         rate = f"{len(recovered)}/{len(events)}" + (
             f", median {np.median(recovered):.0f} rounds" if recovered else ""
         )
         text.append(
-            f"| {method} | {condition} | {curves[:, third - 5 : third].mean():.3f} | "
-            f"{curves[:, third : 2 * third].mean():.3f} | {curves[:, -10:].mean():.3f} | {rate} |"
+            f"| {method} | {condition} | {before:.3f} | {during:.3f} | {final:.3f} | {rate} |"
         )
     checks = [r["equivalence"] for r in rows if r.get("equivalence")]
     passed = sum(c["identifiers_equal"] and c["values_close"] for c in checks)
@@ -542,7 +540,7 @@ def overview(out):
         "|---|---|" + "---:|" * (2 + len(RUNTIME_CONDITIONS)),
     ]
     for scenario in SCENARIOS:
-        rows = [read_json(p) for p in sorted((out / scenario / "episodes").glob("*/seed*/*.json"))]
+        rows = episode_rows(out / scenario)
         for method in methods():
             cells = []
             for panel in SCENARIOS:
